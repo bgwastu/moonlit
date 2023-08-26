@@ -1,9 +1,9 @@
 import * as Tone from "tone";
 
+import { useAtom } from "jotai";
 import { useEffect, useMemo, useState } from "react";
 import { useInterval } from "../hooks/setInterval";
-import { Song, SongMetadata } from "../interfaces";
-import { useAtom } from "jotai";
+import { Song } from "../interfaces";
 import { loadingAtom } from "../state";
 
 const defaultValues = {

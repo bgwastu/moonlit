@@ -6,16 +6,10 @@ import {
   Container,
   Divider,
   Flex,
-  LoadingOverlay,
-  Modal,
-  Image,
-  useMantineTheme,
-  Text,
+  LoadingOverlay
 } from "@mantine/core";
-import { useEffect, useState } from "react";
-import { Song } from "../interfaces";
-import Player from "../components/Player";
 import { useAtom } from "jotai";
+import Player from "../components/Player";
 import { loadingAtom, songAtom } from "../state";
 
 export default function Index() {

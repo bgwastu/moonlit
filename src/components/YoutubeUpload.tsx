@@ -25,45 +25,44 @@ export default function YoutubeUpload() {
 
   function fetchMusic(url: string) {
     setLoading(true);
-    fetch('/api/yt', {
-      method: 'POST',
+    fetch("/api/yt", {
+      method: "POST",
       body: JSON.stringify({
         url,
       }),
       headers: {
-        'content-type': 'application/json'
-      }
+        "content-type": "application/json",
+      },
     })
-    .then(async(res) => {
-      if(!res.ok){
-        console.error('Error when fetching data from YouTube');
-        console.error(res);
-        notifications.show({
-          title: 'Download error',
-          message: 'Error when fetching data from Youtube',
-        });
-      }
-
-      const blob = await res.blob();
-
-      setSong({
-        fileUrl: URL.createObjectURL(blob),
-        metadata: {
-          title: decodeURI(res.headers.get('x-yt-title') ?? ""),
-          author: decodeURI(res.headers.get('x-yt-author') ?? ""),
-          coverUrl: decodeURI(res.headers.get('x-yt-thumb') ?? ""),
+      .then(async (res) => {
+        if (!res.ok) {
+          console.error("Error when fetching data from YouTube");
+          console.error(res);
+          notifications.show({
+            title: "Download error",
+            message: "Error when fetching data from Youtube",
+          });
         }
-      }
-      );
-    })
-    .catch(e => {
-      console.error(e);
-      notifications.show({
-        title: 'Download error',
-        message: 'Error when fetching data from YouTube'
-      });
-    })
-    .finally(() => setLoading(false));
+
+        const blob = await res.blob();
+
+        setSong({
+          fileUrl: URL.createObjectURL(blob),
+          metadata: {
+            title: decodeURI(res.headers.get("x-yt-title") ?? ""),
+            author: decodeURI(res.headers.get("x-yt-author") ?? ""),
+            coverUrl: decodeURI(res.headers.get("x-yt-thumb") ?? ""),
+          },
+        });
+      })
+      .catch((e) => {
+        console.error(e);
+        notifications.show({
+          title: "Download error",
+          message: "Error when fetching data from YouTube",
+        });
+      })
+      .finally(() => setLoading(false));
   }
 
   return (
