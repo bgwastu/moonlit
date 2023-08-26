@@ -27,8 +27,6 @@ export default function LocalUpload({
       disabled={disabled}
       onDrop={async (files) => {
         const tags = await convertFileToBuffer(files[0]).then(parse);
-
-        console.log(tags);
         if (tags !== false) {
           let imgSrc = "";
 
