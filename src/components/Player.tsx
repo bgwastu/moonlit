@@ -3,6 +3,8 @@ import * as Tone from "tone";
 import { useEffect, useMemo, useState } from "react";
 import { useInterval } from "../hooks/setInterval";
 import { Song, SongMetadata } from "../interfaces";
+import { useAtom } from "jotai";
+import { loadingAtom } from "../state";
 
 const defaultValues = {
   playbackRate: 0.7,
@@ -17,11 +19,11 @@ export const getSongLength = (bufferDuration: number, playbackRate: number) => {
 
 interface Props {
   song: Song;
-  setLoading(value: boolean): void;
 }
 
-export default function Player({ song, setLoading }: Props) {
+export default function Player({ song }: Props) {
   const [currentPlayback, setCurrentPlayback] = useState<number>(0);
+  const [_, setLoading] = useAtom(loadingAtom);
 
   const { clear: clearInterval, start: startInterval } = useInterval(
     () => {
@@ -33,7 +35,7 @@ export default function Player({ song, setLoading }: Props) {
 
   useEffect(() => {
     init(song.fileUrl);
-  }, [init, song.fileUrl])
+  }, [])
 
   const reverb = useMemo(() => new Tone.Reverb(), []);
   const player = useMemo(() => new Tone.Player(), []);
@@ -49,6 +51,7 @@ export default function Player({ song, setLoading }: Props) {
   }
 
   async function init(trackUrl: string) {
+    setLoading(true);
     const p1 = reverb.generate();
     const p2 = player.load(trackUrl);
     await Promise.all([p1, p2]);

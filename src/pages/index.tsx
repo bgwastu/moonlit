@@ -15,32 +15,20 @@ import {
 import { useEffect, useState } from "react";
 import { Song } from "../interfaces";
 import Player from "../components/Player";
-
-interface Loading {
-  status: boolean;
-  from: "local" | "yt" | "song-init";
-}
+import { useAtom } from "jotai";
+import { loadingAtom } from "../state";
 
 export default function Index() {
-  const theme = useMantineTheme();
   const [song, setSong] = useState<Song | null>(null);
-  const [loading, setLoading] = useState<Loading>({
-    status: false,
-    from: "local",
-  });
-
-  useEffect(() => {
-    if (!song) return;
-    setLoading({ status: true, from: "song-init" });
-  }, [song]);
+  const [loading, setLoading] = useAtom(loadingAtom);
+  const [loading] = useAtom(loadingAtom);
 
   return (
     <>
-      <LoadingOverlay visible={loading.status && loading.from === "song-init"} />
+      <LoadingOverlay visible={loading} />
       {song ? (
         <Player
           song={song}
-          setLoading={(status) => setLoading({ from: "song-init", status })}
         />
       ) : (
         <Container size="sm" my="md" p="xl">
@@ -50,26 +38,10 @@ export default function Index() {
             </Center>
             <YoutubeUpload
               setSong={setSong}
-              isLoading={loading.status && loading.from === "yt"}
-              setLoading={(status) =>
-                setLoading({
-                  from: "yt",
-                  status: status,
-                })
-              }
-              disabled={loading.status}
             />
             <Divider label="OR" labelPosition="center" />
             <LocalUpload
-              isLoading={loading.status && loading.from === "local"}
               setSongUrl={setSong}
-              setLoading={(status) =>
-                setLoading({
-                  from: "yt",
-                  status: status,
-                })
-              }
-              disabled={loading.status}
             />
           </Flex>
         </Container>

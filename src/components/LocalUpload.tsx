@@ -5,57 +5,56 @@ import parse from "id3-parser";
 import { convertFileToBuffer } from "id3-parser/lib/util";
 import { Dispatch, SetStateAction } from "react";
 import { Song, SongMetadata } from "../interfaces";
+import { useAtom } from "jotai";
+import { loadingAtom } from "../state";
 
 interface Props {
   setSongUrl: Dispatch<SetStateAction<Song | null>>;
-  isLoading: boolean;
-  setLoading(status: boolean): void;
-  disabled: boolean;
 }
 
-export default function LocalUpload({
-  setSongUrl,
-  setLoading,
-  isLoading,
-  disabled,
-}: Props) {
+export default function LocalUpload({ setSongUrl }: Props) {
+  const [loading, setLoading] = useAtom(loadingAtom);
   return (
     <Dropzone
       accept={["audio/mpeg"]}
-      loading={isLoading}
       maxFiles={1}
-      disabled={disabled}
+      disabled={loading}
       onDrop={async (files) => {
-        const tags = await convertFileToBuffer(files[0]).then(parse);
-        if (tags !== false) {
-          let imgSrc = "";
+        setLoading(true);
+        try {
+          const tags = await convertFileToBuffer(files[0]).then(parse);
+          if (tags !== false) {
+            let imgSrc = "";
 
-          if (tags.image?.data) {
-            const coverBlob = new Blob([new Uint8Array(tags.image.data)], {
-              type: tags.image.mime,
+            if (tags.image?.data) {
+              const coverBlob = new Blob([new Uint8Array(tags.image.data)], {
+                type: tags.image.mime,
+              });
+              imgSrc = URL.createObjectURL(coverBlob);
+            }
+
+            const metadata: SongMetadata = {
+              title: tags.title ?? files[0].name,
+              author: tags.artist ?? "Unknown",
+              coverUrl: imgSrc,
+            };
+
+            setSongUrl({
+              fileUrl: URL.createObjectURL(files[0]),
+              metadata,
             });
-            imgSrc = URL.createObjectURL(coverBlob);
+          } else {
+            setSongUrl({
+              fileUrl: URL.createObjectURL(files[0]),
+              metadata: {
+                title: files[0].name,
+                author: "Unknown",
+                coverUrl: "",
+              },
+            });
           }
-
-          const metadata: SongMetadata = {
-            title: tags.title ?? files[0].name,
-            author: tags.artist ?? "Unknown",
-            coverUrl: imgSrc,
-          };
-
-          setSongUrl({
-            fileUrl: URL.createObjectURL(files[0]),
-            metadata,
-          });
-        } else {
-          setSongUrl({
-            fileUrl: URL.createObjectURL(files[0]),
-            metadata: {
-              title: files[0].name,
-              author: "Unknown",
-              coverUrl: "",
-            },
-          });
+        } finally {
+          setLoading(false);
         }
       }}
       onReject={(files) => {

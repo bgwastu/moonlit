@@ -3,12 +3,11 @@ import { useForm } from "@mantine/form";
 import { notifications } from "@mantine/notifications";
 import { Dispatch, SetStateAction, useRef } from "react";
 import { Song } from "../interfaces";
+import { useAtom } from "jotai";
+import { loadingAtom } from "../state";
 
 interface Props {
   setSong: Dispatch<SetStateAction<Song | null>>;
-  setLoading(status: boolean): void;
-  isLoading: boolean;
-  disabled: boolean;
 }
 
 function isYoutubeURL(url: string) {
@@ -17,7 +16,8 @@ function isYoutubeURL(url: string) {
   return youtubeRegex.test(url);
 }
 
-export default function YoutubeUpload({ setSong, setLoading, isLoading, disabled }: Props) {
+export default function YoutubeUpload({ setSong }: Props) {
+  const [loading, setLoading] = useAtom(loadingAtom);
   const form = useForm({
     initialValues: {
       url: "",
@@ -91,10 +91,10 @@ export default function YoutubeUpload({ setSong, setLoading, isLoading, disabled
           placeholder="YouTube URL"
           size="lg"
           type="url"
-          disabled={isLoading}
+          disabled={loading}
           {...form.getInputProps("url")}
         />
-        <Button size="lg" type="submit" loading={isLoading}>
+        <Button size="lg" type="submit" disabled={loading}>
           Load music from YouTube
         </Button>
       </Flex>
