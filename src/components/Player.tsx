@@ -7,21 +7,17 @@ import { useAtom } from "jotai";
 import { loadingAtom } from "../state";
 
 const defaultValues = {
-  playbackRate: 0.7,
-  reverbWet: 0.4,
+  playbackRate: 0.85,
+  reverbWet: 0.6,
   reverbDecay: 6,
-  reverbPreDelay: 0.01,
+  reverbPreDelay: 0.1,
 };
 
 export const getSongLength = (bufferDuration: number, playbackRate: number) => {
   return bufferDuration / playbackRate;
 };
 
-interface Props {
-  song: Song;
-}
-
-export default function Player({ song }: Props) {
+export default function Player({ song }: { song: Song }) {
   const [currentPlayback, setCurrentPlayback] = useState<number>(0);
   const [_, setLoading] = useAtom(loadingAtom);
 

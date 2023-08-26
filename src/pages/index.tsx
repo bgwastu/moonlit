@@ -16,33 +16,26 @@ import { useEffect, useState } from "react";
 import { Song } from "../interfaces";
 import Player from "../components/Player";
 import { useAtom } from "jotai";
-import { loadingAtom } from "../state";
+import { loadingAtom, songAtom } from "../state";
 
 export default function Index() {
-  const [song, setSong] = useState<Song | null>(null);
-  const [loading, setLoading] = useAtom(loadingAtom);
+  const [song] = useAtom(songAtom);
   const [loading] = useAtom(loadingAtom);
 
   return (
     <>
       <LoadingOverlay visible={loading} />
       {song ? (
-        <Player
-          song={song}
-        />
+        <Player song={song} />
       ) : (
         <Container size="sm" my="md" p="xl">
           <Flex direction="column" gap="xl">
             <Center my={28}>
               <Icon />
             </Center>
-            <YoutubeUpload
-              setSong={setSong}
-            />
+            <YoutubeUpload />
             <Divider label="OR" labelPosition="center" />
-            <LocalUpload
-              setSongUrl={setSong}
-            />
+            <LocalUpload />
           </Flex>
         </Container>
       )}

@@ -1,14 +1,8 @@
-import { Button, Flex, Input, TextInput } from "@mantine/core";
+import { Button, Flex, TextInput } from "@mantine/core";
 import { useForm } from "@mantine/form";
 import { notifications } from "@mantine/notifications";
-import { Dispatch, SetStateAction, useRef } from "react";
-import { Song } from "../interfaces";
 import { useAtom } from "jotai";
-import { loadingAtom } from "../state";
-
-interface Props {
-  setSong: Dispatch<SetStateAction<Song | null>>;
-}
+import { loadingAtom, songAtom } from "../state";
 
 function isYoutubeURL(url: string) {
   const youtubeRegex =
@@ -16,8 +10,9 @@ function isYoutubeURL(url: string) {
   return youtubeRegex.test(url);
 }
 
-export default function YoutubeUpload({ setSong }: Props) {
+export default function YoutubeUpload() {
   const [loading, setLoading] = useAtom(loadingAtom);
+  const [_, setSong] = useAtom(songAtom);
   const form = useForm({
     initialValues: {
       url: "",

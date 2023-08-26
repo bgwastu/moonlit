@@ -3,17 +3,13 @@ import { Dropzone } from "@mantine/dropzone";
 import { notifications } from "@mantine/notifications";
 import parse from "id3-parser";
 import { convertFileToBuffer } from "id3-parser/lib/util";
-import { Dispatch, SetStateAction } from "react";
-import { Song, SongMetadata } from "../interfaces";
 import { useAtom } from "jotai";
-import { loadingAtom } from "../state";
+import { SongMetadata } from "../interfaces";
+import { loadingAtom, songAtom } from "../state";
 
-interface Props {
-  setSongUrl: Dispatch<SetStateAction<Song | null>>;
-}
-
-export default function LocalUpload({ setSongUrl }: Props) {
+export default function LocalUpload() {
   const [loading, setLoading] = useAtom(loadingAtom);
+  const [_, setSong] = useAtom(songAtom);
   return (
     <Dropzone
       accept={["audio/mpeg"]}
@@ -39,12 +35,12 @@ export default function LocalUpload({ setSongUrl }: Props) {
               coverUrl: imgSrc,
             };
 
-            setSongUrl({
+            setSong({
               fileUrl: URL.createObjectURL(files[0]),
               metadata,
             });
           } else {
-            setSongUrl({
+            setSong({
               fileUrl: URL.createObjectURL(files[0]),
               metadata: {
                 title: files[0].name,
