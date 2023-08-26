@@ -1,10 +1,11 @@
 import { AppProps } from 'next/app';
 import Head from 'next/head';
-import { MantineProvider } from '@mantine/core';
+import { MantineProvider, useMantineTheme } from '@mantine/core';
+import { Notifications } from '@mantine/notifications';
 
 export default function App(props: AppProps) {
   const { Component, pageProps } = props;
-
+  const theme = useMantineTheme();
   return (
     <>
       <Head>
@@ -17,10 +18,17 @@ export default function App(props: AppProps) {
         withGlobalStyles
         withNormalizeCSS
         theme={{
+          colors: {
+            brand: theme.colors.violet,
+          },
           colorScheme: 'dark',
+          primaryColor: 'brand',
+          primaryShade: 4
         }}
       >
+        <Notifications autoClose={1500}/>
         <Component {...pageProps} />
+
       </MantineProvider>
     </>
   );

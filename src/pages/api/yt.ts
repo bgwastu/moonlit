@@ -11,10 +11,10 @@ export default async function handler(
   try {
     const info = await ytdl.getInfo(url);
     res.setHeader("x-yt-id", info.videoDetails.videoId);
-    res.setHeader("x-yt-title", encodeURIComponent(info.videoDetails.title));
+    res.setHeader("x-yt-title", encodeURIComponent(info.videoDetails.title.replace(" (Official Music Video)", "")));
     res.setHeader(
       "x-yt-author",
-      encodeURIComponent(info.videoDetails.author.name)
+      encodeURIComponent(info.videoDetails.author.name.replace(" - Topic", ""))
     );
     res.setHeader(
       "x-yt-category",

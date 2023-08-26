@@ -11,6 +11,12 @@ dependencies:
   '@mantine/core':
     specifier: ^6.0.19
     version: 6.0.19(@emotion/react@11.11.1)(@mantine/hooks@6.0.19)(@types/react@18.2.21)(react-dom@18.2.0)(react@18.2.0)
+  '@mantine/dropzone':
+    specifier: ^6.0.19
+    version: 6.0.19(@mantine/core@6.0.19)(@mantine/hooks@6.0.19)(react-dom@18.2.0)(react@18.2.0)
+  '@mantine/form':
+    specifier: ^6.0.19
+    version: 6.0.19(react@18.2.0)
   '@mantine/hooks':
     specifier: ^6.0.19
     version: 6.0.19(react@18.2.0)
@@ -38,6 +44,9 @@ dependencies:
   eslint-config-next:
     specifier: 13.4.19
     version: 13.4.19(eslint@8.47.0)(typescript@5.1.6)
+  id3-parser:
+    specifier: ^3.0.0
+    version: 3.0.0
   next:
     specifier: 13.4.19
     version: 13.4.19(react-dom@18.2.0)(react@18.2.0)
@@ -337,6 +346,32 @@ packages:
     transitivePeerDependencies:
       - '@emotion/react'
       - '@types/react'
+    dev: false
+
+  /@mantine/dropzone@6.0.19(@mantine/core@6.0.19)(@mantine/hooks@6.0.19)(react-dom@18.2.0)(react@18.2.0):
+    resolution: {integrity: sha512-riftzhsXSe84oUHIzMsANtJSIINT08N8ycUuGFxGStf+ytVUZn7TommITnifEEokY6iu4yxjv27FK8maaB1BHA==}
+    peerDependencies:
+      '@mantine/core': 6.0.19
+      '@mantine/hooks': 6.0.19
+      react: '>=16.8.0'
+      react-dom: '>=16.8.0'
+    dependencies:
+      '@mantine/core': 6.0.19(@emotion/react@11.11.1)(@mantine/hooks@6.0.19)(@types/react@18.2.21)(react-dom@18.2.0)(react@18.2.0)
+      '@mantine/hooks': 6.0.19(react@18.2.0)
+      '@mantine/utils': 6.0.19(react@18.2.0)
+      react: 18.2.0
+      react-dom: 18.2.0(react@18.2.0)
+      react-dropzone: 14.2.3(react@18.2.0)
+    dev: false
+
+  /@mantine/form@6.0.19(react@18.2.0):
+    resolution: {integrity: sha512-5SFLZEzaBH7yKIDSDt1r9UiN4y7RkFvu+7J7CFPIQM+nTdXeGnugVFM8rASuZI7/FSYty/XoPY+Yymq3xDX+MQ==}
+    peerDependencies:
+      react: '>=16.8.0'
+    dependencies:
+      fast-deep-equal: 3.1.3
+      klona: 2.0.6
+      react: 18.2.0
     dev: false
 
   /@mantine/hooks@6.0.19(react@18.2.0):
@@ -892,6 +927,11 @@ packages:
     resolution: {integrity: sha512-wwHYEIS0Q80f5mosx3L/dfG5t5rjEa9Ft51GTaNt862EnpyGHpgz2RkZvLPp1oF5TnAiTohkEKVEu8pQPJI7Vg==}
     dependencies:
       has-symbols: 1.0.3
+    dev: false
+
+  /attr-accept@2.2.2:
+    resolution: {integrity: sha512-7prDjvt9HmqiZ0cl5CRjtS84sEyhsHP2coDkaZKRKVfCDo9s7iw7ChVmar78Gu9pC4SoR/28wFu/G5JJhTnqEg==}
+    engines: {node: '>=4'}
     dev: false
 
   /automation-events@6.0.9:
@@ -1639,6 +1679,13 @@ packages:
       flat-cache: 3.0.4
     dev: false
 
+  /file-selector@0.6.0:
+    resolution: {integrity: sha512-QlZ5yJC0VxHxQQsQhXvBaC7VRJ2uaxTf+Tfpu4Z/OcVQJVpZO+DGU0rkoVW5ce2SccxugvpBJoMvUs59iILYdw==}
+    engines: {node: '>= 12'}
+    dependencies:
+      tslib: 2.6.2
+    dev: false
+
   /fill-range@7.0.1:
     resolution: {integrity: sha512-qOo9F+dMUmC2Lcb4BbVvnKJxTPjCm+RRpe4gDuGrzkL7mEVl/djYSu2OdQ2Pa302N4oqkSg9ir6jaLWJ2USVpQ==}
     engines: {node: '>=8'}
@@ -1897,6 +1944,11 @@ packages:
       domhandler: 4.3.1
       domutils: 2.8.0
       entities: 3.0.1
+    dev: false
+
+  /id3-parser@3.0.0:
+    resolution: {integrity: sha512-ubxxh6inGy2VM4N3L1F8uFQXKgKoFgFuT3BSEg7e+5bbSu7pw91tQqxVhUdJVg3jbzZYZJFaej29o8shfJ/GGg==}
+    engines: {node: '>=16'}
     dev: false
 
   /ignore@5.2.4:
@@ -2169,6 +2221,11 @@ packages:
       array.prototype.flat: 1.3.1
       object.assign: 4.1.4
       object.values: 1.1.6
+    dev: false
+
+  /klona@2.0.6:
+    resolution: {integrity: sha512-dhG34DXATL5hSxJbIexCft8FChFXtmskoZYnoPWjXQuebWYCNkVeV3KkGegCK9CP1oswI/vQibS2GY7Em/sJJA==}
+    engines: {node: '>= 8'}
     dev: false
 
   /language-subtag-registry@0.3.22:
@@ -2537,6 +2594,18 @@ packages:
       loose-envify: 1.4.0
       react: 18.2.0
       scheduler: 0.23.0
+    dev: false
+
+  /react-dropzone@14.2.3(react@18.2.0):
+    resolution: {integrity: sha512-O3om8I+PkFKbxCukfIR3QAGftYXDZfOE2N1mr/7qebQJHs7U+/RSL/9xomJNpRg9kM5h9soQSdf0Gc7OHF5Fug==}
+    engines: {node: '>= 10.13'}
+    peerDependencies:
+      react: '>= 16.8 || 18.0.0'
+    dependencies:
+      attr-accept: 2.2.2
+      file-selector: 0.6.0
+      prop-types: 15.8.1
+      react: 18.2.0
     dev: false
 
   /react-is@16.13.1:
