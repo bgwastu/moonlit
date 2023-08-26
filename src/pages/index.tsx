@@ -43,9 +43,9 @@ export default function Index() {
           setLoading={(status) => setLoading({ from: "song-init", status })}
         />
       ) : (
-        <Container size="sm" py="md" mt={50}>
+        <Container size="sm" my="md" p="xl">
           <Flex direction="column" gap="xl">
-            <Center>
+            <Center my={28}>
               <Icon />
             </Center>
             <YoutubeUpload
