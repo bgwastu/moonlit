@@ -8,3 +8,10 @@ export interface Song {
   fileUrl: string;
   metadata: SongMetadata;
 }
+
+export interface PlaybackSettings {
+  playbackRate: number;
+  reverbWet: number;
+  reverbDecay: number;
+  reverbPreDelay: number;
+}

@@ -4,7 +4,7 @@ import { useAtom } from "jotai";
 import { useEffect, useMemo, useState } from "react";
 import { useInterval } from "../hooks/setInterval";
 import { Song } from "../interfaces";
-import { loadingAtom } from "../state";
+import { loadingAtom, playbackSettingsAtom, playerAtom } from "../state";
 
 const defaultValues = {
   playbackRate: 0.85,
@@ -19,7 +19,9 @@ export const getSongLength = (bufferDuration: number, playbackRate: number) => {
 
 export default function Player({ song }: { song: Song }) {
   const [currentPlayback, setCurrentPlayback] = useState<number>(0);
+  const [playbackSettings, setPlaybackSettings] = useAtom(playbackSettingsAtom);
   const [_, setLoading] = useAtom(loadingAtom);
+  const [player] = useAtom(playerAtom);
 
   const { clear: clearInterval, start: startInterval } = useInterval(
     () => {
@@ -29,13 +31,6 @@ export default function Player({ song }: { song: Song }) {
     false
   );
 
-  useEffect(() => {
-    init(song.fileUrl);
-  }, [])
-
-  const reverb = useMemo(() => new Tone.Reverb(), []);
-  const player = useMemo(() => new Tone.Player(), []);
-
   function togglePlayer() {
     if (player.state === "started") {
       clearInterval();
@@ -44,22 +39,6 @@ export default function Player({ song }: { song: Song }) {
       startInterval();
       player.start(0, currentPlayback * defaultValues.playbackRate);
     }
-  }
-
-  async function init(trackUrl: string) {
-    setLoading(true);
-    const p1 = reverb.generate();
-    const p2 = player.load(trackUrl);
-    await Promise.all([p1, p2]);
-
-    player.playbackRate = defaultValues.playbackRate;
-    reverb.wet.value = defaultValues.reverbWet;
-    reverb.decay = defaultValues.reverbDecay;
-
-    reverb.toDestination();
-    player.connect(reverb);
-
-    setLoading(false);
   }
 
   function setPlaybackPosition(value: number) {
@@ -83,6 +62,22 @@ export default function Player({ song }: { song: Song }) {
         max={getSongLength(player.buffer.duration, defaultValues.playbackRate)}
         value={currentPlayback}
         onChange={(e) => setPlaybackPosition(Number(e.target.value))}
+      />
+      <input
+        id="playbackSpeed"
+        data-testid="playbackSpeed"
+        type="range"
+        min="0.6"
+        max="1"
+        step="0.05"
+        value={playbackSettings.playbackRate}
+        onChange={(e) => {
+          console.log(playbackSettings);
+          setPlaybackSettings({
+            ...playbackSettings,
+            playbackRate: Number(e.target.value),
+          });
+        }}
       />
       <button onClick={() => togglePlayer()}>play/pause</button>
     </div>

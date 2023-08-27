@@ -24,6 +24,7 @@
     "eslint-config-next": "13.4.19",
     "id3-parser": "^3.0.0",
     "jotai": "^2.4.0",
+    "jotai-devtools": "^0.6.2",
     "next": "13.4.19",
     "postcss": "8.4.28",
     "react": "18.2.0",
