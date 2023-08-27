@@ -1,23 +1,26 @@
-import Icon from "@/src/components/Icon";
-import LocalUpload from "@/src/components/LocalUpload";
-import YoutubeUpload from "@/src/components/YoutubeUpload";
+"use client";
+
+import Icon from "@/app/components/Icon";
+import LocalUpload from "@/app/components/LocalUpload";
+import YoutubeUpload from "@/app/components/YoutubeUpload";
 import {
   Center,
   Container,
   Divider,
   Flex,
-  LoadingOverlay
+  LoadingOverlay,
 } from "@mantine/core";
 import { useAtom } from "jotai";
-import Player from "../components/Player";
-import { loadingAtom, songAtom } from "../state";
+import Player from "./components/Player";
+import { loadingAtom, songAtom } from "./state";
+import MainProvider from "./components/Provider";
 
 export default function Index() {
   const [song] = useAtom(songAtom);
   const [loading] = useAtom(loadingAtom);
 
   return (
-    <>
+    <MainProvider>
       <LoadingOverlay visible={loading} />
       {song ? (
         <Player song={song} />
@@ -33,6 +36,6 @@ export default function Index() {
           </Flex>
         </Container>
       )}
-    </>
+    </MainProvider>
   );
 }
