@@ -56,7 +56,7 @@ currentPlaybackAtom.debugLabel = "currentPlaybackAtom";
 type PlaybackMode = "slowed" | "normal" | "speedup" | "custom";
 export const playbackModeAtom = atom(
   "slowed",
-  (get, set, playbackMode: PlaybackMode) => {
+  async (get, set, playbackMode: PlaybackMode) => {
     let playbackSettings: PlaybackSettings | null = null;
     if (playbackMode === "normal") {
       playbackSettings = {
@@ -83,35 +83,45 @@ export const playbackModeAtom = atom(
       playbackSettings = get(customPlaybackSettingsAtom);
     }
 
-    const newSongLength = getSongLength(
-      get(playerAtom).buffer.duration,
-      playbackSettings.playbackRate
-    );
-
-    const previousSongLength = getSongLength(
-      get(playerAtom).buffer.duration,
-      get(playerAtom).playbackRate
-    );
-
-    set(
-      currentPlaybackAtom,
-      (newSongLength * get(currentPlaybackAtom)) / previousSongLength
-    );
-
-    // action
-    const reverb = get(reverbAtom);
+    // make the playback speed change smoothly from player.playbackRate to playbackSettings.playbackRate
+    let currPlaybackRate = get(playerAtom).playbackRate;
     const player = get(playerAtom);
-    player.playbackRate = playbackSettings.playbackRate;
+    while (Math.abs(currPlaybackRate - playbackSettings.playbackRate) > 0.01) {
+      player.playbackRate = currPlaybackRate;
+
+      const previousSongLength = getSongLength(
+        get(playerAtom).buffer.duration,
+        currPlaybackRate
+      );
+
+      if (playbackSettings.playbackRate > currPlaybackRate)
+        currPlaybackRate += 0.01;
+      else currPlaybackRate -= 0.01;
+
+      const newSongLength = getSongLength(
+        get(playerAtom).buffer.duration,
+        currPlaybackRate
+      );
+
+      set(
+        currentPlaybackAtom,
+        (newSongLength * get(currentPlaybackAtom)) / previousSongLength
+      );
+
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+
+    // reverb settings
+    const reverb = get(reverbAtom);
     reverb.wet.value = playbackSettings.reverbWet;
     reverb.decay = playbackSettings.reverbDecay;
     reverb.preDelay = playbackSettings.reverbPreDelay;
 
-
     // finally, set the value
-    set(playbackModeAtom, playbackMode)
+    set(playbackModeAtom, playbackMode);
   }
 );
-playbackModeAtom.debugLabel = "playbackModeAtom"
+playbackModeAtom.debugLabel = "playbackModeAtom";
 
 const customPlaybackSettingsTemp = atom(
   JSON.parse(
