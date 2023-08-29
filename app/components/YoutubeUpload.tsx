@@ -49,9 +49,9 @@ export default function YoutubeUpload() {
         setSong({
           fileUrl: URL.createObjectURL(blob),
           metadata: {
-            title: decodeURI(res.headers.get("x-yt-title") ?? ""),
-            author: decodeURI(res.headers.get("x-yt-author") ?? ""),
-            coverUrl: decodeURI(res.headers.get("x-yt-thumb") ?? ""),
+            title: res.headers.get("x-yt-title") ?? "Unknown",
+            author: res.headers.get("x-yt-author") ?? "Unknown",
+            coverUrl: res.headers.get("x-yt-thumb") ?? "",
           },
         });
       })

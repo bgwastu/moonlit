@@ -10,17 +10,19 @@ export default async function handler(
   if (typeof url !== "string") return res.status(400).end();
   try {
     const info = await ytdl.getInfo(url);
-    console.log(info)
+    console.log(info);
     res.setHeader("x-yt-id", info.videoDetails.videoId);
-    res.setHeader("x-yt-title", encodeURIComponent(info.videoDetails.title.replace(" (Official Music Video)", "").replace(" [Official Music Video]", "")));
+    res.setHeader(
+      "x-yt-title",
+      info.videoDetails.title
+        .replace(" (Official Music Video)", "")
+        .replace(" [Official Music Video]", "")
+    );
     res.setHeader(
       "x-yt-author",
-      encodeURIComponent(info.videoDetails.author.name.replace(" - Topic", ""))
+      info.videoDetails.author.name.replace(" - Topic", "")
     );
-    res.setHeader(
-      "x-yt-category",
-      encodeURIComponent(info.videoDetails.category)
-    );
+    res.setHeader("x-yt-category", info.videoDetails.category);
     res.setHeader("x-yt-thumb", info.videoDetails.thumbnails[0]?.url || "");
     res.setHeader("content-type", "audio/mpeg");
     const stream = ytdl.downloadFromInfo(info, {
@@ -44,4 +46,4 @@ export const config = {
   api: {
     responseLimit: false,
   },
-}
+};
