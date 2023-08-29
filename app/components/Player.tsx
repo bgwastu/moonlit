@@ -13,7 +13,7 @@ import {
   Title,
   useMantineTheme,
 } from "@mantine/core";
-import { useDisclosure } from "@mantine/hooks";
+import { useDisclosure, useIdle } from "@mantine/hooks";
 import { useAtom } from "jotai";
 import { useEffect, useState } from "react";
 import { useInterval } from "../hooks/useInterval";
@@ -59,6 +59,7 @@ export default function Player({ song }: { song: Song }) {
   );
   const [modalOpened, { open: openModal, close: closeModal }] =
     useDisclosure(false);
+  const isIdle = useIdle(3000);
 
   // playing onmount
   useEffect(() => {
@@ -146,7 +147,7 @@ export default function Player({ song }: { song: Song }) {
             max={1}
             thumbSize={20}
             step={0.05}
-            marks= {[
+            marks={[
               { value: 0, label: "None" },
               { value: 0.4, label: "Sweet" },
               { value: 1, label: "Full" },
@@ -164,6 +165,8 @@ export default function Player({ song }: { song: Song }) {
       <Box>
         <Box style={{ position: "relative" }}>
           <Flex
+            opacity={isIdle ? 0.3 : 1}
+
             style={{
               position: "absolute",
               top: 18,
@@ -215,6 +218,8 @@ export default function Player({ song }: { song: Song }) {
             )}
           </Flex>
           <Box
+            opacity={isIdle ? 0.3 : 1}
+
             style={{
               position: "absolute",
               bottom: 0,
