@@ -31,6 +31,7 @@
     "react-dom": "18.2.0",
     "tone": "^14.7.77",
     "typescript": "5.1.6",
+    "worker-timers": "^7.0.75",
     "ytdl-core": "^4.11.5"
   }
 }

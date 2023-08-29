@@ -1,6 +1,5 @@
 import { MantineProvider, useMantineTheme } from "@mantine/core";
 import { Notifications } from "@mantine/notifications";
-import { DevTools } from "jotai-devtools";
 
 export default function MainProvider({
   children,
@@ -10,7 +9,7 @@ export default function MainProvider({
   const theme = useMantineTheme();
   return (
     <>
-      <DevTools />
+      {/* <DevTools /> */}
       <MantineProvider
         withGlobalStyles
         withNormalizeCSS
@@ -20,7 +19,7 @@ export default function MainProvider({
           },
           colorScheme: "dark",
           primaryColor: "brand",
-          primaryShade: 4,
+          primaryShade: 3,
         }}
       >
         <Notifications autoClose={1500} />
