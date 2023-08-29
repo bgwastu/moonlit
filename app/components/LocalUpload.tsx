@@ -60,7 +60,6 @@ export default function LocalUpload() {
             message: e.message,
           });
         });
-        console.log();
       }}
     >
       <Group

@@ -80,7 +80,6 @@ export const playbackModeAtom = atom(
         reverbPreDelay: 0.1,
       };
     } else {
-      console.log(localStorage.getItem("custom-playback-settings"));
       playbackSettings = get(customPlaybackSettingsAtom);
     }
 

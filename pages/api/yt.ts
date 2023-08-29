@@ -10,7 +10,6 @@ export default async function handler(
   if (typeof url !== "string") return res.status(400).end();
   try {
     const info = await ytdl.getInfo(url);
-    console.log(info);
     res.setHeader("x-yt-id", info.videoDetails.videoId);
     res.setHeader(
       "x-yt-title",
