@@ -132,9 +132,32 @@ const customPlaybackSettingsTemp = atom(
 
 export const customPlaybackSettingsAtom = atom(
   (get) => get(customPlaybackSettingsTemp),
-  async (_, set, playbackSettings: PlaybackSettings) => {
+  async (get, set, playbackSettings: PlaybackSettings) => {
     set(customPlaybackSettingsTemp, playbackSettings);
-    set(playbackModeAtom, "custom");
+
+    const newSongLength = getSongLength(
+      get(playerAtom).buffer.duration,
+      playbackSettings.playbackRate
+    );
+
+    const previousSongLength = getSongLength(
+      get(playerAtom).buffer.duration,
+      get(playerAtom).playbackRate
+    );
+
+    set(
+      currentPlaybackAtom,
+      (newSongLength * get(currentPlaybackAtom)) / previousSongLength
+    );
+
+    // action
+    const reverb = get(reverbAtom);
+    const player = get(playerAtom);
+    player.playbackRate = playbackSettings.playbackRate;
+    reverb.wet.value = playbackSettings.reverbWet;
+    reverb.decay = playbackSettings.reverbDecay;
+    reverb.preDelay = playbackSettings.reverbPreDelay;
+
     localStorage.setItem(
       "custom-playback-settings",
       JSON.stringify(playbackSettings)
