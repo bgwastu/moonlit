@@ -4,6 +4,7 @@ import {
   Button,
   Center,
   Flex,
+  Header,
   Image,
   MediaQuery,
   Modal,
@@ -11,6 +12,7 @@ import {
   Slider,
   Text,
   Title,
+  rem,
   useMantineTheme,
 } from "@mantine/core";
 import { useDisclosure, useIdle } from "@mantine/hooks";
@@ -21,10 +23,12 @@ import { Song } from "../interfaces";
 import {
   currentPlaybackAtom,
   customPlaybackSettingsAtom,
+  isDockedAtom,
   playbackModeAtom,
   playerAtom,
   reverbAtom,
 } from "../state";
+import Icon from "./Icon";
 
 const getSongLength = (bufferDuration: number, playbackRate: number) => {
   return bufferDuration / playbackRate;
@@ -47,6 +51,7 @@ export default function Player({ song }: { song: Song }) {
   const [state, setState] = useState<State>("stop");
   const [player] = useAtom(playerAtom);
   const [reverb] = useAtom(reverbAtom);
+  const [isDocked, setIsDocked] = useAtom(isDockedAtom);
   const [playbackMode, setPlaybackMode] = useAtom(playbackModeAtom);
   const [customPlaybackSettings, setCustomPlaybackSettings] = useAtom(
     customPlaybackSettingsAtom
@@ -59,7 +64,7 @@ export default function Player({ song }: { song: Song }) {
   );
   const [modalOpened, { open: openModal, close: closeModal }] =
     useDisclosure(false);
-  const isIdle = useIdle(3000);
+  const isIdle = useIdle(99999999999999999);
 
   // playing onmount
   useEffect(() => {
@@ -166,8 +171,8 @@ export default function Player({ song }: { song: Song }) {
         <Box style={{ position: "relative" }}>
           <Flex
             opacity={isIdle ? 0.3 : 1}
-
             style={{
+              display: isDocked ? "none" : "flex",
               position: "absolute",
               top: 18,
               left: 0,
@@ -219,7 +224,6 @@ export default function Player({ song }: { song: Song }) {
           </Flex>
           <Box
             opacity={isIdle ? 0.3 : 1}
-
             style={{
               position: "absolute",
               bottom: 0,
@@ -261,18 +265,18 @@ export default function Player({ song }: { song: Song }) {
               max={songLength}
             />
             <Box bg={theme.colors.dark[6]}>
-              <Flex gap="xl" px="md" py="xs" justify="space-between">
+              <Flex gap="sm" px="md" py="md" justify="space-between">
                 <Flex align="center">
                   <ActionIcon
-                    size="xl"
+                    size="lg"
                     onClick={() => setPlaybackPosition(currentPlayback - 5)}
                     title="Backward 5 sec"
                   >
                     <svg
                       xmlns="http://www.w3.org/2000/svg"
                       viewBox="0 0 24 24"
-                      width="28"
-                      height="28"
+                      width="24"
+                      height="24"
                     >
                       <g
                         fill="none"
@@ -336,15 +340,15 @@ export default function Player({ song }: { song: Song }) {
                     </svg>
                   </ActionIcon>
                   <ActionIcon
-                    size="xl"
+                    size="lg"
                     onClick={() => setPlaybackPosition(currentPlayback + 5)}
                     title="Forward 5 sec"
                   >
                     <svg
                       xmlns="http://www.w3.org/2000/svg"
                       viewBox="0 0 24 24"
-                      width="28"
-                      height="28"
+                      width="24"
+                      height="24"
                     >
                       <g
                         fill="none"
@@ -413,27 +417,46 @@ export default function Player({ song }: { song: Song }) {
                     </Text>
                   </Flex>
                 </Flex>
+                <ActionIcon
+                  size="xl"
+                  title="Minimize Player"
+                  onClick={() => setIsDocked((s) => !s)}
+                >
+                  {isDocked ? (
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      width="1.6em"
+                      height="1.6em"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        fill="currentColor"
+                        d="M8 11.5h8l-4-4l-4 4ZM5 21q-.825 0-1.413-.588T3 19V5q0-.825.588-1.413T5 3h14q.825 0 1.413.588T21 5v14q0 .825-.588 1.413T19 21H5Zm0-7h14V5H5v9Z"
+                      ></path>
+                    </svg>
+                  ) : (
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      width="1.6em"
+                      height="1.6em"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        fill="currentColor"
+                        d="m12 11.5l4-4H8l4 4ZM19 3q.825 0 1.413.588T21 5v14q0 .825-.588 1.413T19 21H5q-.825 0-1.413-.588T3 19V5q0-.825.588-1.413T5 3h14Zm0 11V5H5v9h14Z"
+                      ></path>
+                    </svg>
+                  )}
+                </ActionIcon>
               </Flex>
-              {/* <input
-                id="playbackSpeed"
-                data-testid="playbackSpeed"
-                type="range"
-                min="0.6"
-                max="1.2"
-                step="0.05"
-                value={player.playbackRate}
-                onChange={(e) => {
-                  onPlaybackRateChange(Number(e.target.value));
-                  setPlaybackSettings({
-                    ...playbackSettings,
-                    playbackRate: Number(e.target.value),
-                  });
-                }}
-              /> */}
             </Box>
           </Box>
           <Box h="100vh">
             <Image
+              bg={theme.black}
+              style={{
+                display: 'none',
+              }}
               src="https://i.pinimg.com/originals/cc/7f/b2/cc7fb24def262e8507922f8e522caf09.gif"
               alt=""
               // temp

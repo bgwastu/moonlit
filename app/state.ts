@@ -3,6 +3,10 @@ import { Player, Reverb } from "tone";
 import { PlaybackSettings, Song } from "./interfaces";
 import { getSongLength } from "./utils";
 
+
+
+export const isDockedAtom = atom(false);
+
 export const songAtom = atom(null, async (get, set, song?: Song) => {
   if (!song) return;
   const player = get(playerAtom);

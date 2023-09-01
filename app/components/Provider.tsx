@@ -10,7 +10,7 @@ export default function MainProvider({
   const theme = useMantineTheme();
   return (
     <>
-      <DevTools />
+      {/* <DevTools /> */}
       <MantineProvider
         withGlobalStyles
         withNormalizeCSS
