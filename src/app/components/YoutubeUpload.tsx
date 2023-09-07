@@ -56,7 +56,7 @@ export default function YoutubeUpload() {
           title: "Download error",
           message: "Error when fetching data from YouTube",
         });
-      });
+      }).finally(() => setLoading(false));
   }
 
   return (
