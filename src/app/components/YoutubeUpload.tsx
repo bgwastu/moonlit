@@ -3,12 +3,7 @@ import { useForm } from "@mantine/form";
 import { notifications } from "@mantine/notifications";
 import { useAtom } from "jotai";
 import { loadingAtom, songAtom } from "../state";
-
-function isYoutubeURL(url: string) {
-  const youtubeRegex =
-    /^(https?:\/\/)?(www\.)?(youtube\.com\/watch\?v=|music\.youtube\.com\/watch\?v=|youtu\.be\/)([a-zA-Z0-9_-]{11})/;
-  return youtubeRegex.test(url);
-}
+import validateUrl from 'ytdl-core';
 
 export default function YoutubeUpload() {
   const [loading, setLoading] = useAtom(loadingAtom);
@@ -19,7 +14,7 @@ export default function YoutubeUpload() {
     },
     validate: {
       url: (value) =>
-        !isYoutubeURL(value) ? "Must be YouTube or YouTube Music URL" : null,
+        !validateUrl(value) ? "Must be YouTube or YouTube Music URL" : null,
     },
   });
 

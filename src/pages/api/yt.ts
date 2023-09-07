@@ -5,11 +5,19 @@ export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse
 ) {
-  if (req.method !== "POST") return res.status(405).end();
+  if (req.method !== "POST") return res.status(405).json({
+    message: "Method not allowed.",
+  });
   const { url } = req.body;
   if (typeof url !== "string") return res.status(400).json({
     message: "The url must be a string.",
   });
+
+  if (!ytdl.validateURL(url)) {
+    return res.status(400).json({
+      message: "The url must be a valid youtube url.",
+    });
+  }
 
   try {
     const info = await ytdl.getInfo(url);
