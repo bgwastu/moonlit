@@ -1,3 +1,4 @@
+import { isYoutubeURL } from "@/src/utils";
 import { NextApiRequest, NextApiResponse } from "next";
 import ytdl from "ytdl-core";
 
@@ -13,7 +14,7 @@ export default async function handler(
     message: "The url must be a string.",
   });
 
-  if (!ytdl.validateURL(url)) {
+  if (!isYoutubeURL(url)) {
     return res.status(400).json({
       message: "The url must be a valid youtube url.",
     });
