@@ -1,8 +1,8 @@
 "use client";
 
-import Icon from "@/app/components/Icon";
-import LocalUpload from "@/app/components/LocalUpload";
-import YoutubeUpload from "@/app/components/YoutubeUpload";
+import Icon from "@/src/app/components/Icon";
+import LocalUpload from "@/src/app/components/LocalUpload";
+import YoutubeUpload from "@/src/app/components/YoutubeUpload";
 import {
   Box,
   Center,

@@ -19,7 +19,7 @@ import { useDisclosure, useIdle } from "@mantine/hooks";
 import { useAtom } from "jotai";
 import { useEffect, useState } from "react";
 import { useInterval } from "../hooks/useInterval";
-import { Song } from "../interfaces";
+import { Song } from "../../interfaces";
 import {
   currentPlaybackAtom,
   customPlaybackSettingsAtom,

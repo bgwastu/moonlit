@@ -5,17 +5,22 @@ export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse
 ) {
-  if (req.method !== "POST") return res.status(400).end();
+  if (req.method !== "POST") return res.status(405).end();
   const { url } = req.body;
-  if (typeof url !== "string") return res.status(400).end();
+  if (typeof url !== "string") return res.status(400).json({
+    message: "The url must be a string.",
+  });
+
   try {
     const info = await ytdl.getInfo(url);
     res.setHeader("x-yt-id", info.videoDetails.videoId);
     res.setHeader(
       "x-yt-title",
-      info.videoDetails.title
-        .replace(" (Official Music Video)", "")
-        .replace(" [Official Music Video]", "")
+      encodeURI(
+        info.videoDetails.title
+          .replace(" (Official Music Video)", "")
+          .replace(" [Official Music Video]", "")
+      )
     );
     res.setHeader(
       "x-yt-author",
@@ -31,13 +36,18 @@ export default async function handler(
       res.end();
     });
     stream.on("error", (err) => {
-      console.log("err: ", err);
-      res.status(500).end();
+      console.error(err);
+      res.status(500).json({
+        message: "There was an error when trying to stream the music.",
+      });
     });
+
     stream.pipe(res);
   } catch (err) {
-    console.log("err: ", err);
-    res.status(500).end();
+    console.error(err);
+    res.status(500).json({
+      message: "There was an error when trying to get the music.",
+    });
   }
 }
 

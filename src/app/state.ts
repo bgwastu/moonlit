@@ -1,8 +1,7 @@
 import { atom } from "jotai";
 import { Player, Reverb } from "tone";
-import { PlaybackSettings, Song } from "./interfaces";
-import { getSongLength } from "./utils";
-
+import { PlaybackSettings, Song } from "../interfaces";
+import { getSongLength } from "../utils";
 
 
 export const isDockedAtom = atom(false);

@@ -4,7 +4,7 @@ import { notifications } from "@mantine/notifications";
 import parse from "id3-parser";
 import { convertFileToBuffer } from "id3-parser/lib/util";
 import { useAtom } from "jotai";
-import { SongMetadata } from "../interfaces";
+import { SongMetadata } from "../../interfaces";
 import { loadingAtom, songAtom } from "../state";
 
 export default function LocalUpload() {
