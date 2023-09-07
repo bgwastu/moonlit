@@ -32,6 +32,6 @@
     "tone": "^14.7.77",
     "typescript": "5.1.6",
     "worker-timers": "^7.0.75",
-    "ytdl-core": "^4.11.5"
+    "ytdl-core": "git+ssh://git@github.com:khlevon/node-ytdl-core.git#v4.11.4-patch.2"
   }
 }
