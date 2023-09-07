@@ -4,6 +4,7 @@ import { notifications } from "@mantine/notifications";
 import { useAtom } from "jotai";
 import { loadingAtom, songAtom } from "../state";
 import validateUrl from 'ytdl-core';
+import { isYoutubeURL } from "@/src/utils";
 
 export default function YoutubeUpload() {
   const [loading, setLoading] = useAtom(loadingAtom);
@@ -14,7 +15,7 @@ export default function YoutubeUpload() {
     },
     validate: {
       url: (value) =>
-        !validateUrl(value) ? "Must be YouTube or YouTube Music URL" : null,
+        !isYoutubeURL(value) ? "Must be YouTube or YouTube Music URL" : null,
     },
   });
 
@@ -44,7 +45,7 @@ export default function YoutubeUpload() {
         setSong({
           fileUrl: URL.createObjectURL(blob),
           metadata: {
-            title: res.headers.get("x-yt-title") ?? "Unknown",
+            title: decodeURI(res.headers.get("x-yt-title") ?? "Unknown"),
             author: res.headers.get("x-yt-author") ?? "Unknown",
             coverUrl: res.headers.get("x-yt-thumb") ?? "",
           },
