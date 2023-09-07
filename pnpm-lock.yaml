@@ -75,8 +75,8 @@ dependencies:
     specifier: ^7.0.75
     version: 7.0.75
   ytdl-core:
-    specifier: ^4.11.5
-    version: 4.11.5
+    specifier: git+ssh://git@github.com:khlevon/node-ytdl-core.git#v4.11.4-patch.2
+    version: github.com/khlevon/node-ytdl-core/87450450caabb91f81afa6e66758bf2f629664a1
 
 packages:
 
@@ -3546,15 +3546,17 @@ packages:
     engines: {node: '>=10'}
     dev: false
 
-  /ytdl-core@4.11.5:
-    resolution: {integrity: sha512-27LwsW4n4nyNviRCO1hmr8Wr5J1wLLMawHCQvH8Fk0hiRqrxuIu028WzbJetiYH28K8XDbeinYW4/wcHQD1EXA==}
+  /zod@3.21.4:
+    resolution: {integrity: sha512-m46AKbrzKVzOzs/DZgVnG5H55N1sv1M8qZU3A8RIKbs3mrACDNeIOeilDymVb2HdmP8uwshOCF4uJ8uM9rCqJw==}
+    dev: false
+
+  github.com/khlevon/node-ytdl-core/87450450caabb91f81afa6e66758bf2f629664a1:
+    resolution: {tarball: https://codeload.github.com/khlevon/node-ytdl-core/tar.gz/87450450caabb91f81afa6e66758bf2f629664a1}
+    name: ytdl-core
+    version: 0.0.0-development
     engines: {node: '>=12'}
     dependencies:
       m3u8stream: 0.8.6
       miniget: 4.2.3
       sax: 1.2.4
-    dev: false
-
-  /zod@3.21.4:
-    resolution: {integrity: sha512-m46AKbrzKVzOzs/DZgVnG5H55N1sv1M8qZU3A8RIKbs3mrACDNeIOeilDymVb2HdmP8uwshOCF4uJ8uM9rCqJw==}
     dev: false
