@@ -11,9 +11,17 @@
   },
   "dependencies": {
     "@mantine/core": "7.0.0-beta.2",
+    "@mantine/dropzone": "7.0.0-beta.4",
+    "@mantine/form": "7.0.0-beta.4",
     "@mantine/hooks": "7.0.0-beta.2",
+    "@mantine/notifications": "7.0.0-beta.4",
+    "@tabler/icons-react": "^2.34.0",
+    "id3-parser": "^3.0.0",
+    "jotai": "^2.4.2",
     "react": "^18.2.0",
-    "react-dom": "^18.2.0"
+    "react-dom": "^18.2.0",
+    "react-router-dom": "^6.15.0",
+    "tone": "^14.7.77"
   },
   "devDependencies": {
     "@types/react": "^18.2.21",
