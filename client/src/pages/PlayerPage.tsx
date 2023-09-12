@@ -33,6 +33,7 @@ import {
   IconRewindBackward5,
   IconRewindForward5,
   IconRotate,
+  IconX,
 } from "@tabler/icons-react";
 
 const getSongLength = (bufferDuration: number, playbackRate: number) => {
@@ -53,7 +54,7 @@ function getFormattedTime(seconds: number) {
 
 export default function PlayerPage() {
   const navigate = useNavigate();
-  const [song] = useAtom(songAtom);
+  const [song, setSong] = useAtom(songAtom);
   const [currentPlayback, setCurrentPlayback] = useAtom(currentPlaybackAtom);
   const [state, setState] = useState<State>("stop");
   const [player] = useAtom(playerAtom);
@@ -69,6 +70,15 @@ export default function PlayerPage() {
   );
   const [modalOpened, { open: openModal, close: closeModal }] =
     useDisclosure(false);
+
+
+  function dispose() {
+    setState("stop");
+    setCurrentPlayback(0);
+    stopInterval();
+    player.stop();
+    setSong(null);
+  }
 
   useShallowEffect(() => {
     if (!song) {
@@ -196,37 +206,81 @@ export default function PlayerPage() {
                   right: 0,
                   zIndex: 1,
                 }}
-                justify="center"
-                align="center"
-                direction="column"
+                justify="space-between"
                 gap="sm"
+                px="lg"
               >
-                <SegmentedControl
-                  bg={theme.colors.dark[6]}
-                  color="brand"
-                  radius="xl"
-                  onChange={setPlaybackMode}
-                  defaultValue={playbackMode}
-                  data={[
-                    { label: "Slowed", value: "slowed" },
-                    { label: "Normal", value: "normal" },
-                    { label: "Speed Up", value: "speedup" },
-                    {
-                      label: (
-                        <Center>
-                          <IconAdjustments size={18} />
-                          <Box ml={10}>Custom</Box>
-                        </Center>
-                      ),
-                      value: "custom",
-                    },
-                  ]}
-                />
-                {playbackMode === "custom" && (
-                  <Button radius="xl" variant="default" onClick={openModal}>
-                    Customize Playback
+                <Flex
+                  style={{ flex: 1 }}
+                  justify="center"
+                  align="center"
+                  direction="column"
+                  gap="sm"
+                >
+                  <SegmentedControl
+                    bg={theme.colors.dark[6]}
+                    color="brand"
+                    radius="xl"
+                    onChange={setPlaybackMode}
+                    defaultValue={playbackMode}
+                    data={[
+                      { label: "Slowed", value: "slowed" },
+                      { label: "Normal", value: "normal" },
+                      { label: "Speed Up", value: "speedup" },
+                      {
+                        label: (
+                          <Center>
+                            <IconAdjustments size={18} />
+                            <Box ml={10}>Custom</Box>
+                          </Center>
+                        ),
+                        value: "custom",
+                      },
+                    ]}
+                  />
+                  {playbackMode === "custom" && (
+                    <Button radius="xl" variant="default" onClick={openModal}>
+                      Customize Playback
+                    </Button>
+                  )}
+                </Flex>
+                {/* Close Player */}
+                <MediaQuery smallerThan="sm" styles={{ display: "none" }}>
+                  <Button
+                    mt={4}
+                    size="sm"
+                    variant="default"
+                    onClick={() => {
+                      const confirm = window.confirm(
+                        "Are you sure you want to close the player?"
+                      );
+                      if (confirm) {
+                        dispose();
+                        navigate("/");
+                      }
+                    }}
+                  >
+                    Close Player
                   </Button>
-                )}
+                </MediaQuery>
+                <MediaQuery largerThan="sm" styles={{ display: "none" }}>
+                  <ActionIcon
+                    size="lg"
+                    variant="default"
+                    mt={4}
+                    onClick={() => {
+                      const confirm = window.confirm(
+                        "Are you sure you want to close the player?"
+                      );
+                      if (confirm) {
+                        dispose();
+                        navigate("/");
+                      }
+                    }}
+                  >
+                    <IconX size="1.2rem" />
+                  </ActionIcon>
+                </MediaQuery>
               </Flex>
               <Box
                 style={{

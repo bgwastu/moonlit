@@ -57,6 +57,7 @@ function LocalUpload() {
             fileUrl: URL.createObjectURL(files[0]),
             metadata,
           }).then(() => {
+            setLoading(false);
             navigate("/player");
           });
         } else {
@@ -68,18 +69,19 @@ function LocalUpload() {
               coverUrl: "",
             },
           }).then(() => {
+            setLoading(false);
             navigate("/player");
           });
         }
       }}
       onReject={(files) => {
+        setLoading(false);
         files[0].errors.forEach((e) => {
           notifications.show({
             title: "Error",
             message: e.message,
           });
         });
-        setLoading(false);
       }}
     >
       <Flex
