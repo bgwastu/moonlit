@@ -10,11 +10,11 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@mantine/core": "7.0.0-beta.2",
-    "@mantine/dropzone": "7.0.0-beta.4",
-    "@mantine/form": "7.0.0-beta.4",
-    "@mantine/hooks": "7.0.0-beta.2",
-    "@mantine/notifications": "7.0.0-beta.4",
+    "@mantine/core": "6.0.20",
+    "@mantine/dropzone": "6.0.20",
+    "@mantine/form": "6.0.20",
+    "@mantine/hooks": "6.0.20",
+    "@mantine/notifications": "6.0.20",
     "@tabler/icons-react": "^2.34.0",
     "id3-parser": "^3.0.0",
     "jotai": "^2.4.2",

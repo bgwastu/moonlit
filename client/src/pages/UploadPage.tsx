@@ -1,4 +1,3 @@
-import "@mantine/dropzone/styles.css";
 import {
   Box,
   Button,
@@ -6,7 +5,6 @@ import {
   Container,
   Divider,
   Flex,
-  Group,
   LoadingOverlay,
   Text,
   TextInput,
@@ -81,9 +79,10 @@ function LocalUpload() {
         });
       }}
     >
-      <Group
+      <Flex
+        align="center"
         justify="center"
-        gap="xl"
+        gap="md"
         mih={220}
         style={{ pointerEvents: "none" }}
       >
@@ -105,7 +104,7 @@ function LocalUpload() {
             Drag & drop the file or just click this window
           </Text>
         </div>
-      </Group>
+      </Flex>
     </Dropzone>
   );
 }
@@ -169,7 +168,7 @@ function YoutubeUpload() {
     <form onSubmit={form.onSubmit((values) => fetchMusic(values.url))}>
       <Flex direction="column" gap="md">
         <TextInput
-          leftSection={<IconBrandYoutube />}
+          icon={<IconBrandYoutube />}
           placeholder="YouTube URL"
           size="lg"
           type="url"
