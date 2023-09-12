@@ -41,6 +41,9 @@ dependencies:
   tone:
     specifier: ^14.7.77
     version: 14.7.77
+  worker-timers:
+    specifier: ^7.0.75
+    version: 7.0.75
 
 devDependencies:
   '@types/react':
@@ -1578,6 +1581,14 @@ packages:
     resolution: {integrity: sha512-DCXu6Ifhqcks7TZKY3Hxp3y6qphY5SJZmrWMDrKcERSOXWQdMhU9Ig/PYrzyw/ul9jOIyh0N4M0tbC5hodg8dw==}
     dev: true
 
+  /fast-unique-numbers@8.0.8:
+    resolution: {integrity: sha512-TrtnK7tf1MfJ1gmWMM0rk6VGy2XVW8lV/7HjOUH+kd1gk27qHchDLhV83yq4NmASGA+ZnRozR99p2Sc2bE5s6Q==}
+    engines: {node: '>=16.1.0'}
+    dependencies:
+      '@babel/runtime': 7.22.15
+      tslib: 2.6.2
+    dev: false
+
   /fastq@1.15.0:
     resolution: {integrity: sha512-wBrocU2LCXXa+lWBt8RoIRD89Fi8OdABODa/kEnyeyjS5aZO5/GNvI5sEINADqP/h8M29UHTHUb53sUu5Ihqdw==}
     dependencies:
@@ -2594,6 +2605,31 @@ packages:
     dependencies:
       isexe: 2.0.0
     dev: true
+
+  /worker-timers-broker@6.0.95:
+    resolution: {integrity: sha512-ftd+5VeyQx+e8z395Srst+kQD3twNUGryVAHIw5RELSoo7GZf8r1WRvlOBIkjTpmYcGWjUDMdIY7FSCslWCb/g==}
+    dependencies:
+      '@babel/runtime': 7.22.15
+      fast-unique-numbers: 8.0.8
+      tslib: 2.6.2
+      worker-timers-worker: 7.0.59
+    dev: false
+
+  /worker-timers-worker@7.0.59:
+    resolution: {integrity: sha512-wUYEJHPVhdw+SGtyf84l+YK7cFcZqvdhAq1mp3QDmGAuul7wtY2mThvJwdG8SJxFlq0ixhLzWXB6LJqBRJ1Cfg==}
+    dependencies:
+      '@babel/runtime': 7.22.15
+      tslib: 2.6.2
+    dev: false
+
+  /worker-timers@7.0.75:
+    resolution: {integrity: sha512-03PP1Ip+1esLwVIRm2Xq6B9OOGjaG5Gt+xTGysM9JDHTJtWA5YUCK1OE8W/A32o3AbynXCsLgwlM12Iwl9YqPA==}
+    dependencies:
+      '@babel/runtime': 7.22.15
+      tslib: 2.6.2
+      worker-timers-broker: 6.0.95
+      worker-timers-worker: 7.0.59
+    dev: false
 
   /wrappy@1.0.2:
     resolution: {integrity: sha512-l4Sp/DRseor9wL6EvV2+TuQn63dMkPjZ/sp9XkghTEbV9KlPS1xUsZ3u7/IQO4wxtcFB4bgpQPRcR3QCvezPcQ==}

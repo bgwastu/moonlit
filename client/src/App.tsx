@@ -4,6 +4,7 @@ import UploadPage from "./pages/UploadPage";
 import WatchPage from "./pages/WatchPage";
 import { MantineProvider } from "@mantine/core";
 import { Notifications } from "@mantine/notifications";
+import PlayerPage from "./pages/PlayerPage";
 
 export default function App() {
   return (
@@ -20,6 +21,9 @@ export default function App() {
       <BrowserRouter>
         <Routes>
           <Route index element={<UploadPage />} />
+          <Route path="/watch" element={<WatchPage />} />
+          <Route path="/player" element={<PlayerPage />} />
+          <Route path="*" element={<NotFoundPage />} />
         </Routes>
       </BrowserRouter>
     </MantineProvider>

@@ -3,29 +3,27 @@ import { Player, Reverb } from "tone";
 import { PlaybackSettings, Song } from "./interfaces";
 import { getSongLength } from "./utils";
 
-export const isDockedAtom = atom(false);
+export const songAtom = atom(
+  null as Song,
+  async (get, set, song: Song | null) => {
+    if (!song) return;
+    const player = get(playerAtom);
 
-export const songAtom = atom(null, async (get, set, song?: Song) => {
-  if (!song) return;
-  const player = get(playerAtom);
-  set(loadingAtom, true);
+    const reverb = get(reverbAtom);
+    const p1 = reverb.generate();
+    const p2 = player.load(song.fileUrl);
+    await Promise.all([p1, p2]);
 
-  const reverb = get(reverbAtom);
-  const p1 = reverb.generate();
-  const p2 = player.load(song.fileUrl);
-  await Promise.all([p1, p2]);
+    reverb.toDestination();
+    player.connect(reverb);
 
-  reverb.toDestination();
-  player.connect(reverb);
+    // default mode is slowed
+    set(playbackModeAtom, "slowed");
 
-  // default mode is slowed
-  set(playbackModeAtom, "slowed");
+    set(songAtom, song);
+  }
+);
 
-  set(loadingAtom, false);
-  set(songAtom, song);
-});
-
-export const loadingAtom = atom(false);
 export const playerAtom = atom(new Player());
 playerAtom.debugLabel = "playerAtom (DO NOT CLICK)";
 export const reverbAtom = atom(new Reverb());

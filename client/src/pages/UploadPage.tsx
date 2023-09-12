@@ -21,10 +21,12 @@ import { Dropzone } from "@mantine/dropzone";
 import { convertFileToBuffer } from "id3-parser/lib/util";
 import parse from "id3-parser";
 import { IconMusicPlus, IconMusicCheck, IconMusicX } from "@tabler/icons-react";
+import { useNavigate } from "react-router-dom";
 
 const loadingAtom = atom(false);
 
 function LocalUpload() {
+  const navigate = useNavigate();
   const [loading, setLoading] = useAtom(loadingAtom);
   const [, setSong] = useAtom(songAtom);
   return (
@@ -34,40 +36,40 @@ function LocalUpload() {
       disabled={loading}
       onDrop={async (files) => {
         setLoading(true);
-        try {
-          const tags = await convertFileToBuffer(files[0]).then(parse);
-          if (tags !== false) {
-            let imgSrc = "";
+        const tags = await convertFileToBuffer(files[0]).then(parse);
+        if (tags !== false) {
+          let imgSrc = "";
 
-            if (tags.image?.data) {
-              const coverBlob = new Blob([new Uint8Array(tags.image.data)], {
-                type: tags.image.mime,
-              });
-              imgSrc = URL.createObjectURL(coverBlob);
-            }
-
-            const metadata = {
-              title: tags.title ?? files[0].name,
-              author: tags.artist ?? "Unknown",
-              coverUrl: imgSrc,
-            };
-
-            setSong({
-              fileUrl: URL.createObjectURL(files[0]),
-              metadata,
+          if (tags.image?.data) {
+            const coverBlob = new Blob([new Uint8Array(tags.image.data)], {
+              type: tags.image.mime,
             });
-          } else {
-            setSong({
-              fileUrl: URL.createObjectURL(files[0]),
-              metadata: {
-                title: files[0].name,
-                author: "Unknown",
-                coverUrl: "",
-              },
-            });
+            imgSrc = URL.createObjectURL(coverBlob);
           }
-        } finally {
-          setLoading(false);
+
+          const metadata = {
+            title: tags.title ?? files[0].name,
+            author: tags.artist ?? "Unknown",
+            coverUrl: imgSrc,
+          };
+
+          setSong({
+            fileUrl: URL.createObjectURL(files[0]),
+            metadata,
+          }).then(() => {
+            navigate("/player");
+          });
+        } else {
+          setSong({
+            fileUrl: URL.createObjectURL(files[0]),
+            metadata: {
+              title: files[0].name,
+              author: "Unknown",
+              coverUrl: "",
+            },
+          }).then(() => {
+            navigate("/player");
+          });
         }
       }}
       onReject={(files) => {
@@ -77,6 +79,7 @@ function LocalUpload() {
             message: e.message,
           });
         });
+        setLoading(false);
       }}
     >
       <Flex
@@ -110,6 +113,7 @@ function LocalUpload() {
 }
 
 function YoutubeUpload() {
+  const navigate = useNavigate();
   const [loading, setLoading] = useAtom(loadingAtom);
   const [, setSong] = useAtom(songAtom);
   const form = useForm({
@@ -152,6 +156,8 @@ function YoutubeUpload() {
             author: decodeURI(res.headers.get("Author") ?? "Unknown"),
             coverUrl: decodeURI(res.headers.get("Thumbnail") ?? ""),
           },
+        }).then(() => {
+          navigate("/player");
         });
       })
       .catch((e) => {
@@ -160,8 +166,8 @@ function YoutubeUpload() {
           title: "Download error",
           message: "Error when fetching data from YouTube",
         });
+        setLoading(false);
       })
-      .finally(() => setLoading(false));
   }
 
   return (
