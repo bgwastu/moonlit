@@ -14,17 +14,6 @@ import {
 } from "@mantine/core";
 import { useDisclosure, useShallowEffect } from "@mantine/hooks";
 import { notifications } from "@mantine/notifications";
-import { useAtom } from "jotai";
-import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { useInterval } from "../hooks/useInterval";
-import {
-  currentPlaybackAtom,
-  customPlaybackSettingsAtom,
-  playbackModeAtom,
-  playerAtom,
-  songAtom,
-} from "../state";
 import {
   IconAdjustments,
   IconMusic,
@@ -33,14 +22,23 @@ import {
   IconRewindBackward5,
   IconRewindForward5,
   IconRotate,
-  IconX,
 } from "@tabler/icons-react";
+import { useAtom } from "jotai";
+import { useEffect } from "react";
+import { useNavigate } from "react-router-dom";
+import { useInterval } from "../hooks/useInterval";
+import {
+  currentPlaybackAtom,
+  customPlaybackSettingsAtom,
+  playbackModeAtom,
+  playerAtom,
+  songAtom,
+  stateAtom,
+} from "../state";
 
 const getSongLength = (bufferDuration: number, playbackRate: number) => {
   return bufferDuration / playbackRate;
 };
-
-type State = "playing" | "stop" | "finished";
 
 function getFormattedTime(seconds: number) {
   const minutes = Math.floor(seconds / 60);
@@ -54,9 +52,9 @@ function getFormattedTime(seconds: number) {
 
 export default function PlayerPage() {
   const navigate = useNavigate();
-  const [song, setSong] = useAtom(songAtom);
+  const [song] = useAtom(songAtom);
   const [currentPlayback, setCurrentPlayback] = useAtom(currentPlaybackAtom);
-  const [state, setState] = useState<State>("stop");
+  const [state, setState] = useAtom(stateAtom);
   const [player] = useAtom(playerAtom);
   const [playbackMode, setPlaybackMode] = useAtom(playbackModeAtom);
   const [customPlaybackSettings, setCustomPlaybackSettings] = useAtom(
@@ -71,15 +69,6 @@ export default function PlayerPage() {
   const [modalOpened, { open: openModal, close: closeModal }] =
     useDisclosure(false);
 
-
-  function dispose() {
-    setState("stop");
-    setCurrentPlayback(0);
-    stopInterval();
-    player.stop();
-    setSong(null);
-  }
-
   useShallowEffect(() => {
     if (!song) {
       navigate("/");
@@ -88,15 +77,29 @@ export default function PlayerPage() {
         message: "Please select a song to play",
       });
     }
+
+    // confirm before closing
+    window.onbeforeunload = () => {
+      return "Are you sure?";
+    };
+
+    return () => {
+      setState("stop");
+      setCurrentPlayback(0);
+      stopInterval();
+      player.stop();
+      window.onbeforeunload = null;
+    };
   }, []);
 
-  // playing onmount
   useShallowEffect(() => {
-    console.log("fired");
-    if (song && player.state === "stopped") {
-      player.start(0, currentPlayback * player.playbackRate);
-      setState("playing");
-    }
+    // wait for 0.5 second before playing
+    setTimeout(() => {
+      if (song && state === "loaded") {
+        player.start(0, currentPlayback * player.playbackRate);
+        setState("playing");
+      }
+    }, 500);
   }, []);
 
   useEffect(() => {
@@ -117,7 +120,14 @@ export default function PlayerPage() {
       setState("finished");
       stopInterval();
     }
-  }, [currentPlayback, player.state, songLength, startInterval, stopInterval]);
+  }, [
+    currentPlayback,
+    player.state,
+    setState,
+    songLength,
+    startInterval,
+    stopInterval,
+  ]);
 
   function togglePlayer() {
     if (state === "playing") {
@@ -134,7 +144,7 @@ export default function PlayerPage() {
   }
 
   function setPlaybackPosition(value: number) {
-    if (state === "playing") {
+    if (state === "playing" || state === "finished") {
       player.stop();
       player.start(0, value * player.playbackRate);
     }
@@ -201,13 +211,13 @@ export default function PlayerPage() {
               <Flex
                 style={{
                   position: "absolute",
-                  top: 18,
+                  top: 22,
                   left: 0,
                   right: 0,
                   zIndex: 1,
                 }}
-                justify="space-between"
                 gap="sm"
+                wrap="wrap"
                 px="lg"
               >
                 <Flex
@@ -221,6 +231,7 @@ export default function PlayerPage() {
                     bg={theme.colors.dark[6]}
                     color="brand"
                     radius="xl"
+                    size="sm"
                     onChange={setPlaybackMode}
                     defaultValue={playbackMode}
                     data={[
@@ -244,43 +255,6 @@ export default function PlayerPage() {
                     </Button>
                   )}
                 </Flex>
-                {/* Close Player */}
-                <MediaQuery smallerThan="sm" styles={{ display: "none" }}>
-                  <Button
-                    mt={4}
-                    size="sm"
-                    variant="default"
-                    onClick={() => {
-                      const confirm = window.confirm(
-                        "Are you sure you want to close the player?"
-                      );
-                      if (confirm) {
-                        dispose();
-                        navigate("/");
-                      }
-                    }}
-                  >
-                    Close Player
-                  </Button>
-                </MediaQuery>
-                <MediaQuery largerThan="sm" styles={{ display: "none" }}>
-                  <ActionIcon
-                    size="lg"
-                    variant="default"
-                    mt={4}
-                    onClick={() => {
-                      const confirm = window.confirm(
-                        "Are you sure you want to close the player?"
-                      );
-                      if (confirm) {
-                        dispose();
-                        navigate("/");
-                      }
-                    }}
-                  >
-                    <IconX size="1.2rem" />
-                  </ActionIcon>
-                </MediaQuery>
               </Flex>
               <Box
                 style={{
@@ -295,7 +269,7 @@ export default function PlayerPage() {
                   <Flex>
                     <Text
                       fz="sm"
-                      m="sm"
+                      m={10}
                       px={8}
                       py={4}
                       sx={{
@@ -318,20 +292,33 @@ export default function PlayerPage() {
                   radius="xs"
                   mb={-3}
                   showLabelOnHover={false}
+                  mx={10}
                   size="sm"
                   label={(v) => {
+                    // prevent overflow
+                    if (currentPlayback >= songLength - 5) {
+                      return null;
+                    }
+
                     return getFormattedTime(v);
                   }}
                   thumbSize={16}
                   max={songLength}
                 />
-                <Box bg={theme.colors.dark[6]}>
-                  <Flex gap="sm" px="md" py="md" justify="space-between">
+                <Box mx={10}>
+                  <Flex gap="sm" py="md" justify="space-between">
                     <Flex align="center">
                       <ActionIcon
                         size="lg"
-                        disabled={currentPlayback <= 0 && state === "finished"}
-                        onClick={() => setPlaybackPosition(currentPlayback - 5)}
+                        onClick={() => {
+                          // if current playback is less than 5 seconds, set to 0
+                          if (currentPlayback < 5) {
+                            setPlaybackPosition(0);
+                            return;
+                          }
+
+                          setPlaybackPosition(currentPlayback - 5);
+                        }}
                         title="Backward 5 sec"
                       >
                         <IconRewindBackward5 />
@@ -357,10 +344,15 @@ export default function PlayerPage() {
                       </ActionIcon>
                       <ActionIcon
                         size="lg"
-                        onClick={() => setPlaybackPosition(currentPlayback + 5)}
-                        disabled={
-                          currentPlayback >= songLength && state === "finished"
-                        }
+                        onClick={() => {
+                          // if current playback is length of song - 5 seconds, set to length of song
+                          if (currentPlayback >= songLength - 5) {
+                            setPlaybackPosition(songLength);
+                            return;
+                          }
+
+                          setPlaybackPosition(currentPlayback + 5);
+                        }}
                         title="Forward 5 sec"
                       >
                         <IconRewindForward5 />
@@ -382,7 +374,7 @@ export default function PlayerPage() {
                       </MediaQuery>
                     </Flex>
                     <Flex gap="sm" align="center" style={{ flex: 1 }}>
-                      <MediaQuery smallerThan="sm" styles={{ display: "none" }}>
+                      <MediaQuery smallerThan="xs" styles={{ display: "none" }}>
                         <Image
                           src={song.metadata.coverUrl}
                           radius="sm"

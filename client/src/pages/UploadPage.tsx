@@ -159,6 +159,7 @@ function YoutubeUpload() {
             coverUrl: decodeURI(res.headers.get("Thumbnail") ?? ""),
           },
         }).then(() => {
+          setLoading(false);
           navigate("/player");
         });
       })
