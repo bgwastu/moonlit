@@ -1,11 +1,11 @@
+import { useShallowEffect } from "@mantine/hooks";
+import { notifications } from "@mantine/notifications";
 import { atom, useAtom } from "jotai";
 import { useMemo } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { isYoutubeURL } from "../utils";
-import { notifications } from "@mantine/notifications";
-import { songAtom } from "../state";
 import LoadingOverlay from "../components/LoadingOverlay";
-import { useShallowEffect } from "@mantine/hooks";
+import { songAtom } from "../state";
+import { isYoutubeURL } from "../utils";
 
 function useQuery() {
   const { search } = useLocation();
@@ -56,12 +56,14 @@ export default function WatchPage() {
     })
       .then(async (res) => {
         if (!res.ok) {
-          console.error("Error when fetching data from YouTube");
-          console.error(res);
+          const body = await res.json();
+          console.error(body);
           notifications.show({
             title: "Download error",
-            message: "Error when fetching data from Youtube",
+            message: body.message ?? "Error when fetching data from YouTube",
           });
+          navigate("/");
+          return;
         }
 
         const blob = await res.blob();
@@ -83,6 +85,8 @@ export default function WatchPage() {
           title: "Download error",
           message: "Error when fetching data from YouTube",
         });
+        navigate("/")
+        return;
       });
   }, []);
 

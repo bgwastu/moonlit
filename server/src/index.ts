@@ -40,7 +40,7 @@ app.post(
         // if the length of the video is more than 10 minutes, return error
         if (+info.videoDetails.lengthSeconds > 600) {
           return c.json(
-            { message: "Video is too long, maximum is 10 minutes" },
+            { message: "The video is too long. The maximum length is 10 minutes" },
             422
           );
         }
