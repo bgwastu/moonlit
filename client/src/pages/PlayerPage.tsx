@@ -10,13 +10,23 @@ import {
   SegmentedControl,
   Slider,
   Text,
+  TextInput,
+  UnstyledButton,
+  rem,
   useMantineTheme,
 } from "@mantine/core";
-import { useDisclosure, useHotkeys, useShallowEffect } from "@mantine/hooks";
+import {
+  useDisclosure,
+  useHotkeys,
+  useLocalStorage,
+  useShallowEffect,
+} from "@mantine/hooks";
 import { notifications } from "@mantine/notifications";
 import {
   IconAdjustments,
+  IconHeart,
   IconMusic,
+  IconPhoto,
   IconPlayerPauseFilled,
   IconPlayerPlayFilled,
   IconRewindBackward5,
@@ -24,7 +34,7 @@ import {
   IconRotate,
 } from "@tabler/icons-react";
 import { useAtom } from "jotai";
-import { useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useInterval } from "../hooks/useInterval";
 import {
@@ -55,6 +65,11 @@ export default function PlayerPage() {
   const [song] = useAtom(songAtom);
   const [currentPlayback, setCurrentPlayback] = useAtom(currentPlaybackAtom);
   const [state, setState] = useAtom(stateAtom);
+  const [backgroundUrl, setBackgroundUrl] = useLocalStorage({
+    key: "background-url",
+    defaultValue:
+      "https://i.pinimg.com/originals/cc/7f/b2/cc7fb24def262e8507922f8e522caf09.gif",
+  });
   const [player] = useAtom(playerAtom);
   const [playbackMode, setPlaybackMode] = useAtom(playbackModeAtom);
   const [customPlaybackSettings, setCustomPlaybackSettings] = useAtom(
@@ -67,6 +82,8 @@ export default function PlayerPage() {
     1000
   );
   const [modalOpened, { open: openModal, close: closeModal }] =
+    useDisclosure(false);
+  const [modalBgOpened, { open: openBgModal, close: closeBgModal }] =
     useDisclosure(false);
 
   useHotkeys([
@@ -232,8 +249,60 @@ export default function PlayerPage() {
               />
             </Flex>
           </Modal>
+          <Modal
+            opened={modalBgOpened}
+            onClose={closeBgModal}
+            title="Change Background"
+          >
+            <form>
+              <TextInput
+                placeholder="Background URL"
+                label="Image URL"
+                id="background-url"
+                type="url"
+                description="PNG, GIF, JPG, JPEG, WEBP"
+                defaultValue={backgroundUrl}
+              />
+              <Flex justify="end" mt="md">
+                <Button
+                  type="submit"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    const url = (
+                      document.getElementById(
+                        "background-url"
+                      ) as HTMLInputElement
+                    ).value;
+
+                    // check
+                    if (!/\.(jpg|jpeg|png|webp|gif)$/.test(url)) {
+                      notifications.show({
+                        title: "Error",
+                        message: "Image is not valid",
+                      });
+                      return;
+                    }
+
+                    setBackgroundUrl(url);
+                    notifications.show({
+                      title: "Background is changed!",
+                      message: "Please wait...",
+                    })
+                    closeBgModal();
+                  }}
+                >
+                  Save
+                </Button>
+              </Flex>
+            </form>
+          </Modal>
           <Box>
-            <Box style={{ position: "relative" }} h="100vh">
+            <Box
+              style={{
+                position: "relative",
+                height: "100vh",
+              }}
+            >
               <Flex
                 style={{
                   position: "absolute",
@@ -291,48 +360,58 @@ export default function PlayerPage() {
                   zIndex: 1,
                 }}
               >
-                <MediaQuery largerThan="md" styles={{ display: "none" }}>
-                  <Flex>
+                <Flex align="center" justify="space-between" m={10}>
+                  <MediaQuery largerThan="md" styles={{ visibility: "hidden" }}>
                     <Text
                       fz="sm"
-                      m={10}
                       px={8}
                       py={4}
                       sx={{
                         backgroundColor: theme.colors.dark[6],
                         borderRadius: theme.radius.sm,
-                        opacity: 0.8,
                       }}
                     >{`${getFormattedTime(
                       currentPlayback
                     )} / ${getFormattedTime(
                       getSongLength(player.buffer.duration, player.playbackRate)
                     )}`}</Text>
-                  </Flex>
-                </MediaQuery>
+                  </MediaQuery>
+                  <Button
+                    size="xs"
+                    // variant="light"
+                    color="dark"
+                    onClick={openBgModal}
+                  >
+                    Change Image
+                  </Button>
+                </Flex>
                 <Slider
                   value={currentPlayback}
                   onChange={setPlaybackPosition}
                   min={0}
                   step={1}
-                  radius="xs"
+                  radius={0}
                   mb={-3}
                   showLabelOnHover={false}
-                  mx={10}
                   size="sm"
+                  pr={0.3}
+                  styles={{
+                    thumb: {
+                      borderWidth: 0,
+                    },
+                  }}
+                  thumbSize={15}
                   label={(v) => {
                     // prevent overflow
                     if (currentPlayback >= songLength - 5) {
                       return null;
                     }
-
                     return getFormattedTime(v);
                   }}
-                  thumbSize={16}
                   max={songLength}
                 />
-                <Box mx={10}>
-                  <Flex gap="sm" py="md" justify="space-between">
+                <Box style={{ backgroundColor: theme.colors.dark[7] }}>
+                  <Flex gap="sm" px="sm" py="md" justify="space-between">
                     <Flex align="center">
                       <ActionIcon
                         size="lg"
@@ -412,6 +491,58 @@ export default function PlayerPage() {
                   </Flex>
                 </Box>
               </Box>
+              <Flex align="center" justify="center" h="100vh" id="bg-wrapper" style={{
+                userSelect: "none",
+                WebkitUserSelect: "none",
+              }}>
+                <img
+                  id="bg-image"
+                  style={{
+                    objectFit: "scale-down",
+                    width: "90%",
+                    userSelect: "none",
+                    WebkitUserSelect: "none",
+                    // disable drag
+                  }}
+                  crossOrigin="anonymous"
+                  src={`https://wsrv.nl/?url=${backgroundUrl}&n=-1&output=webp`}
+                  onLoad={(e) => {
+                    // get dominant color
+                    const img = e.target as HTMLImageElement;
+                    const canvas = document.createElement("canvas");
+                    const ctx = canvas.getContext("2d");
+                    ctx.drawImage(img, 0, 0);
+                    const imageData = ctx.getImageData(
+                      0,
+                      0,
+                      img.width,
+                      img.height
+                    );
+                    const data = imageData.data;
+                    let r = 0;
+                    let g = 0;
+                    let b = 0;
+                    let count = 0;
+
+                    for (let i = 0; i < data.length; i += 4) {
+                      if (data[i + 3] <= 0) {
+                        continue;
+                      }
+                      r += data[i];
+                      g += data[i + 1];
+                      b += data[i + 2];
+                      count++;
+                    }
+
+                    r = Math.floor(r / count);
+                    g = Math.floor(g / count);
+                    b = Math.floor(b / count);
+
+                    const rgb = `rgb(${r}, ${g}, ${b})`;
+                    document.getElementById("bg-wrapper").style.backgroundColor = rgb;
+                  }}
+                />
+              </Flex>
             </Box>
           </Box>
         </>
