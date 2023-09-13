@@ -12,7 +12,7 @@ import {
   Text,
   useMantineTheme,
 } from "@mantine/core";
-import { useDisclosure, useShallowEffect } from "@mantine/hooks";
+import { useDisclosure, useHotkeys, useShallowEffect } from "@mantine/hooks";
 import { notifications } from "@mantine/notifications";
 import {
   IconAdjustments,
@@ -68,6 +68,12 @@ export default function PlayerPage() {
   );
   const [modalOpened, { open: openModal, close: closeModal }] =
     useDisclosure(false);
+
+  useHotkeys([
+    ["ArrowLeft", () => backward()],
+    ["ArrowRight", () => forward()],
+    ["Space", () => togglePlayer()],
+  ]);
 
   useShallowEffect(() => {
     if (!song) {
@@ -149,6 +155,26 @@ export default function PlayerPage() {
       player.start(0, value * player.playbackRate);
     }
     setCurrentPlayback(value);
+  }
+
+  function backward() {
+    // if current playback is less than 5 seconds, set to 0
+    if (currentPlayback < 5) {
+      setPlaybackPosition(0);
+      return;
+    }
+
+    setPlaybackPosition(currentPlayback - 5);
+  }
+
+  function forward() {
+    // if current playback is length of song - 5 seconds, set to length of song
+    if (currentPlayback >= songLength - 5) {
+      setPlaybackPosition(songLength);
+      return;
+    }
+
+    setPlaybackPosition(currentPlayback + 5);
   }
 
   return (
@@ -310,15 +336,7 @@ export default function PlayerPage() {
                     <Flex align="center">
                       <ActionIcon
                         size="lg"
-                        onClick={() => {
-                          // if current playback is less than 5 seconds, set to 0
-                          if (currentPlayback < 5) {
-                            setPlaybackPosition(0);
-                            return;
-                          }
-
-                          setPlaybackPosition(currentPlayback - 5);
-                        }}
+                        onClick={backward}
                         title="Backward 5 sec"
                       >
                         <IconRewindBackward5 />
@@ -344,15 +362,7 @@ export default function PlayerPage() {
                       </ActionIcon>
                       <ActionIcon
                         size="lg"
-                        onClick={() => {
-                          // if current playback is length of song - 5 seconds, set to length of song
-                          if (currentPlayback >= songLength - 5) {
-                            setPlaybackPosition(songLength);
-                            return;
-                          }
-
-                          setPlaybackPosition(currentPlayback + 5);
-                        }}
+                        onClick={forward}
                         title="Forward 5 sec"
                       >
                         <IconRewindForward5 />
