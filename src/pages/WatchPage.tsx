@@ -45,7 +45,7 @@ export default function WatchPage() {
     }
 
     setLoading(true);
-    fetch(import.meta.env.VITE_API_URL + "/yt", {
+    fetch("/api/yt", {
       method: "POST",
       body: JSON.stringify({
         url,
