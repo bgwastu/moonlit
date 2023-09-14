@@ -1,12 +1,15 @@
 import { onRequest } from "firebase-functions/v2/https";
 import * as logger from "firebase-functions/logger";
-import ytdl = require("ytdl-core");
+import * as ytdl from "ytdl-core";
+import { setGlobalOptions } from "firebase-functions/v2/options";
 
 function isYoutubeURL(url: string) {
   const youtubeRegex =
     /^(https?:\/\/)?(www\.)?(youtube\.com\/watch\?v=|music\.youtube\.com\/watch\?v=|youtu\.be\/)([a-zA-Z0-9_-]{11})/;
   return youtubeRegex.test(url);
 }
+
+setGlobalOptions({ maxInstances: 1 });
 
 export const getYtMusic = onRequest(async (req, res) => {
   if (req.method !== "POST") {
