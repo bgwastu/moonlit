@@ -112,13 +112,11 @@ export default function PlayerPage() {
   }, []);
 
   useShallowEffect(() => {
-    // wait for 0.5 second before playing
-    setTimeout(() => {
-      if (song && state === "loaded") {
-        player.start(0, currentPlayback * player.playbackRate);
-        setState("playing");
-      }
-    }, 500);
+    while(!player.loaded){
+      continue;
+    }
+    player.start(0, currentPlayback * player.playbackRate);
+    setState("playing");
   }, []);
 
   useEffect(() => {
