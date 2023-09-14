@@ -23,7 +23,6 @@ export default function WatchPage() {
 
   useShallowEffect(() => {
     if (!query.get("v")) {
-      console.log("asdasd");
       notifications.show({
         title: "Error",
         message: "Invalid YouTube ID",
@@ -34,7 +33,6 @@ export default function WatchPage() {
 
     // check if it's a youtube url
     const url = "https://youtube.com/watch?v=" + query.get("v");
-    console.log(url);
     if (!isYoutubeURL(url)) {
       notifications.show({
         title: "Error",
@@ -76,7 +74,7 @@ export default function WatchPage() {
             coverUrl: decodeURI(res.headers.get("Thumbnail") ?? ""),
           },
         }).then(() => {
-          navigate("/player");
+          navigate("/player", { replace: true });
         });
       })
       .catch((e) => {
@@ -85,7 +83,7 @@ export default function WatchPage() {
           title: "Download error",
           message: "Error when fetching data from YouTube",
         });
-        navigate("/")
+        navigate("/");
         return;
       });
   }, []);

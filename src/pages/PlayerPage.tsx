@@ -371,7 +371,7 @@ export default function PlayerPage() {
                     )}`}</Text>
                   </MediaQuery>
                   <Button
-                    size="xs"
+                    size="sm"
                     variant="default"
                     onClick={openBgModal}
                   >

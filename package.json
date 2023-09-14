@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
-    "emulator": "pnpm run build -- --watch && firebase emulators:start",
+    "emulator": "pnpm run build && firebase emulators:start",
     "lint": "eslint src --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
     "preview": "vite preview"
   },
