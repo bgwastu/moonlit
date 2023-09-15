@@ -1,3 +1,5 @@
+export const dynamic = "force-dynamic";
+
 import { isYoutubeURL } from "@/utils";
 import { NextResponse } from "next/server";
 import * as ytdl from "ytdl-core";

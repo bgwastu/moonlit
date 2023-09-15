@@ -44,7 +44,7 @@ import {
   songAtom,
   stateAtom,
 } from "../../state";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 
 const getSongLength = (bufferDuration: number, playbackRate: number) => {
   return bufferDuration / playbackRate;
@@ -63,6 +63,7 @@ function getFormattedTime(seconds: number) {
 export default function PlayerPage() {
   const router = useRouter();
   const [imgLoading, setImgLoading] = useState(true);
+  const searchParams = useSearchParams();
 
   const [song] = useAtom(songAtom);
   const [currentPlayback, setCurrentPlayback] = useAtom(currentPlaybackAtom);
@@ -93,7 +94,9 @@ export default function PlayerPage() {
   const [customPlaybackSettings, setCustomPlaybackSettings] = useAtom(
     customPlaybackSettingsAtom
   );
-  const songLength = typeof window !== 'undefined' && getSongLength(player.buffer.duration, player.playbackRate);
+  const songLength =
+    typeof window !== "undefined" &&
+    getSongLength(player.buffer.duration, player.playbackRate);
   const theme = useMantineTheme();
   const { start: startInterval, stop: stopInterval } = useInterval(
     () => setCurrentPlayback((s) => s + 1),
@@ -119,12 +122,13 @@ export default function PlayerPage() {
       });
       return;
     }
-
-    while (!player.loaded) {
-      continue;
+    if (searchParams.get("autoplay") != "false") {
+      while (!player.loaded) {
+        continue;
+      }
+      player.start(0, currentPlayback * player.playbackRate);
+      setState("playing");
     }
-    player.start(0, currentPlayback * player.playbackRate);
-    setState("playing");
 
     // confirm before closing
     window.onbeforeunload = () => {

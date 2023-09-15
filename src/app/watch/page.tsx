@@ -70,7 +70,7 @@ export default function WatchPage() {
             coverUrl: decodeURI(res.headers.get("Thumbnail") ?? ""),
           },
         }).then(() => {
-          router.replace("/player");
+          router.replace("/player?autoplay=false");
         });
       })
       .catch((e) => {
