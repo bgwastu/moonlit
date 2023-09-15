@@ -1,3 +1,5 @@
+"use client";
+
 import {
   ActionIcon,
   Box,
@@ -11,7 +13,7 @@ import {
   Slider,
   Text,
   TextInput,
-  useMantineTheme
+  useMantineTheme,
 } from "@mantine/core";
 import {
   useDisclosure,
@@ -27,12 +29,11 @@ import {
   IconPlayerPlayFilled,
   IconRewindBackward5,
   IconRewindForward5,
-  IconRotate
+  IconRotate,
 } from "@tabler/icons-react";
 import { useAtom } from "jotai";
 import { useEffect } from "react";
-import { useNavigate } from "react-router-dom";
-import { useInterval } from "../hooks/useInterval";
+import { useInterval } from "../../hooks/useInterval";
 import {
   currentPlaybackAtom,
   customPlaybackSettingsAtom,
@@ -40,7 +41,8 @@ import {
   playerAtom,
   songAtom,
   stateAtom,
-} from "../state";
+} from "../../state";
+import { useRouter } from "next/navigation";
 
 const getSongLength = (bufferDuration: number, playbackRate: number) => {
   return bufferDuration / playbackRate;
@@ -57,14 +59,13 @@ function getFormattedTime(seconds: number) {
 }
 
 export default function PlayerPage() {
-  const navigate = useNavigate();
+  const router = useRouter();
   const [song] = useAtom(songAtom);
   const [currentPlayback, setCurrentPlayback] = useAtom(currentPlaybackAtom);
   const [state, setState] = useAtom(stateAtom);
-  const [backgroundUrl, setBackgroundUrl] = useLocalStorage({
+  const [backgroundUrl, setBackgroundUrl] = useLocalStorage<string | null>({
     key: "background-url",
-    defaultValue:
-      "https://i.pinimg.com/originals/08/2d/91/082d9121613b89feea2978e756e41a39.gif",
+    defaultValue: null,
   });
   const [player] = useAtom(playerAtom);
   const [playbackMode, setPlaybackMode] = useAtom(playbackModeAtom);
@@ -90,7 +91,8 @@ export default function PlayerPage() {
 
   useShallowEffect(() => {
     if (!song) {
-      navigate("/");
+      console.log("asdadsasdas");
+      router.replace("/");
       notifications.show({
         title: "No song selected",
         message: "Please select a song to play",
@@ -112,7 +114,7 @@ export default function PlayerPage() {
   }, []);
 
   useShallowEffect(() => {
-    while(!player.loaded){
+    while (!player.loaded) {
       continue;
     }
     player.start(0, currentPlayback * player.playbackRate);
@@ -370,11 +372,7 @@ export default function PlayerPage() {
                       getSongLength(player.buffer.duration, player.playbackRate)
                     )}`}</Text>
                   </MediaQuery>
-                  <Button
-                    size="sm"
-                    variant="default"
-                    onClick={openBgModal}
-                  >
+                  <Button size="sm" variant="default" onClick={openBgModal}>
                     Change Image
                   </Button>
                 </Flex>

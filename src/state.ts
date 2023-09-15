@@ -7,7 +7,7 @@ export type State = "loaded" | "playing" | "stop" | "finished";
 export const stateAtom = atom<State>("loaded");
 
 export const songAtom = atom(
-  null as Song,
+  null as Song | null,
   async (get, set, song: Song | null) => {
     if (!song) return;
     const player = get(playerAtom);

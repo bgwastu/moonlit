@@ -1,16 +1,23 @@
 {
-  "name": "vite-min-template",
+  "name": "moonlit",
+  "version": "0.1.0",
   "private": true,
-  "version": "0.0.0",
-  "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "tsc && vite build",
-    "emulator": "pnpm run build && firebase emulators:start",
-    "lint": "eslint src --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
-    "preview": "vite preview"
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint"
   },
   "dependencies": {
+    "@types/node": "20.6.0",
+    "@types/react": "18.2.21",
+    "@types/react-dom": "18.2.7",
+    "eslint": "8.49.0",
+    "eslint-config-next": "13.4.19",
+    "next": "13.4.19",
+    "react": "18.2.0",
+    "react-dom": "18.2.0",
+    "typescript": "5.2.2",
     "@mantine/core": "6.0.20",
     "@mantine/dropzone": "6.0.20",
     "@mantine/form": "6.0.20",
@@ -20,26 +27,8 @@
     "color-thief-ts": "^1.1.1",
     "id3-parser": "^3.0.0",
     "jotai": "^2.4.2",
-    "react": "^18.2.0",
-    "react-dom": "^18.2.0",
-    "react-router-dom": "^6.15.0",
     "tone": "^14.7.77",
-    "worker-timers": "^7.0.75"
-  },
-  "devDependencies": {
-    "@types/react": "^18.2.21",
-    "@types/react-dom": "^18.2.7",
-    "@typescript-eslint/eslint-plugin": "^6.6.0",
-    "@typescript-eslint/parser": "^6.6.0",
-    "@vitejs/plugin-react": "^4.0.4",
-    "eslint": "^8.48.0",
-    "eslint-plugin-react-hooks": "^4.6.0",
-    "eslint-plugin-react-refresh": "^0.4.3",
-    "firebase-tools": "^12.5.4",
-    "postcss": "^8.4.29",
-    "postcss-preset-mantine": "1.7.0",
-    "postcss-simple-vars": "^7.0.1",
-    "typescript": "^5.2.2",
-    "vite": "^4.4.9"
+    "worker-timers": "^7.0.75",
+    "ytdl-core": "git+ssh://git@github.com:khlevon/node-ytdl-core.git#v4.11.4-patch.2"
   }
 }

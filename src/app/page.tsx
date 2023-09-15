@@ -1,3 +1,5 @@
+"use client";
+
 import {
   Box,
   Button,
@@ -21,14 +23,14 @@ import { Dropzone } from "@mantine/dropzone";
 import { convertFileToBuffer } from "id3-parser/lib/util";
 import parse from "id3-parser";
 import { IconMusicPlus, IconMusicCheck, IconMusicX } from "@tabler/icons-react";
-import { useNavigate } from "react-router-dom";
+import { useRouter } from "next/navigation";
 
 const loadingAtom = atom(false);
 
 function LocalUpload() {
-  const navigate = useNavigate();
   const [loading, setLoading] = useAtom(loadingAtom);
   const [, setSong] = useAtom(songAtom);
+  const router = useRouter();
   return (
     <Dropzone
       accept={["audio/mpeg"]}
@@ -58,7 +60,7 @@ function LocalUpload() {
             metadata,
           }).then(() => {
             setLoading(false);
-            navigate("/player");
+            router.push("/player");
           });
         } else {
           setSong({
@@ -70,7 +72,7 @@ function LocalUpload() {
             },
           }).then(() => {
             setLoading(false);
-            navigate("/player");
+            router.push("/player");
           });
         }
       }}
@@ -115,7 +117,7 @@ function LocalUpload() {
 }
 
 function YoutubeUpload() {
-  const navigate = useNavigate();
+  const router = useRouter();
   const [loading, setLoading] = useAtom(loadingAtom);
   const [, setSong] = useAtom(songAtom);
   const form = useForm({
@@ -160,7 +162,7 @@ function YoutubeUpload() {
           },
         }).then(() => {
           setLoading(false);
-          navigate("/player");
+          router.push("/player");
         });
       })
       .catch((e) => {
@@ -170,7 +172,7 @@ function YoutubeUpload() {
           message: "Error when fetching data from YouTube",
         });
         setLoading(false);
-      })
+      });
   }
 
   return (

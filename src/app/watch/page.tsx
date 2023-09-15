@@ -1,44 +1,39 @@
+"use client";
+
+import LoadingOverlay from "@/components/LoadingOverlay";
+import { songAtom } from "@/state";
+import { isYoutubeURL } from "@/utils";
 import { useShallowEffect } from "@mantine/hooks";
 import { notifications } from "@mantine/notifications";
 import { atom, useAtom } from "jotai";
-import { useMemo } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
-import LoadingOverlay from "../components/LoadingOverlay";
-import { songAtom } from "../state";
-import { isYoutubeURL } from "../utils";
-
-function useQuery() {
-  const { search } = useLocation();
-
-  return useMemo(() => new URLSearchParams(search), [search]);
-}
+import { useRouter, useSearchParams } from "next/navigation";
 
 const loadingAtom = atom(false);
 
 export default function WatchPage() {
-  const navigate = useNavigate();
+  const searchParams = useSearchParams();
+  const router = useRouter();
   const [loading, setLoading] = useAtom(loadingAtom);
   const [, setSong] = useAtom(songAtom);
-  const query = useQuery();
 
   useShallowEffect(() => {
-    if (!query.get("v")) {
+    if (!searchParams.get("v")) {
       notifications.show({
         title: "Error",
         message: "Invalid YouTube ID",
       });
-      navigate("/");
+      router.push("/");
       return;
     }
 
     // check if it's a youtube url
-    const url = "https://youtube.com/watch?v=" + query.get("v");
+    const url = "https://youtube.com/watch?v=" + searchParams.get("v");
     if (!isYoutubeURL(url)) {
       notifications.show({
         title: "Error",
         message: "Invalid YouTube URL",
       });
-      navigate("/");
+      router.push("/");
       return;
     }
 
@@ -60,7 +55,7 @@ export default function WatchPage() {
             title: "Download error",
             message: body.message ?? "Error when fetching data from YouTube",
           });
-          navigate("/");
+          router.push("/");
           return;
         }
 
@@ -74,7 +69,7 @@ export default function WatchPage() {
             coverUrl: decodeURI(res.headers.get("Thumbnail") ?? ""),
           },
         }).then(() => {
-          navigate("/player", { replace: true });
+          router.replace("/player");
         });
       })
       .catch((e) => {
@@ -83,7 +78,7 @@ export default function WatchPage() {
           title: "Download error",
           message: "Error when fetching data from YouTube",
         });
-        navigate("/");
+        router.push("/");
         return;
       });
   }, []);
