@@ -153,7 +153,11 @@ export default function PlayerPage() {
     } else if (player.state === "started") {
       setState("playing");
     }
-    if (player.state === "stopped" && currentPlayback >= songLength) {
+
+    if (
+      player.state === "stopped" &&
+      getFormattedTime(currentPlayback) == getFormattedTime(songLength)
+    ) {
       setState("finished");
       stopInterval();
     }
