@@ -1,4 +1,5 @@
 "use client";
+export const dynamic = "force-dynamic";
 
 import LoadingOverlay from "@/components/LoadingOverlay";
 import { songAtom } from "@/state";

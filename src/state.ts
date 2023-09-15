@@ -27,9 +27,9 @@ export const songAtom = atom(
   }
 );
 
-export const playerAtom = atom(new Player());
+export const playerAtom = atom(typeof window !== "undefined" && new Player());
 playerAtom.debugLabel = "playerAtom (DO NOT CLICK)";
-export const reverbAtom = atom(new Reverb());
+export const reverbAtom = atom(typeof window !== "undefined" && new Reverb());
 reverbAtom.debugLabel = "reverbAtom (DO NOT CLICK)";
 
 export const normalPlaybackSettings = {
@@ -127,10 +127,11 @@ export const playbackModeAtom = atom(
 playbackModeAtom.debugLabel = "playbackModeAtom";
 
 const customPlaybackSettingsTemp = atom(
-  JSON.parse(
-    localStorage.getItem("custom-playback-settings") ??
-      JSON.stringify(speedUpPlaybackSettings)
-  ) as PlaybackSettings
+  typeof window !== "undefined" &&
+    (JSON.parse(
+      localStorage.getItem("custom-playback-settings") ??
+        JSON.stringify(speedUpPlaybackSettings)
+    ) as PlaybackSettings)
 );
 
 export const customPlaybackSettingsAtom = atom(

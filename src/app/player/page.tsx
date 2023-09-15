@@ -1,4 +1,5 @@
 "use client";
+export const dynamic = "force-dynamic";
 
 import {
   ActionIcon,
@@ -92,7 +93,7 @@ export default function PlayerPage() {
   const [customPlaybackSettings, setCustomPlaybackSettings] = useAtom(
     customPlaybackSettingsAtom
   );
-  const songLength = getSongLength(player.buffer.duration, player.playbackRate);
+  const songLength = typeof window !== 'undefined' && getSongLength(player.buffer.duration, player.playbackRate);
   const theme = useMantineTheme();
   const { start: startInterval, stop: stopInterval } = useInterval(
     () => setCurrentPlayback((s) => s + 1),
@@ -544,6 +545,7 @@ export default function PlayerPage() {
             )}
             <img
               id="bg-image"
+              alt="background"
               style={{
                 objectFit: "scale-down",
                 width: "90%",
