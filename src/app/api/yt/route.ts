@@ -37,7 +37,8 @@ export async function POST(req: Request) {
 
       const title = info.videoDetails.title
         .replace(" (Official Music Video)", "")
-        .replace(" [Official Music Video]", "");
+        .replace(" [Official Music Video]", "")
+        .replace(" - Topic", "");
 
       const stream = ytdl.downloadFromInfo(info, {
         filter: "audioonly",
