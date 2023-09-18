@@ -8,7 +8,6 @@ import {
   Container,
   Divider,
   Flex,
-  LoadingOverlay,
   Text,
   TextInput,
   rem,
@@ -26,12 +25,14 @@ import parse from "id3-parser";
 import { IconMusicPlus, IconMusicCheck, IconMusicX } from "@tabler/icons-react";
 import { useRouter } from "next/navigation";
 import Dynamic from "@/components/Dynamic";
+import LoadingOverlay from "@/components/LoadingOverlay";
 
-const loadingAtom = atom(false);
+const loadingAtom = atom({
+  status: false,
+  message: null,
+});
 
 function LocalUpload() {
-
-  
   const [loading, setLoading] = useAtom(loadingAtom);
   const [, setSong] = useAtom(songAtom);
   const router = useRouter();
@@ -39,9 +40,12 @@ function LocalUpload() {
     <Dropzone
       accept={["audio/mpeg"]}
       maxFiles={1}
-      disabled={loading}
+      disabled={loading.status}
       onDrop={async (files) => {
-        setLoading(true);
+        setLoading({
+          status: true,
+          message: "Reading music file, please wait...",
+        });
         const tags = await convertFileToBuffer(files[0]).then(parse);
         if (tags !== false) {
           let imgSrc = "";
@@ -63,7 +67,10 @@ function LocalUpload() {
             fileUrl: URL.createObjectURL(files[0]),
             metadata,
           }).then(() => {
-            setLoading(false);
+            setLoading({
+              status: false,
+              message: null,
+            });
             router.push("/player");
           });
         } else {
@@ -75,13 +82,19 @@ function LocalUpload() {
               coverUrl: "",
             },
           }).then(() => {
-            setLoading(false);
+            setLoading({
+              status: false,
+              message: null,
+            });
             router.push("/player");
           });
         }
       }}
       onReject={(files) => {
-        setLoading(false);
+        setLoading({
+          status: false,
+          message: null,
+        });
         files[0].errors.forEach((e) => {
           notifications.show({
             title: "Error",
@@ -135,7 +148,10 @@ function YoutubeUpload() {
   });
 
   function fetchMusic(url: string) {
-    setLoading(true);
+    setLoading({
+      status: true,
+      message: "Downloading music, please wait...",
+    });
     fetch("/api/yt", {
       method: "POST",
       body: JSON.stringify({
@@ -165,7 +181,10 @@ function YoutubeUpload() {
             coverUrl: decodeURI(res.headers.get("Thumbnail") ?? ""),
           },
         }).then(() => {
-          setLoading(false);
+          setLoading({
+            status: false,
+            message: null,
+          });
           router.push("/player");
         });
       })
@@ -175,7 +194,10 @@ function YoutubeUpload() {
           title: "Download error",
           message: "Error when fetching data from YouTube",
         });
-        setLoading(false);
+        setLoading({
+          status: false,
+          message: null,
+        });
       });
   }
 
@@ -187,10 +209,10 @@ function YoutubeUpload() {
           placeholder="YouTube URL"
           size="lg"
           type="url"
-          disabled={loading}
+          disabled={loading.status}
           {...form.getInputProps("url")}
         />
-        <Button size="lg" type="submit" disabled={loading}>
+        <Button size="lg" type="submit" disabled={loading.status}>
           Load music from YouTube
         </Button>
       </Flex>
@@ -203,7 +225,7 @@ export default function UploadPage() {
 
   return (
     <Dynamic>
-      <LoadingOverlay visible={loading} />
+      <LoadingOverlay visible={loading.status} message={loading.message} />
       <Box
         style={{
           position: "relative",
