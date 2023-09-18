@@ -160,10 +160,7 @@ export default function PlayerPage() {
       setState("playing");
     }
 
-    if (
-      player.state === "stopped" &&
-      getFormattedTime(currentPlayback) == getFormattedTime(songLength)
-    ) {
+    if (getFormattedTime(currentPlayback) == getFormattedTime(songLength)) {
       setState("finished");
       stopInterval();
     }
@@ -408,7 +405,7 @@ export default function PlayerPage() {
                     borderRadius: theme.radius.sm,
                   }}
                 >{`${getFormattedTime(currentPlayback)} / ${getFormattedTime(
-                  getSongLength(player.buffer.duration, player.playbackRate)
+                  songLength
                 )}`}</Text>
               </MediaQuery>
               <Button size="sm" variant="default" onClick={openBgModal}>
@@ -480,9 +477,7 @@ export default function PlayerPage() {
                       color="dimmed"
                     >{`${getFormattedTime(
                       currentPlayback
-                    )} / ${getFormattedTime(
-                      getSongLength(player.buffer.duration, player.playbackRate)
-                    )}`}</Text>
+                    )} / ${getFormattedTime(songLength)}`}</Text>
                   </MediaQuery>
                 </Flex>
                 <Flex gap="sm" align="center" style={{ flex: 1 }}>
