@@ -38,7 +38,9 @@ export async function POST(req: Request) {
       const title = info.videoDetails.title
         .replace(" (Official Music Video)", "")
         .replace(" [Official Music Video]", "")
-        .replace(" - Topic", "");
+        .replace("", "");
+
+      const author = info.videoDetails.author.name.replace(" - Topic", "").replace("VEVO", "");
 
       const stream = ytdl.downloadFromInfo(info, {
         filter: "audioonly",
@@ -55,7 +57,7 @@ export async function POST(req: Request) {
             "Content-Type": "audio/mpeg",
             "Content-Length": buffer.length.toString(),
             Title: encodeURI(title),
-            Author: encodeURI(info.videoDetails.author.name),
+            Author: encodeURI(author),
             Thumbnail: encodeURI(info.videoDetails.thumbnails[0]?.url) || "",
           };
 
