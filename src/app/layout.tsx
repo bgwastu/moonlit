@@ -3,7 +3,6 @@ export const dynamic = 'force-dynamic';
 
 import { MantineProvider } from "@mantine/core";
 import { Notifications } from "@mantine/notifications";
-import Head from "next/head";
 
 export default function RootLayout({
   children,
@@ -15,10 +14,10 @@ export default function RootLayout({
 
     
     <html lang="en">
-      <Head>
+      <head>
         <title>Moonlit</title>
         <meta name="description" content="Your melancholy music player" />
-      </Head>
+      </head>
       <body>
         <MantineProvider
           withGlobalStyles
