@@ -5,6 +5,7 @@ import Dynamic from "@/components/Dynamic";
 import LoadingOverlay from "@/components/LoadingOverlay";
 import { songAtom } from "@/state";
 import { isYoutubeURL } from "@/utils";
+import { Box, Button, Flex, Text } from "@mantine/core";
 import { useShallowEffect } from "@mantine/hooks";
 import { notifications } from "@mantine/notifications";
 import { atom, useAtom } from "jotai";
@@ -16,7 +17,7 @@ export default function WatchPage() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const [loading, setLoading] = useAtom(loadingAtom);
-  const [, setSong] = useAtom(songAtom);
+  const [song, setSong] = useAtom(songAtom);
 
   useShallowEffect(() => {
     if (!searchParams.get("v")) {
@@ -71,7 +72,7 @@ export default function WatchPage() {
             coverUrl: decodeURI(res.headers.get("Thumbnail") ?? ""),
           },
         }).then(() => {
-          router.replace("/player?autoplay=false");
+          setLoading(false);
         });
       })
       .catch((e) => {
@@ -91,6 +92,24 @@ export default function WatchPage() {
         visible={loading}
         message="Downloading music, please wait..."
       />
+      {song && (
+        <Flex
+          h="100dvh"
+          align="center"
+          justify="center"
+          gap="md"
+          direction="column"
+        >
+          <Text>Download Completed!</Text>
+          <Button
+            onClick={() => {
+              router.replace("/player");
+            }}
+          >
+            Go to Player
+          </Button>
+        </Flex>
+      )}
     </Dynamic>
   );
 }
