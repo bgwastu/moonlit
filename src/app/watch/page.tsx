@@ -1,6 +1,7 @@
 "use client";
 export const dynamic = "force-dynamic";
 
+import Dynamic from "@/components/Dynamic";
 import LoadingOverlay from "@/components/LoadingOverlay";
 import { songAtom } from "@/state";
 import { isYoutubeURL } from "@/utils";
@@ -85,11 +86,11 @@ export default function WatchPage() {
   }, []);
 
   return (
-    <>
+    <Dynamic>
       <LoadingOverlay
         visible={loading}
         message="Downloading music, please wait..."
       />
-    </>
+    </Dynamic>
   );
 }

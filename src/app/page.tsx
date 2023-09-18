@@ -1,4 +1,5 @@
 "use client";
+export const dynamic = "force-dynamic";
 
 import {
   Box,
@@ -24,6 +25,7 @@ import { convertFileToBuffer } from "id3-parser/lib/util";
 import parse from "id3-parser";
 import { IconMusicPlus, IconMusicCheck, IconMusicX } from "@tabler/icons-react";
 import { useRouter } from "next/navigation";
+import Dynamic from "@/components/Dynamic";
 
 const loadingAtom = atom(false);
 
@@ -200,7 +202,7 @@ export default function UploadPage() {
   const [loading] = useAtom(loadingAtom);
 
   return (
-    <>
+    <Dynamic>
       <LoadingOverlay visible={loading} />
       <Box
         style={{
@@ -230,6 +232,6 @@ export default function UploadPage() {
           </Flex>
         </Container>
       </Box>
-    </>
+    </Dynamic>
   );
 }
