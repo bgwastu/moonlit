@@ -69,13 +69,6 @@ export default function PlayerPage() {
   const [currentPlayback, setCurrentPlayback] = useAtom(currentPlaybackAtom);
   const [state, setState] = useAtom(stateAtom);
 
-  const listBackgroundUrls = [
-    "https://i.pinimg.com/originals/08/2d/91/082d9121613b89feea2978e756e41a39.gif",
-    "https://i.pinimg.com/originals/89/8f/bd/898fbd8a5d79c90be4732525a122a96f.gif",
-    "https://i.pinimg.com/originals/a9/76/7d/a9767d35192a99c9a45b5376fff4a709.gif",
-    "https://i.pinimg.com/originals/80/8d/ac/808dac987d37b884c2c068352ede5b5f.gif",
-    "https://i.pinimg.com/originals/b3/e2/2e/b3e22e164a207f353809d20dde261bb8.gif",
-  ];
   const [storageBackgroundUrl, setStorageBackgroundUrl] = useLocalStorage<
     string | null
   >({
@@ -83,6 +76,14 @@ export default function PlayerPage() {
     defaultValue: null,
   });
   const backgroundUrl = useMemo(() => {
+    const listBackgroundUrls = [
+      "https://i.pinimg.com/originals/08/2d/91/082d9121613b89feea2978e756e41a39.gif",
+      "https://i.pinimg.com/originals/89/8f/bd/898fbd8a5d79c90be4732525a122a96f.gif",
+      "https://i.pinimg.com/originals/a9/76/7d/a9767d35192a99c9a45b5376fff4a709.gif",
+      "https://i.pinimg.com/originals/80/8d/ac/808dac987d37b884c2c068352ede5b5f.gif",
+      "https://i.pinimg.com/originals/b3/e2/2e/b3e22e164a207f353809d20dde261bb8.gif",
+    ];
+
     return (
       storageBackgroundUrl ||
       listBackgroundUrls[Math.floor(Math.random() * listBackgroundUrls.length)]
