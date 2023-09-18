@@ -512,6 +512,7 @@ export default function PlayerPage() {
           <Flex
             align="center"
             justify="center"
+            h="100dvh"
             id="bg-wrapper"
             style={{
               userSelect: "none",
