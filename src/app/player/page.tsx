@@ -337,7 +337,7 @@ export default function PlayerPage() {
         <Box
           style={{
             position: "relative",
-            height: "100vh",
+            height: "100dvh",
           }}
         >
           <Flex
@@ -517,7 +517,6 @@ export default function PlayerPage() {
           <Flex
             align="center"
             justify="center"
-            h="100vh"
             id="bg-wrapper"
             style={{
               userSelect: "none",
