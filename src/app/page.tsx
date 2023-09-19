@@ -169,6 +169,8 @@ function YoutubeUpload() {
             title: "Download error",
             message: "Error when fetching data from Youtube",
           });
+          setLoading({ status: false, message: null });
+          return;
         }
 
         const blob = await res.blob();
