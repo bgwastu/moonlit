@@ -7,7 +7,7 @@ import {
 
 interface Props {
   visible: boolean;
-  message?: string;
+  message: string | null;
 }
 export default function LoadingOverlay({ visible, message }: Props) {
   return (
