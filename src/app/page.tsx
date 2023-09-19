@@ -1,6 +1,7 @@
 "use client";
 export const dynamic = "force-dynamic";
 
+import LoadingOverlay from "@/components/LoadingOverlay";
 import {
   Box,
   Button,
@@ -12,20 +13,18 @@ import {
   TextInput,
   rem,
 } from "@mantine/core";
-import { atom, useAtom } from "jotai";
-import { songAtom } from "../state";
-import { useForm } from "@mantine/form";
-import { isYoutubeURL } from "../utils";
-import { IconBrandYoutube } from "@tabler/icons-react";
-import Icon from "../components/Icon";
-import { notifications } from "@mantine/notifications";
 import { Dropzone } from "@mantine/dropzone";
-import { convertFileToBuffer } from "id3-parser/lib/util";
+import { useForm } from "@mantine/form";
+import { notifications } from "@mantine/notifications";
+import { IconBrandYoutube, IconMusicCheck, IconMusicPlus, IconMusicX } from "@tabler/icons-react";
 import parse from "id3-parser";
-import { IconMusicPlus, IconMusicCheck, IconMusicX } from "@tabler/icons-react";
+import { convertFileToBuffer } from "id3-parser/lib/util";
+import { atom, useAtom } from "jotai";
 import { useRouter } from "next/navigation";
-import Dynamic from "@/components/Dynamic";
-import LoadingOverlay from "@/components/LoadingOverlay";
+import Icon from "../components/Icon";
+import { songAtom } from "../state";
+import { isYoutubeURL } from "../utils";
+import { usePostHog } from "posthog-js/react";
 
 const loadingAtom = atom<{
   status: boolean;
@@ -38,6 +37,7 @@ const loadingAtom = atom<{
 function LocalUpload() {
   const [loading, setLoading] = useAtom(loadingAtom);
   const [, setSong] = useAtom(songAtom);
+  const posthog = usePostHog();
   const router = useRouter();
   return (
     <Dropzone
@@ -45,6 +45,7 @@ function LocalUpload() {
       maxFiles={1}
       disabled={loading.status}
       onDrop={async (files) => {
+        posthog.capture("upload_music");
         setLoading({
           status: true,
           message: "Reading music file, please wait...",
@@ -140,6 +141,7 @@ function YoutubeUpload() {
   const router = useRouter();
   const [loading, setLoading] = useAtom(loadingAtom);
   const [, setSong] = useAtom(songAtom);
+  const posthog = usePostHog();
   const form = useForm({
     initialValues: {
       url: "",
@@ -151,6 +153,7 @@ function YoutubeUpload() {
   });
 
   function fetchMusic(url: string) {
+    posthog.capture("download_music");
     setLoading({
       status: true,
       message: "Downloading music, please wait...",
@@ -229,7 +232,7 @@ export default function UploadPage() {
   const [loading] = useAtom(loadingAtom);
 
   return (
-    <Dynamic>
+    <>
       <LoadingOverlay visible={loading.status} message={loading.message} />
       <Box
         style={{
@@ -263,6 +266,6 @@ export default function UploadPage() {
           </Text>
         </Container>
       </Box>
-    </Dynamic>
+    </>
   );
 }

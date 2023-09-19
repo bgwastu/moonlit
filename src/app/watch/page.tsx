@@ -1,16 +1,16 @@
 "use client";
 export const dynamic = "force-dynamic";
 
-import Dynamic from "@/components/Dynamic";
 import LoadingOverlay from "@/components/LoadingOverlay";
 import { songAtom } from "@/state";
 import { isYoutubeURL } from "@/utils";
-import { Box, Button, Flex, Text, Image, Center, Container } from "@mantine/core";
+import { Button, Center, Container, Flex, Image, Text } from "@mantine/core";
 import { useShallowEffect } from "@mantine/hooks";
 import { notifications } from "@mantine/notifications";
 import { IconMusic } from "@tabler/icons-react";
 import { atom, useAtom } from "jotai";
 import { useRouter, useSearchParams } from "next/navigation";
+import { usePostHog } from 'posthog-js/react'
 
 const loadingAtom = atom(false);
 
@@ -19,8 +19,10 @@ export default function WatchPage() {
   const router = useRouter();
   const [loading, setLoading] = useAtom(loadingAtom);
   const [song, setSong] = useAtom(songAtom);
+  const posthog = usePostHog();
 
   useShallowEffect(() => {
+    posthog.capture('watch_page');
     if (song) {
       return;
     }
@@ -92,7 +94,7 @@ export default function WatchPage() {
   }, []);
 
   return (
-    <Dynamic>
+    <>
       <LoadingOverlay
         visible={loading}
         message="Downloading music, please wait..."
@@ -136,6 +138,6 @@ export default function WatchPage() {
           </Flex>
         </Container>
       )}
-    </Dynamic>
+    </>
   );
 }
