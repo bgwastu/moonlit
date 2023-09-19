@@ -20,7 +20,7 @@ export default function RootLayout({
       <body>
         <Dynamic>
           <PostHogProvider
-            apiKey={process.env.POSTHOG_API_KEY}
+            apiKey={process.env.NEXT_PUBLIC_POSTHOG_API_KEY}
             options={{
               api_host: "/phog",
             }}
