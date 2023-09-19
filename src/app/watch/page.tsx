@@ -5,9 +5,10 @@ import Dynamic from "@/components/Dynamic";
 import LoadingOverlay from "@/components/LoadingOverlay";
 import { songAtom } from "@/state";
 import { isYoutubeURL } from "@/utils";
-import { Box, Button, Flex, Text } from "@mantine/core";
+import { Box, Button, Flex, Text, Image, Center, Container } from "@mantine/core";
 import { useShallowEffect } from "@mantine/hooks";
 import { notifications } from "@mantine/notifications";
+import { IconMusic } from "@tabler/icons-react";
 import { atom, useAtom } from "jotai";
 import { useRouter, useSearchParams } from "next/navigation";
 
@@ -20,6 +21,10 @@ export default function WatchPage() {
   const [song, setSong] = useAtom(songAtom);
 
   useShallowEffect(() => {
+    if (song) {
+      return;
+    }
+
     if (!searchParams.get("v")) {
       notifications.show({
         title: "Error",
@@ -93,22 +98,43 @@ export default function WatchPage() {
         message="Downloading music, please wait..."
       />
       {song && (
-        <Flex
-          h="100dvh"
-          align="center"
-          justify="center"
-          gap="md"
-          direction="column"
-        >
-          <Text>Download Completed!</Text>
-          <Button
-            onClick={() => {
-              router.replace("/player");
-            }}
+        <Container size="xs">
+          <Flex
+            h="100dvh"
+            align="stretch"
+            justify="center"
+            gap="md"
+            direction="column"
           >
-            Go to Player
-          </Button>
-        </Flex>
+            <Text>Download Completed</Text>
+            <Flex gap="md" align="center">
+              <Image
+                src={song.metadata.coverUrl}
+                radius="sm"
+                height={48}
+                width={48}
+                withPlaceholder
+                placeholder={
+                  <Center>
+                    <IconMusic />
+                  </Center>
+                }
+                alt="cover image"
+              />
+              <Flex direction="column">
+                <Text weight={600}>{`${song.metadata.title}`}</Text>
+                <Text>{`${song.metadata.author}`}</Text>
+              </Flex>
+            </Flex>
+            <Button
+              onClick={() => {
+                router.replace("/player");
+              }}
+            >
+              Go to Player
+            </Button>
+          </Flex>
+        </Container>
       )}
     </Dynamic>
   );

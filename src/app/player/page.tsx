@@ -494,7 +494,6 @@ export default function PlayerPage() {
                         </Center>
                       }
                       alt="cover image"
-                      sx={{}}
                     />
                   </MediaQuery>
                   <Flex direction="column">
