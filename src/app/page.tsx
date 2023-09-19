@@ -236,15 +236,15 @@ export default function UploadPage() {
           position: "relative",
         }}
       >
-        <Container size="sm" p="xl">
-          <Flex direction="column" gap="xl" mt="md">
-            <Center>
-              <Flex gap="sm" align="center">
+        <Container size="sm" p="xl" mt="5dvh">
+          <Flex direction="column" gap="xl">
+            <Center mb="lg">
+              <Flex gap="xs" align="center">
                 <Icon />
                 <Text
                   fz={rem(26)}
                   fw="bold"
-                  lts={rem(1)}
+                  lts={rem(0.7)}
                   style={{
                     userSelect: "none",
                   }}
