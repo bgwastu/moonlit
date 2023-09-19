@@ -257,6 +257,10 @@ export default function UploadPage() {
             <Divider label="OR" labelPosition="center" />
             <LocalUpload />
           </Flex>
+          <Text color="dimmed" mt="xl">
+            Found bugs or want to suggest features?{" "}
+            <a href="mailto:bagas@wastu.net">Let us know</a>
+          </Text>
         </Container>
       </Box>
     </Dynamic>
