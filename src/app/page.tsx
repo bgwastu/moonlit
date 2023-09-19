@@ -27,7 +27,10 @@ import { useRouter } from "next/navigation";
 import Dynamic from "@/components/Dynamic";
 import LoadingOverlay from "@/components/LoadingOverlay";
 
-const loadingAtom = atom({
+const loadingAtom = atom<{
+  status: boolean;
+  message: string | null;
+}>({
   status: false,
   message: null,
 });
