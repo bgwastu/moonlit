@@ -47,6 +47,7 @@ import {
 } from "../../state";
 import { useRouter, useSearchParams } from "next/navigation";
 import LoadingOverlay from "@/components/LoadingOverlay";
+import Link from "next/link";
 
 const getSongLength = (bufferDuration: number, playbackRate: number) => {
   return bufferDuration / playbackRate;
@@ -287,8 +288,8 @@ export default function PlayerPage() {
             description="PNG, GIF, JPG, JPEG, WEBP"
             defaultValue={backgroundUrl}
           />
-          <Flex justify="end" mt="md" gap="md">
-            {storageBackgroundUrl && (
+          <Flex justify="end" mt="md" gap="md" align="center">
+            {storageBackgroundUrl ? (
               <Button
                 variant="default"
                 onClick={() => {
@@ -302,7 +303,7 @@ export default function PlayerPage() {
               >
                 Use default background
               </Button>
-            )}
+            ): <Link href="https://id.pinterest.com/bznkmmbd/aesthetic/" target="_blank">Pinboard Aesthetic ✨</Link>}
             <Button
               type="submit"
               onClick={(e) => {
