@@ -19,6 +19,7 @@ import {
 } from "@mantine/core";
 import {
   useDisclosure,
+  useDocumentTitle,
   useHotkeys,
   useLocalStorage,
   useShallowEffect,
@@ -68,6 +69,7 @@ export default function PlayerPage() {
   const [song] = useAtom(songAtom);
   const [currentPlayback, setCurrentPlayback] = useAtom(currentPlaybackAtom);
   const [state, setState] = useAtom(stateAtom);
+  useDocumentTitle(song ? `${song.metadata.title} - Moonlit` : "Moonlit");
 
   const [storageBackgroundUrl, setStorageBackgroundUrl] = useLocalStorage<
     string | null
