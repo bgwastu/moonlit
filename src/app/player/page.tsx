@@ -46,6 +46,7 @@ import {
   stateAtom,
 } from "../../state";
 import { useRouter, useSearchParams } from "next/navigation";
+import LoadingOverlay from "@/components/LoadingOverlay";
 
 const getSongLength = (bufferDuration: number, playbackRate: number) => {
   return bufferDuration / playbackRate;
@@ -125,13 +126,13 @@ export default function PlayerPage() {
       });
       return;
     }
-    if (searchParams.get("autoplay") != "false") {
-      while (!player.loaded) {
-        continue;
-      }
-      player.start(0, currentPlayback * player.playbackRate);
-      setState("playing");
+
+    while (!player.loaded) {
+      continue;
     }
+
+    player.start(0, currentPlayback * player.playbackRate);
+    setState("playing");
 
     // confirm before closing
     window.onbeforeunload = () => {
@@ -221,6 +222,7 @@ export default function PlayerPage() {
 
   return (
     <>
+      <LoadingOverlay visible={!player.loaded} message="Loading..." />
       <Modal
         opened={modalOpened}
         onClose={closeModal}
