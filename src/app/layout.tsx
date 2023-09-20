@@ -29,6 +29,7 @@ export default function RootLayout({
               withGlobalStyles
               withNormalizeCSS
               theme={{
+                focusRing: "never",
                 colorScheme: "dark",
                 primaryColor: "violet",
                 primaryShade: 4,
