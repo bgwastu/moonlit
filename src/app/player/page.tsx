@@ -364,6 +364,9 @@ export default function PlayerPage() {
                 bg={theme.colors.dark[6]}
                 color="brand"
                 radius="xl"
+                style={{
+                  boxShadow: "0px 0px 2px 0px rgba(0,0,0,0.75)",
+                }}
                 size="sm"
                 onChange={setPlaybackMode}
                 defaultValue={playbackMode}
@@ -402,8 +405,8 @@ export default function PlayerPage() {
               <MediaQuery largerThan="md" styles={{ visibility: "hidden" }}>
                 <Text
                   fz="sm"
-                  px={8}
-                  py={4}
+                  px={10}
+                  py={6}
                   sx={{
                     backgroundColor: theme.colors.dark[6],
                     borderRadius: theme.radius.sm,
@@ -441,7 +444,7 @@ export default function PlayerPage() {
               }}
               max={songLength}
             />
-            <Box style={{ backgroundColor: theme.colors.dark[7] }}>
+            <Box style={{ backgroundColor: theme.colors.dark[6] }}>
               <Flex gap="sm" px="sm" py="md" justify="space-between">
                 <Flex align="center">
                   <ActionIcon
