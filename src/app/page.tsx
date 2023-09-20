@@ -3,6 +3,7 @@ export const dynamic = "force-dynamic";
 
 import LoadingOverlay from "@/components/LoadingOverlay";
 import {
+  Anchor,
   Box,
   Button,
   Center,
@@ -262,7 +263,7 @@ export default function UploadPage() {
           </Flex>
           <Text color="dimmed" mt="xl">
             Found bugs or want to suggest features?{" "}
-            <a href="mailto:bagas@wastu.net">Let us know</a>
+            <Anchor href="mailto:bagas@wastu.net">Let us know</Anchor>
           </Text>
         </Container>
       </Box>
