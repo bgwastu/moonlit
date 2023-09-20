@@ -65,7 +65,6 @@ function getFormattedTime(seconds: number) {
 export default function PlayerPage() {
   const router = useRouter();
   const [imgLoading, setImgLoading] = useState(true);
-  const searchParams = useSearchParams();
 
   const [song] = useAtom(songAtom);
   const [currentPlayback, setCurrentPlayback] = useAtom(currentPlaybackAtom);
