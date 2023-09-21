@@ -17,7 +17,12 @@ import {
 import { Dropzone } from "@mantine/dropzone";
 import { useForm } from "@mantine/form";
 import { notifications } from "@mantine/notifications";
-import { IconBrandYoutube, IconMusicCheck, IconMusicPlus, IconMusicX } from "@tabler/icons-react";
+import {
+  IconBrandYoutube,
+  IconMusicCheck,
+  IconMusicPlus,
+  IconMusicX,
+} from "@tabler/icons-react";
 import parse from "id3-parser";
 import { convertFileToBuffer } from "id3-parser/lib/util";
 import { atom, useAtom } from "jotai";
@@ -26,6 +31,7 @@ import Icon from "../components/Icon";
 import { songAtom } from "../state";
 import { isYoutubeURL } from "../utils";
 import { usePostHog } from "posthog-js/react";
+import { getSongFromYouTube } from "@/api";
 
 const loadingAtom = atom<{
   status: boolean;
@@ -159,37 +165,10 @@ function YoutubeUpload() {
       status: true,
       message: "Downloading music, please wait...",
     });
-    fetch("/api/yt", {
-      method: "POST",
-      body: JSON.stringify({
-        url,
-      }),
-      headers: {
-        "content-type": "application/json",
-      },
-    })
-      .then(async (res) => {
-        if (!res.ok) {
-          console.error("Error when fetching data from YouTube");
-          console.error(res);
-          notifications.show({
-            title: "Download error",
-            message: "Error when fetching data from Youtube",
-          });
-          setLoading({ status: false, message: null });
-          return;
-        }
 
-        const blob = await res.blob();
-
-        setSong({
-          fileUrl: URL.createObjectURL(blob),
-          metadata: {
-            title: decodeURI(res.headers.get("Title") ?? "Unknown"),
-            author: decodeURI(res.headers.get("Author") ?? "Unknown"),
-            coverUrl: decodeURI(res.headers.get("Thumbnail") ?? ""),
-          },
-        }).then(() => {
+    getSongFromYouTube(url)
+      .then((song) => {
+        setSong(song).then(() => {
           setLoading({
             status: false,
             message: null,
@@ -201,7 +180,7 @@ function YoutubeUpload() {
         console.error(e);
         notifications.show({
           title: "Download error",
-          message: "Error when fetching data from YouTube",
+          message: e.message,
         });
         setLoading({
           status: false,

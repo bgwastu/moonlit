@@ -1,6 +1,7 @@
 "use client";
 export const dynamic = "force-dynamic";
 
+import { getSongFromYouTube } from "@/api";
 import LoadingOverlay from "@/components/LoadingOverlay";
 import { songAtom } from "@/state";
 import { isYoutubeURL } from "@/utils";
@@ -10,7 +11,7 @@ import { notifications } from "@mantine/notifications";
 import { IconMusic } from "@tabler/icons-react";
 import { atom, useAtom } from "jotai";
 import { useRouter, useSearchParams } from "next/navigation";
-import { usePostHog } from 'posthog-js/react'
+import { usePostHog } from "posthog-js/react";
 
 const loadingAtom = atom(false);
 
@@ -22,7 +23,7 @@ export default function WatchPage() {
   const posthog = usePostHog();
 
   useShallowEffect(() => {
-    posthog.capture('watch_page');
+    posthog.capture("watch_page");
     if (song) {
       return;
     }
@@ -48,37 +49,10 @@ export default function WatchPage() {
     }
 
     setLoading(true);
-    fetch("/api/yt", {
-      method: "POST",
-      body: JSON.stringify({
-        url,
-      }),
-      headers: {
-        "content-type": "application/json",
-      },
-    })
-      .then(async (res) => {
-        if (!res.ok) {
-          const body = await res.json();
-          console.error(body);
-          notifications.show({
-            title: "Download error",
-            message: body.message ?? "Error when fetching data from YouTube",
-          });
-          router.push("/");
-          return;
-        }
 
-        const blob = await res.blob();
-
-        setSong({
-          fileUrl: URL.createObjectURL(blob),
-          metadata: {
-            title: decodeURI(res.headers.get("Title") ?? "Unknown"),
-            author: decodeURI(res.headers.get("Author") ?? "Unknown"),
-            coverUrl: decodeURI(res.headers.get("Thumbnail") ?? ""),
-          },
-        }).then(() => {
+    getSongFromYouTube(url)
+      .then((song) => {
+        setSong(song).then(() => {
           setLoading(false);
         });
       })
@@ -86,10 +60,10 @@ export default function WatchPage() {
         console.error(e);
         notifications.show({
           title: "Download error",
-          message: "Error when fetching data from YouTube",
+          message: e.message,
         });
+        setLoading(false);
         router.push("/");
-        return;
       });
   }, []);
 
