@@ -10,6 +10,7 @@ import {
   Container,
   Divider,
   Flex,
+  Header,
   Text,
   TextInput,
   rem,
@@ -19,6 +20,8 @@ import { useForm } from "@mantine/form";
 import { notifications } from "@mantine/notifications";
 import {
   IconBrandYoutube,
+  IconDotsVertical,
+  IconLayoutBottombarExpand,
   IconMusicCheck,
   IconMusicPlus,
   IconMusicX,
@@ -213,6 +216,7 @@ export default function UploadPage() {
 
   return (
     <>
+      
       <LoadingOverlay visible={loading.status} message={loading.message} />
       <Box
         style={{
@@ -222,12 +226,12 @@ export default function UploadPage() {
         <Container size="sm" p="xl" mt="5dvh">
           <Flex direction="column" gap="xl">
             <Center mb="lg">
-              <Flex gap="xs" align="center">
-                <Icon />
+              <Flex gap={6} align="center">
+                <Icon size={24} />
                 <Text
-                  fz={rem(26)}
+                  fz={rem(28)}
                   fw="bold"
-                  lts={rem(0.7)}
+                  lts={rem(0.2)}
                   style={{
                     userSelect: "none",
                   }}

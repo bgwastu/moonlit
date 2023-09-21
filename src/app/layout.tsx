@@ -2,7 +2,7 @@
 export const dynamic = "force-dynamic";
 
 import Dynamic from "@/components/Dynamic";
-import { MantineProvider } from "@mantine/core";
+import { MantineProvider, useMantineTheme } from "@mantine/core";
 import { Notifications } from "@mantine/notifications";
 import { PostHogProvider } from "posthog-js/react";
 
@@ -11,6 +11,7 @@ export default function RootLayout({
 }: {
   children: React.ReactNode;
 }) {
+  const theme = useMantineTheme();
   return (
     <html lang="en">
       <head>
@@ -32,7 +33,8 @@ export default function RootLayout({
                 focusRing: "never",
                 colorScheme: "dark",
                 primaryColor: "violet",
-                primaryShade: 4,
+                primaryShade: 5,
+                white: theme.colors.violet[0],
               }}
             >
               <Notifications />
