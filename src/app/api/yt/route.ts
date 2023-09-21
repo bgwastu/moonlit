@@ -18,7 +18,7 @@ export async function POST(req: Request) {
             message: "Video is not available",
           },
           {
-            status: 500,
+            status: 400
           }
         );
       }
@@ -30,7 +30,7 @@ export async function POST(req: Request) {
             message: "The video is too long. The maximum length is 10 minutes",
           },
           {
-            status: 500,
+            status: 400,
           }
         );
       }
@@ -40,7 +40,9 @@ export async function POST(req: Request) {
         .replace(" [Official Music Video]", "")
         .replace("", "");
 
-      const author = info.videoDetails.author.name.replace(" - Topic", "").replace("VEVO", "");
+      const author = info.videoDetails.author.name
+        .replace(" - Topic", "")
+        .replace("VEVO", "");
 
       const stream = ytdl.downloadFromInfo(info, {
         filter: "audioonly",
