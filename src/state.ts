@@ -20,8 +20,6 @@ export const songAtom = atom(
     reverb.toDestination();
     player.connect(reverb);
 
-    // default mode is slowed
-    set(playbackModeAtom, "slowed");
     set(stateAtom, "loaded");
     set(songAtom, song);
   }
@@ -60,6 +58,8 @@ type PlaybackMode = "slowed" | "normal" | "speedup" | "custom";
 export const playbackModeAtom = atom(
   "slowed",
   async (get, set, playbackMode: PlaybackMode) => {
+    console.log(playbackMode);
+    set(playbackModeAtom, playbackMode);
     let playbackSettings: PlaybackSettings | null = null;
     if (playbackMode === "normal") {
       playbackSettings = {

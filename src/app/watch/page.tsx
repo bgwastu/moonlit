@@ -3,8 +3,12 @@ export const dynamic = "force-dynamic";
 
 import { getSongFromYouTube } from "@/api";
 import LoadingOverlay from "@/components/LoadingOverlay";
-import { songAtom } from "@/state";
-import { isYoutubeURL } from "@/utils";
+import {
+  customPlaybackSettingsAtom,
+  playbackModeAtom,
+  songAtom,
+} from "@/state";
+import { isJSONString, isYoutubeURL } from "@/utils";
 import { Button, Center, Container, Flex, Image, Text } from "@mantine/core";
 import { useShallowEffect } from "@mantine/hooks";
 import { notifications } from "@mantine/notifications";
@@ -20,6 +24,8 @@ export default function WatchPage() {
   const router = useRouter();
   const [loading, setLoading] = useAtom(loadingAtom);
   const [song, setSong] = useAtom(songAtom);
+  const [, setPlaybackSettings] = useAtom(customPlaybackSettingsAtom);
+  const [, setPlaybackMode] = useAtom(playbackModeAtom);
   const posthog = usePostHog();
 
   useShallowEffect(() => {
@@ -53,6 +59,22 @@ export default function WatchPage() {
     getSongFromYouTube(url)
       .then((song) => {
         setSong(song).then(() => {
+          // check if there are playback settings
+          const s = searchParams.get("s");
+          if (s) {
+            if (isJSONString(atob(s))) {
+              const playbackSettings = JSON.parse(atob(s));
+              if (
+                playbackSettings.playbackRate &&
+                playbackSettings.reverbWet &&
+                playbackSettings.reverbDecay &&
+                playbackSettings.reverbPreDelay
+              ) {
+                setPlaybackSettings(playbackSettings);
+                setPlaybackMode("custom");
+              }
+            }
+          }
           setLoading(false);
         });
       })
@@ -104,7 +126,7 @@ export default function WatchPage() {
             </Flex>
             <Button
               onClick={() => {
-                router.replace("/player");
+                router.push("/player");
               }}
             >
               Go to Player

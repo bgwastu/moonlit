@@ -38,6 +38,7 @@ export async function getSongFromYouTube(url: string): Promise<Song> {
 
     const blob = await res.blob();
     const metadata = {
+      id,
       title: decodeURI(res.headers.get("Title")),
       author: decodeURI(res.headers.get("Author")),
       coverUrl: decodeURI(res.headers.get("Thumbnail")),

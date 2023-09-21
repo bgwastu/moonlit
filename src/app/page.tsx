@@ -72,6 +72,7 @@ function LocalUpload() {
           }
 
           const metadata = {
+            id: null,
             title: tags.title ?? files[0].name,
             author: tags.artist ?? "Unknown",
             coverUrl: imgSrc,
@@ -91,6 +92,7 @@ function LocalUpload() {
           setSong({
             fileUrl: URL.createObjectURL(files[0]),
             metadata: {
+              id: null,
               title: files[0].name,
               author: "Unknown",
               coverUrl: "",

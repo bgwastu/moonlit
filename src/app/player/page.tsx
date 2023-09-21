@@ -187,6 +187,18 @@ export default function PlayerPage() {
     stopInterval,
   ]);
 
+  function shareMusic() {
+    // copy to clipboard
+    const text = window.location.href.split("/")[2] + "/watch?v=" + song.metadata.id + "&s=" + encodeURI(btoa(JSON.stringify(customPlaybackSettings)));
+    navigator.clipboard.writeText(text).then(() => {
+      notifications.show({
+        title: "Copied to clipboard!",
+        message: "Share the link to your friends!",
+      });
+      closeDrawer();
+    });
+  }
+
   function togglePlayer() {
     if (state === "playing") {
       player.stop();
@@ -364,7 +376,7 @@ export default function PlayerPage() {
       >
         <Container size="xs">
           <Flex direction="column" gap="md">
-            <Button leftIcon={<IconShare />}>Share Remixed Music</Button>
+            <Button leftIcon={<IconShare />} disabled={song.metadata.id == null} onClick={shareMusic}>Share Remixed Music</Button>
             <Button leftIcon={<IconDownload />} variant="default">Download Remixed Music</Button>
           </Flex>
         </Container>
