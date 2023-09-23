@@ -29,7 +29,6 @@ export async function getSongFromYouTube(url: string): Promise<Song> {
   }).then(async (res) => {
     if (!res.ok) {
       const body = await res.json();
-      console.log(body.message);
       if (body.message) {
         throw new Error(body.message);
       }

@@ -58,7 +58,6 @@ type PlaybackMode = "slowed" | "normal" | "speedup" | "custom";
 export const playbackModeAtom = atom(
   "slowed",
   async (get, set, playbackMode: PlaybackMode) => {
-    console.log(playbackMode);
     set(playbackModeAtom, playbackMode);
     let playbackSettings: PlaybackSettings | null = null;
     if (playbackMode === "normal") {
