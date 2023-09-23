@@ -13,7 +13,7 @@ export default function Icon({ size }: Props) {
   return (
     <Box
       style={{
-        backgroundColor: theme.colors.violet[5],
+        backgroundColor: theme.colors.violet[9],
         color: theme.colors.violet[0],
         padding: rem(8),
         borderRadius: theme.radius.md,

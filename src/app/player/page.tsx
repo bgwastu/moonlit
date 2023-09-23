@@ -1,6 +1,8 @@
 "use client";
 export const dynamic = "force-dynamic";
 
+import Icon from "@/components/Icon";
+import LoadingOverlay from "@/components/LoadingOverlay";
 import {
   ActionIcon,
   Box,
@@ -28,11 +30,10 @@ import {
   useLocalStorage,
   useShallowEffect,
 } from "@mantine/hooks";
-import { notifications } from "@mantine/notifications";
+import { notifications, showNotification } from "@mantine/notifications";
 import {
   IconAdjustments,
   IconDownload,
-  IconLayoutBottombarExpand,
   IconMenu2,
   IconMusic,
   IconPlayerPauseFilled,
@@ -43,6 +44,8 @@ import {
   IconShare,
 } from "@tabler/icons-react";
 import { useAtom } from "jotai";
+import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { useInterval } from "../../hooks/useInterval";
 import {
@@ -53,10 +56,6 @@ import {
   songAtom,
   stateAtom,
 } from "../../state";
-import { useRouter, useSearchParams } from "next/navigation";
-import LoadingOverlay from "@/components/LoadingOverlay";
-import Link from "next/link";
-import Icon from "@/components/Icon";
 
 const getSongLength = (bufferDuration: number, playbackRate: number) => {
   return bufferDuration / playbackRate;
@@ -188,14 +187,18 @@ export default function PlayerPage() {
   ]);
 
   function shareMusic() {
-    // copy to clipboard
-    const text = window.location.href.split("/")[2] + "/watch?v=" + song.metadata.id + "&s=" + encodeURI(btoa(JSON.stringify(customPlaybackSettings)));
-    navigator.clipboard.writeText(text).then(() => {
-      notifications.show({
-        title: "Copied to clipboard!",
-        message: "Share the link to your friends!",
-      });
-      closeDrawer();
+    // NOT IMPLEMENTED YET
+    showNotification({
+      title: "Not implemented yet",
+      message: "This feature is not implemented yet",
+    });
+  }
+
+  function downloadMusic() {
+    // NOT IMPLEMENTED YET
+    showNotification({
+      title: "Not implemented yet",
+      message: "This feature is not implemented yet",
     });
   }
 
@@ -376,8 +379,20 @@ export default function PlayerPage() {
       >
         <Container size="xs">
           <Flex direction="column" gap="md">
-            <Button leftIcon={<IconShare />} disabled={song.metadata.id == null} onClick={shareMusic}>Share Remixed Music</Button>
-            <Button leftIcon={<IconDownload />} variant="default">Download Remixed Music</Button>
+            <Button
+              leftIcon={<IconShare />}
+              disabled={song.metadata.id == null}
+              onClick={shareMusic}
+            >
+              Share Remixed Music
+            </Button>
+            <Button
+              leftIcon={<IconDownload />}
+              variant="default"
+              onClick={downloadMusic}
+            >
+              Download Remixed Music
+            </Button>
           </Flex>
         </Container>
       </Drawer>
@@ -442,7 +457,7 @@ export default function PlayerPage() {
         <Flex
           style={{
             position: "absolute",
-            top: 22 + 64,
+            top: 10 + 64,
             left: 0,
             right: 0,
             zIndex: 2,

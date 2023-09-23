@@ -111,7 +111,7 @@ export const playbackModeAtom = atom(
         (newSongLength * get(currentPlaybackAtom)) / previousSongLength
       );
 
-      await new Promise((resolve) => setTimeout(resolve, 5));
+      await new Promise((resolve) => setTimeout(resolve, 1));
     }
 
     // reverb settings
@@ -120,8 +120,6 @@ export const playbackModeAtom = atom(
     reverb.decay = playbackSettings.reverbDecay;
     reverb.preDelay = playbackSettings.reverbPreDelay;
 
-    // finally, set the value
-    set(playbackModeAtom, playbackMode);
   }
 );
 playbackModeAtom.debugLabel = "playbackModeAtom";
@@ -157,6 +155,7 @@ export const customPlaybackSettingsAtom = atom(
     // action
     const reverb = get(reverbAtom);
     const player = get(playerAtom);
+
     player.playbackRate = playbackSettings.playbackRate;
     reverb.wet.value = playbackSettings.reverbWet;
     reverb.decay = playbackSettings.reverbDecay;
