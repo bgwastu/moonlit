@@ -58,7 +58,7 @@ import {
 import { getFormattedTime, getSongLength } from "@/utils";
 
 export type State = "playing" | "stop" | "finished";
-export const stateAtom = atom<State>("stop");
+const stateAtom = atom<State>("stop");
 
 export default function PlayerPage() {
   const router = useRouter();
