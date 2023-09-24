@@ -3,8 +3,6 @@ import { Player, Reverb } from "tone";
 import { PlaybackSettings, Song } from "./interfaces";
 import { getSongLength } from "./utils";
 
-export type State = "loaded" | "playing" | "stop" | "finished";
-export const stateAtom = atom<State>("loaded");
 
 export const songAtom = atom(
   null as Song | null,
@@ -21,7 +19,6 @@ export const songAtom = atom(
     reverb.toDestination();
     player.connect(reverb);
 
-    set(stateAtom, "loaded");
     set(songAtom, song);
   }
 );

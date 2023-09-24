@@ -43,7 +43,7 @@ import {
   IconRotate,
   IconShare,
 } from "@tabler/icons-react";
-import { useAtom } from "jotai";
+import { atom, useAtom } from "jotai";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
@@ -54,22 +54,11 @@ import {
   playbackModeAtom,
   playerAtom,
   songAtom,
-  stateAtom,
 } from "../../state";
+import { getFormattedTime, getSongLength } from "@/utils";
 
-const getSongLength = (bufferDuration: number, playbackRate: number) => {
-  return bufferDuration / playbackRate;
-};
-
-function getFormattedTime(seconds: number) {
-  const minutes = Math.floor(seconds / 60);
-  const remainingSeconds = Math.floor(seconds % 60);
-
-  const formattedMinutes = String(minutes).padStart(2, "");
-  const formattedSeconds = String(remainingSeconds).padStart(2, "0");
-
-  return `${formattedMinutes}:${formattedSeconds}`;
-}
+export type State = "playing" | "stop" | "finished";
+export const stateAtom = atom<State>("stop");
 
 export default function PlayerPage() {
   const router = useRouter();
@@ -663,6 +652,7 @@ export default function PlayerPage() {
             style={{
               objectFit: "scale-down",
               width: "90%",
+              paddingTop: rem(64),
               height: "100%",
             }}
             crossOrigin="anonymous"
