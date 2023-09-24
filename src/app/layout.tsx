@@ -2,7 +2,14 @@
 export const dynamic = "force-dynamic";
 
 import Dynamic from "@/components/Dynamic";
-import { MantineProvider, useMantineTheme } from "@mantine/core";
+import {
+  Flex,
+  MantineProvider,
+  useMantineTheme,
+  Text,
+  Anchor,
+} from "@mantine/core";
+import { useOs } from "@mantine/hooks";
 import { Notifications } from "@mantine/notifications";
 import { PostHogProvider } from "posthog-js/react";
 
@@ -12,6 +19,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   const theme = useMantineTheme();
+  const os = useOs();
+
   return (
     <html lang="en">
       <head>
@@ -37,8 +46,18 @@ export default function RootLayout({
                 white: theme.colors.violet[0],
               }}
             >
-              <Notifications />
-              {children}
+              {os === "ios" ? (
+                <Flex h="100dvh" align="center" justify="center">
+                  <Text>
+                    Sorry, IOS is not currently supported at the moment.
+                  </Text>
+                </Flex>
+              ) : (
+                <>
+                  <Notifications />
+                  {children}
+                </>
+              )}
             </MantineProvider>
           </PostHogProvider>
         </Dynamic>
