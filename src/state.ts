@@ -17,6 +17,7 @@ export const songAtom = atom(
     const p2 = player.load(song.fileUrl);
     await Promise.all([p1, p2]);
 
+    set(playbackModeAtom, "slowed");
     reverb.toDestination();
     player.connect(reverb);
 
