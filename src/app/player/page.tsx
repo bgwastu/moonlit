@@ -1,17 +1,14 @@
 "use client";
 export const dynamic = "force-dynamic";
 
-import Icon from "@/components/Icon";
 import LoadingOverlay from "@/components/LoadingOverlay";
+import { getFormattedTime, getSongLength } from "@/utils";
 import {
   ActionIcon,
   Box,
   Button,
   Center,
-  Container,
-  Drawer,
   Flex,
-  Header,
   Image,
   Loader,
   MediaQuery,
@@ -21,7 +18,7 @@ import {
   Text,
   TextInput,
   rem,
-  useMantineTheme,
+  useMantineTheme
 } from "@mantine/core";
 import {
   useDisclosure,
@@ -30,22 +27,19 @@ import {
   useLocalStorage,
   useShallowEffect,
 } from "@mantine/hooks";
-import { notifications, showNotification } from "@mantine/notifications";
+import { notifications } from "@mantine/notifications";
 import {
   IconAdjustments,
-  IconDownload,
-  IconMenu2,
   IconMusic,
   IconPlayerPauseFilled,
   IconPlayerPlayFilled,
   IconRewindBackward5,
   IconRewindForward5,
-  IconRotate,
-  IconShare,
+  IconRotate
 } from "@tabler/icons-react";
 import { atom, useAtom } from "jotai";
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { useInterval } from "../../hooks/useInterval";
 import {
@@ -55,7 +49,6 @@ import {
   playerAtom,
   songAtom,
 } from "../../state";
-import { getFormattedTime, getSongLength } from "@/utils";
 
 export type State = "playing" | "stop" | "finished";
 const stateAtom = atom<State>("stop");
@@ -106,8 +99,6 @@ export default function PlayerPage() {
   const [modalOpened, { open: openModal, close: closeModal }] =
     useDisclosure(false);
   const [modalBgOpened, { open: openBgModal, close: closeBgModal }] =
-    useDisclosure(false);
-  const [drawerOpened, { open: openDrawer, close: closeDrawer }] =
     useDisclosure(false);
 
   useHotkeys([
@@ -174,22 +165,6 @@ export default function PlayerPage() {
     startInterval,
     stopInterval,
   ]);
-
-  function shareMusic() {
-    // NOT IMPLEMENTED YET
-    showNotification({
-      title: "Not implemented yet",
-      message: "This feature is not implemented yet",
-    });
-  }
-
-  function downloadMusic() {
-    // NOT IMPLEMENTED YET
-    showNotification({
-      title: "Not implemented yet",
-      message: "This feature is not implemented yet",
-    });
-  }
 
   function togglePlayer() {
     if (state === "playing") {
@@ -358,33 +333,6 @@ export default function PlayerPage() {
           </Flex>
         </form>
       </Modal>
-      <Drawer
-        opened={drawerOpened}
-        onClose={closeDrawer}
-        title="Menu"
-        overlayProps={{ opacity: 0.5, blur: 4 }}
-        position="bottom"
-        size={200}
-      >
-        <Container size="xs">
-          <Flex direction="column" gap="md">
-            <Button
-              leftIcon={<IconShare />}
-              disabled={song.metadata.id == null}
-              onClick={shareMusic}
-            >
-              Share Remixed Music
-            </Button>
-            <Button
-              leftIcon={<IconDownload />}
-              variant="default"
-              onClick={downloadMusic}
-            >
-              Download Remixed Music
-            </Button>
-          </Flex>
-        </Container>
-      </Drawer>
 
       <Box
         style={{
@@ -392,61 +340,10 @@ export default function PlayerPage() {
           height: "100dvh",
         }}
       >
-        <Header
-          height={64}
-          p="md"
-          bg={theme.colors.dark[6]}
-          withBorder
-          style={{
-            position: "absolute",
-            top: 0,
-            zIndex: 2,
-          }}
-        >
-          <Flex h="100%" align="center" justify="space-between">
-            <Flex
-              gap={6}
-              align="center"
-              style={{
-                cursor: "pointer",
-              }}
-              onClick={() => {
-                if (
-                  !confirm(
-                    "Are you sure you want to go back? Your music will stop playing."
-                  )
-                )
-                  return;
-
-                router.replace("/");
-              }}
-            >
-              <Icon size={18} />
-              <Text
-                fz={rem(20)}
-                fw="bold"
-                lts={rem(0.2)}
-                style={{
-                  userSelect: "none",
-                }}
-              >
-                Moonlit
-              </Text>
-            </Flex>
-            <Button
-              leftIcon={<IconMenu2 size={20} />}
-              variant="default"
-              onClick={openDrawer}
-            >
-              Menu
-            </Button>
-          </Flex>
-        </Header>
-
         <Flex
           style={{
             position: "absolute",
-            top: 10 + 64,
+            top: 18,
             left: 0,
             right: 0,
             zIndex: 2,
@@ -652,7 +549,7 @@ export default function PlayerPage() {
             style={{
               objectFit: "scale-down",
               width: "90%",
-              paddingTop: rem(64),
+              paddingTop: rem(18),
               height: "100%",
             }}
             crossOrigin="anonymous"
