@@ -10,7 +10,6 @@ import {
   Container,
   Divider,
   Flex,
-  Header,
   Text,
   TextInput,
   rem,
@@ -20,8 +19,6 @@ import { useForm } from "@mantine/form";
 import { notifications } from "@mantine/notifications";
 import {
   IconBrandYoutube,
-  IconDotsVertical,
-  IconLayoutBottombarExpand,
   IconMusicCheck,
   IconMusicPlus,
   IconMusicX,
@@ -30,11 +27,10 @@ import parse from "id3-parser";
 import { convertFileToBuffer } from "id3-parser/lib/util";
 import { atom, useAtom } from "jotai";
 import { useRouter } from "next/navigation";
+import { usePostHog } from "posthog-js/react";
 import Icon from "../components/Icon";
 import { songAtom } from "../state";
-import { isYoutubeURL } from "../utils";
-import { usePostHog } from "posthog-js/react";
-import { getSongFromYouTube } from "@/api";
+import { getYouTubeId, isYoutubeURL } from "../utils";
 
 const loadingAtom = atom<{
   status: boolean;
@@ -151,9 +147,6 @@ function LocalUpload() {
 
 function YoutubeUpload() {
   const router = useRouter();
-  const [loading, setLoading] = useAtom(loadingAtom);
-  const [, setSong] = useAtom(songAtom);
-  const posthog = usePostHog();
   const form = useForm({
     initialValues: {
       url: "",
@@ -164,48 +157,30 @@ function YoutubeUpload() {
     },
   });
 
-  function fetchMusic(url: string) {
-    posthog.capture("download_music");
-    setLoading({
-      status: true,
-      message: "Downloading music, please wait...",
-    });
-
-    getSongFromYouTube(url)
-      .then((song) => {
-        setSong(song).then(() => {
-          setLoading({
-            status: false,
-            message: null,
-          });
-          router.push("/player");
-        });
-      })
-      .catch((e) => {
-        console.error(e);
-        notifications.show({
-          title: "Download error",
-          message: e.message,
-        });
-        setLoading({
-          status: false,
-          message: null,
-        });
+  function onSubmit(url: string) {
+    const id = getYouTubeId(url);
+    if (!id) {
+      notifications.show({
+        title: "Error",
+        message: "Invalid YouTube URL",
       });
+      return;
+    }
+
+    router.push("/watch?v=" + id);
   }
 
   return (
-    <form onSubmit={form.onSubmit((values) => fetchMusic(values.url))}>
+    <form onSubmit={form.onSubmit((values) => onSubmit(values.url))}>
       <Flex direction="column" gap="md">
         <TextInput
           icon={<IconBrandYoutube />}
           placeholder="YouTube URL"
           size="lg"
           type="url"
-          disabled={loading.status}
           {...form.getInputProps("url")}
         />
-        <Button size="lg" type="submit" disabled={loading.status}>
+        <Button size="lg" type="submit">
           Load music from YouTube
         </Button>
       </Flex>
@@ -218,7 +193,6 @@ export default function UploadPage() {
 
   return (
     <>
-      
       <LoadingOverlay visible={loading.status} message={loading.message} />
       <Box
         style={{

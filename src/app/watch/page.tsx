@@ -1,19 +1,20 @@
 "use client";
 export const dynamic = "force-dynamic";
 
-import { getSongFromYouTube } from "@/api";
 import LoadingOverlay from "@/components/LoadingOverlay";
-import {
-  songAtom
-} from "@/state";
-import { isYoutubeURL } from "@/utils";
+import { Player } from "@/components/Player";
+import { Song } from "@/interfaces";
+import { songAtom } from "@/state";
+import { getYouTubeId, isYoutubeURL } from "@/utils";
 import { Button, Center, Container, Flex, Image, Text } from "@mantine/core";
 import { useShallowEffect } from "@mantine/hooks";
 import { notifications } from "@mantine/notifications";
 import { IconMusic } from "@tabler/icons-react";
 import { atom, useAtom } from "jotai";
+import localforage from "localforage";
 import { useRouter, useSearchParams } from "next/navigation";
 import { usePostHog } from "posthog-js/react";
+import { useState } from "react";
 
 const loadingAtom = atom(false);
 
@@ -22,14 +23,11 @@ export default function WatchPage() {
   const router = useRouter();
   const [loading, setLoading] = useAtom(loadingAtom);
   const [song, setSong] = useAtom(songAtom);
+  const [isPlayer, setIsPlayer] = useState(false);
   const posthog = usePostHog();
 
   useShallowEffect(() => {
     posthog.capture("watch_page");
-    if (song) {
-      return;
-    }
-
     if (!searchParams.get("v")) {
       notifications.show({
         title: "Error",
@@ -75,7 +73,7 @@ export default function WatchPage() {
         visible={loading}
         message="Downloading music, please wait..."
       />
-      {song && (
+      {song && !isPlayer && !loading && (
         <Container size="xs">
           <Flex
             h="100dvh"
@@ -106,7 +104,7 @@ export default function WatchPage() {
             </Flex>
             <Button
               onClick={() => {
-                router.push("/player");
+                setIsPlayer(true);
               }}
             >
               Go to Player
@@ -114,6 +112,56 @@ export default function WatchPage() {
           </Flex>
         </Container>
       )}
+      {isPlayer && <Player song={song} />}
     </>
   );
+}
+
+async function getSongFromYouTube(url: string): Promise<Song> {
+  if (!isYoutubeURL(url) && !getYouTubeId(url)) {
+    throw new Error("Invalid YouTube URL");
+  }
+
+  // check cached music
+  const id = getYouTubeId(url);
+  const cachedMusic = (await localforage.getItem(id)) as any;
+
+  if (cachedMusic) {
+    return {
+      fileUrl: URL.createObjectURL(cachedMusic.blob),
+      metadata: cachedMusic.metadata,
+    };
+  }
+
+  return fetch("/api/yt", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      url,
+    }),
+  }).then(async (res) => {
+    if (!res.ok) {
+      const body = await res.json();
+      if (body.message) {
+        throw new Error(body.message);
+      }
+      throw new Error(`Error downloading YouTube music (${res.statusText})`);
+    }
+
+    const blob = await res.blob();
+    const metadata = {
+      id,
+      title: decodeURI(res.headers.get("Title")),
+      author: decodeURI(res.headers.get("Author")),
+      coverUrl: decodeURI(res.headers.get("Thumbnail")),
+    };
+
+    // save the music & metadata to the cache localForage
+    localforage.setItem(id, { blob, metadata });
+
+    const fileUrl = URL.createObjectURL(blob);
+    return { fileUrl, metadata };
+  });
 }
