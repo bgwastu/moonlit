@@ -10,6 +10,7 @@ import {
 import { getFormattedTime, getSongLength } from "@/utils";
 import {
   ActionIcon,
+  Anchor,
   Box,
   Button,
   Center,
@@ -290,12 +291,12 @@ export function Player({ song }: { song: Song }) {
                 Use default background
               </Button>
             ) : (
-              <Link
+              <Anchor
                 href="https://id.pinterest.com/bznkmmbd/aesthetic/"
                 target="_blank"
               >
                 Pinboard Aesthetic ✨
-              </Link>
+              </Anchor>
             )}
             <Button
               type="submit"
