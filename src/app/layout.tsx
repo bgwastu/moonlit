@@ -38,7 +38,7 @@ export default function RootLayout({
           <PostHogProvider
             apiKey={process.env.NEXT_PUBLIC_POSTHOG_API_KEY}
             options={{
-              api_host: "https://app.posthog.com",
+              api_host: "/phog",
               opt_in_site_apps: true,
             }}
           >
