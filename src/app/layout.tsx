@@ -32,6 +32,7 @@ export default function RootLayout({
       <head>
         <title>Moonlit</title>
         <meta name="description" content="Your melancholy music player" />
+        <meta name="theme-color" content="#1A1B1E" />
       </head>
       <body>
         <Dynamic>
