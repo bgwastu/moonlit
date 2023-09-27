@@ -7,7 +7,7 @@ import {
   Dialog,
   MantineProvider,
   Text,
-  useMantineTheme
+  useMantineTheme,
 } from "@mantine/core";
 import { useDisclosure, useLocalStorage, useOs } from "@mantine/hooks";
 import { Notifications } from "@mantine/notifications";
@@ -25,7 +25,6 @@ export default function RootLayout({
     key: "warning-dismissed",
     defaultValue: false,
   });
-  const [opened, { toggle, close }] = useDisclosure(true);
 
   return (
     <html lang="en">
@@ -34,7 +33,7 @@ export default function RootLayout({
         <meta name="description" content="Your melancholy music player" />
         <meta name="theme-color" content="#1A1B1E" />
       </head>
-      <body>
+      <body style={{ margin: 0 }}>
         <Dynamic>
           <PostHogProvider
             apiKey={process.env.NEXT_PUBLIC_POSTHOG_API_KEY}
@@ -69,9 +68,14 @@ export default function RootLayout({
                   <Text size="sm" mb="xs" fw={500}>
                     Moonlit is not yet optimized for IOS devices
                   </Text>
-                  <Button onClick={() => {
-                    setIosDismissed(true);
-                  }} variant="default">I understand</Button>
+                  <Button
+                    onClick={() => {
+                      setIosDismissed(true);
+                    }}
+                    variant="default"
+                  >
+                    I understand
+                  </Button>
                 </Dialog>
                 {children}
               </>
