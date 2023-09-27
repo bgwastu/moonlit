@@ -3,12 +3,13 @@ export const dynamic = "force-dynamic";
 
 import Dynamic from "@/components/Dynamic";
 import {
-  Flex,
+  Button,
+  Dialog,
   MantineProvider,
   Text,
   useMantineTheme
 } from "@mantine/core";
-import { useOs } from "@mantine/hooks";
+import { useDisclosure, useLocalStorage, useOs } from "@mantine/hooks";
 import { Notifications } from "@mantine/notifications";
 import { PostHogProvider } from "posthog-js/react";
 
@@ -18,7 +19,13 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   const theme = useMantineTheme();
+
   const os = useOs();
+  const [iosDismissed, setIosDismissed] = useLocalStorage({
+    key: "warning-dismissed",
+    defaultValue: false,
+  });
+  const [opened, { toggle, close }] = useDisclosure(true);
 
   return (
     <html lang="en">
@@ -46,18 +53,27 @@ export default function RootLayout({
                 white: theme.colors.violet[0],
               }}
             >
-              {os === "ios" ? (
-                <Flex h="100dvh" align="center" justify="center">
-                  <Text>
-                    Sorry, IOS is not currently supported at the moment.
+              <>
+                <Notifications />
+                <Dialog
+                  opened={os === "ios" && !iosDismissed}
+                  withCloseButton
+                  onClose={() => {
+                    setIosDismissed(true);
+                  }}
+                  size="lg"
+                  bg={theme.colors.dark[6]}
+                  radius="md"
+                >
+                  <Text size="sm" mb="xs" fw={500}>
+                    Moonlit is not yet optimized for IOS devices
                   </Text>
-                </Flex>
-              ) : (
-                <>
-                  <Notifications />
-                  {children}
-                </>
-              )}
+                  <Button onClick={() => {
+                    setIosDismissed(true);
+                  }} variant="default">I understand</Button>
+                </Dialog>
+                {children}
+              </>
             </MantineProvider>
           </PostHogProvider>
         </Dynamic>
