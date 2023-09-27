@@ -103,15 +103,6 @@ export function Player({ song }: { song: Song }) {
   ]);
 
   useShallowEffect(() => {
-    if (!song) {
-      router.replace("/");
-      notifications.show({
-        title: "No song selected",
-        message: "Please select a song to play",
-      });
-      return;
-    }
-
     while (!player.loaded) {
       continue;
     }
@@ -202,8 +193,6 @@ export function Player({ song }: { song: Song }) {
 
     setPlaybackPosition(currentPlayback + 5);
   }
-
-  if (!song) return <></>;
 
   return (
     <>
