@@ -77,13 +77,8 @@ function LocalUpload() {
           setSong({
             fileUrl: URL.createObjectURL(files[0]),
             metadata,
-          }).then(() => {
-            setLoading({
-              status: false,
-              message: null,
-            });
-            router.push("/player");
           });
+          router.push("/player");
         } else {
           setSong({
             fileUrl: URL.createObjectURL(files[0]),
@@ -93,13 +88,8 @@ function LocalUpload() {
               author: "Unknown",
               coverUrl: "",
             },
-          }).then(() => {
-            setLoading({
-              status: false,
-              message: null,
-            });
-            router.push("/player");
           });
+          router.push("/player");
         }
       }}
       onReject={(files) => {

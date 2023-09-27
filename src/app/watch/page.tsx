@@ -52,9 +52,8 @@ export default function WatchPage() {
 
     getSongFromYouTube(url)
       .then((song) => {
-        setSong(song).then(() => {
-          setLoading(false);
-        });
+        setSong(song);
+        setLoading(false);
       })
       .catch((e) => {
         console.error(e);
