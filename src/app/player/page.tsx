@@ -17,9 +17,9 @@ export default function Page() {
     }
   }, [song, router]);
 
-  if (!song) {
-    return null;
+  if (song) {
+    return <Player song={song} />;
   }
 
-  return <Player song={song} />;
+  return <></>;
 }

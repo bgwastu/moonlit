@@ -44,8 +44,8 @@ import { Player as PlayerTone, Reverb } from "tone";
 
 type State = "playing" | "stop" | "finished";
 const stateAtom = atom<State>("stop");
-const playerAtom = atom(new PlayerTone());
-const reverbAtom = atom(new Reverb());
+const playerAtom = atom(typeof window !== "undefined" && new PlayerTone());
+const reverbAtom = atom(typeof window !== "undefined" && new Reverb());
 const currentPlaybackAtom = atom(0);
 
 type PlaybackMode = "slowed" | "normal" | "speedup" | "custom";
@@ -116,7 +116,7 @@ const playbackModeAtom = atom(
 );
 
 const customPlaybackSettingsTemp = atom(
-  JSON.parse(
+  typeof window !== "undefined" && JSON.parse(
     localStorage.getItem("custom-playback-settings") ??
       JSON.stringify({
         playbackRate: 1,
