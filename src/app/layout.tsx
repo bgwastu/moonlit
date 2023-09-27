@@ -5,9 +5,8 @@ import Dynamic from "@/components/Dynamic";
 import {
   Flex,
   MantineProvider,
-  useMantineTheme,
   Text,
-  Anchor,
+  useMantineTheme
 } from "@mantine/core";
 import { useOs } from "@mantine/hooks";
 import { Notifications } from "@mantine/notifications";

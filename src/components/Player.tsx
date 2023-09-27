@@ -1,7 +1,7 @@
 import LoadingOverlay from "@/components/LoadingOverlay";
 import { useInterval } from "@/hooks/useInterval";
 import { PlaybackSettings, Song } from "@/interfaces";
-import {} from "@/state";
+import { } from "@/state";
 import { getFormattedTime, getSongLength } from "@/utils";
 import {
   ActionIcon,
@@ -166,7 +166,6 @@ const customPlaybackSettingsAtom = atom(
 customPlaybackSettingsAtom.debugLabel = "playbackSettingsAtom";
 
 export function Player({ song }: { song: Song }) {
-  const router = useRouter();
   const [imgLoading, setImgLoading] = useState(true);
 
   const [currentPlayback, setCurrentPlayback] = useAtom(currentPlaybackAtom);
