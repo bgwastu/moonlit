@@ -1,6 +1,6 @@
 import { isYoutubeURL } from "@/utils";
 import { NextResponse } from "next/server";
-import * as ytdl from "ytdl-core";
+import * as ytdl from "@distube/ytdl-core";
 
 export async function POST(req: Request) {
   const { url } = await req.json();

@@ -9,6 +9,7 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@distube/ytdl-core": "^4.13.2",
     "@mantine/core": "6.0.20",
     "@mantine/dropzone": "6.0.20",
     "@mantine/form": "6.0.20",
@@ -19,6 +20,7 @@
     "@types/react": "18.2.21",
     "@types/react-dom": "18.2.7",
     "color-thief-ts": "^1.1.1",
+    "deasync": "^0.1.28",
     "eslint": "8.49.0",
     "eslint-config-next": "13.4.19",
     "id3-parser": "^3.0.0",
@@ -32,5 +34,8 @@
     "typescript": "5.2.2",
     "worker-timers": "^7.0.75",
     "ytdl-core": "git+ssh://git@github.com:khlevon/node-ytdl-core.git#v4.11.4-patch.2"
+  },
+  "devDependencies": {
+    "@types/tough-cookie": "^4.0.3"
   }
 }
