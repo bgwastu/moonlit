@@ -516,7 +516,7 @@ export function Player({ song }: { song: Song }) {
               <Text
                 fz="sm"
                 px={10}
-                py={8}
+                py={6}
                 style={{
                   boxShadow: "0px 0px 0px 1px #383A3F",
                   backgroundColor: theme.colors.dark[6],
