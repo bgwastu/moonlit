@@ -35,6 +35,7 @@ import {
 import { notifications } from "@mantine/notifications";
 import {
   IconAdjustments,
+  IconExternalLink,
   IconMusic,
   IconPlayerPlayFilled,
   IconRewindBackward5,
@@ -183,20 +184,10 @@ export function Player({ song }: { song: Song }) {
     key: "background-url",
     defaultValue: null,
   });
-  const backgroundUrl = useMemo(() => {
-    const listBackgroundUrls = [
-      "https://i.pinimg.com/originals/08/2d/91/082d9121613b89feea2978e756e41a39.gif",
-      "https://i.pinimg.com/originals/89/8f/bd/898fbd8a5d79c90be4732525a122a96f.gif",
-      "https://i.pinimg.com/originals/a9/76/7d/a9767d35192a99c9a45b5376fff4a709.gif",
-      "https://i.pinimg.com/originals/80/8d/ac/808dac987d37b884c2c068352ede5b5f.gif",
-      "https://i.pinimg.com/originals/b3/e2/2e/b3e22e164a207f353809d20dde261bb8.gif",
-    ];
-
-    return (
-      storageBackgroundUrl ||
-      listBackgroundUrls[Math.floor(Math.random() * listBackgroundUrls.length)]
-    );
-  }, [storageBackgroundUrl]);
+  const defaultBackgroundUrl =
+    song.metadata.id ? `https://i.ytimg.com/vi/${song.metadata.id}/maxresdefault.jpg` : "https://i.pinimg.com/originals/08/2d/91/082d9121613b89feea2978e756e41a39.gif";
+  
+    const backgroundUrl = storageBackgroundUrl ? storageBackgroundUrl + "&n=-1" : defaultBackgroundUrl;
 
   const [player] = useAtom(playerAtom);
   const [reverb] = useAtom(reverbAtom);
@@ -400,9 +391,17 @@ export function Player({ song }: { song: Song }) {
             type="url"
             description="PNG, GIF, JPG, JPEG, WEBP"
             defaultValue={backgroundUrl}
+            mb="xs"
           />
+
+          <Anchor
+            href="https://id.pinterest.com/bznkmmbd/aesthetic/"
+            target="_blank"
+          >
+            pinboard aesthetic references <IconExternalLink size={16}/>
+          </Anchor>
           <Flex justify="end" mt="md" gap="md" align="center">
-            {storageBackgroundUrl ? (
+            {storageBackgroundUrl && (
               <Button
                 variant="default"
                 onClick={() => {
@@ -416,13 +415,6 @@ export function Player({ song }: { song: Song }) {
               >
                 Use default background
               </Button>
-            ) : (
-              <Anchor
-                href="https://id.pinterest.com/bznkmmbd/aesthetic/"
-                target="_blank"
-              >
-                Pinboard Aesthetic ✨
-              </Anchor>
             )}
             <Button
               type="submit"
@@ -674,7 +666,7 @@ export function Player({ song }: { song: Song }) {
               maxHeight: "50dvh",
             }}
             crossOrigin="anonymous"
-            src={`https://wsrv.nl/?url=${backgroundUrl}&n=-1&output=webp`}
+            src={`https://wsrv.nl/?url=${backgroundUrl}&output=webp`}
             onLoad={(e) => {
               const color = getDominantColorFromImage(
                 e.target as HTMLImageElement
