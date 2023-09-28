@@ -674,7 +674,6 @@ export function Player({ song }: { song: Song }) {
 
               // change global theme based on dominant color
               const colors = generateColors(color);
-              console.log(colors);
 
               const newTheme: MantineThemeOverride = {
                 ...globalTheme,
