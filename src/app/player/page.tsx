@@ -1,5 +1,4 @@
 "use client";
-export const dynamic = "force-dynamic";
 
 import { Player } from "@/components/Player";
 import { songAtom } from "@/state";

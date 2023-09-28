@@ -1,8 +1,11 @@
 import LoadingOverlay from "@/components/LoadingOverlay";
 import { useInterval } from "@/hooks/useInterval";
 import { PlaybackSettings, Song } from "@/interfaces";
-import { } from "@/state";
-import { getFormattedTime, getSongLength } from "@/utils";
+import {
+  getDominantColorFromImage,
+  getFormattedTime,
+  getSongLength,
+} from "@/utils";
 import {
   ActionIcon,
   Anchor,
@@ -18,7 +21,6 @@ import {
   Slider,
   Text,
   TextInput,
-  rem,
   useMantineTheme,
 } from "@mantine/core";
 import {
@@ -32,7 +34,6 @@ import { notifications } from "@mantine/notifications";
 import {
   IconAdjustments,
   IconMusic,
-  IconPlayerPauseFilled,
   IconPlayerPlayFilled,
   IconRewindBackward5,
   IconRewindForward5,
@@ -41,6 +42,7 @@ import {
 import { atom, useAtom } from "jotai";
 import { useEffect, useMemo, useState } from "react";
 import { Player as PlayerTone, Reverb } from "tone";
+import { IconPause } from "./IconPause";
 
 type State = "playing" | "stop" | "finished";
 const stateAtom = atom<State>("stop");
@@ -116,15 +118,16 @@ const playbackModeAtom = atom(
 );
 
 const customPlaybackSettingsTemp = atom(
-  typeof window !== "undefined" && JSON.parse(
-    localStorage.getItem("custom-playback-settings") ??
-      JSON.stringify({
-        playbackRate: 1,
-        reverbWet: 0,
-        reverbDecay: 6,
-        reverbPreDelay: 0.1,
-      })
-  ) as PlaybackSettings
+  typeof window !== "undefined" &&
+    (JSON.parse(
+      localStorage.getItem("custom-playback-settings") ??
+        JSON.stringify({
+          playbackRate: 1,
+          reverbWet: 0,
+          reverbDecay: 6,
+          reverbPreDelay: 0.1,
+        })
+    ) as PlaybackSettings)
 );
 
 const customPlaybackSettingsAtom = atom(
@@ -162,7 +165,6 @@ const customPlaybackSettingsAtom = atom(
     );
   }
 );
-customPlaybackSettingsAtom.debugLabel = "playbackSettingsAtom";
 
 export function Player({ song }: { song: Song }) {
   const [imgLoading, setImgLoading] = useState(true);
@@ -338,7 +340,7 @@ export function Player({ song }: { song: Song }) {
             thumbSize={20}
             max={1.5}
             step={0.01}
-            sx={{ zIndex: 100000 }}
+            style={{ zIndex: 1000 }}
             marks={[
               { value: 0.8, label: "Slowed" },
               { value: 1, label: "Normal" },
@@ -348,7 +350,7 @@ export function Player({ song }: { song: Song }) {
               if (v < 0.7) return `who hurt u? 😭`;
               return `${v}x`;
             }}
-            value={customPlaybackSettings.playbackRate}
+            defaultValue={customPlaybackSettings.playbackRate}
             onChange={(e) => {
               setCustomPlaybackSettings({
                 ...customPlaybackSettings,
@@ -367,7 +369,7 @@ export function Player({ song }: { song: Song }) {
               { value: 0.4, label: "Sweet" },
               { value: 1, label: "Full" },
             ]}
-            value={customPlaybackSettings.reverbWet}
+            defaultValue={customPlaybackSettings.reverbWet}
             onChange={(e) => {
               setCustomPlaybackSettings({
                 ...customPlaybackSettings,
@@ -573,7 +575,7 @@ export function Player({ song }: { song: Song }) {
                   }
                 >
                   {state === "playing" ? (
-                    <IconPlayerPauseFilled size={32} />
+                    <IconPause />
                   ) : state === "stop" ? (
                     <IconPlayerPlayFilled size={32} />
                   ) : (
@@ -662,37 +664,16 @@ export function Player({ song }: { song: Song }) {
             style={{
               objectFit: "scale-down",
               width: "90%",
-              paddingTop: rem(18),
-              height: "100%",
+              maxHeight: "50dvh",
             }}
             crossOrigin="anonymous"
             src={`https://wsrv.nl/?url=${backgroundUrl}&n=-1&output=webp`}
             onLoad={(e) => {
-              // get dominant color
-              const img = e.target as HTMLImageElement;
-              const canvas = document.createElement("canvas");
-              const ctx = canvas.getContext("2d");
-              ctx.drawImage(img, 0, 0);
-              const imageData = ctx.getImageData(0, 0, img.width, img.height);
-              const data = imageData.data;
-              let r = 0;
-              let g = 0;
-              let b = 0;
-              let count = 0;
-              for (let i = 0; i < data.length; i += 4) {
-                if (data[i + 3] <= 0) {
-                  continue;
-                }
-                r += data[i];
-                g += data[i + 1];
-                b += data[i + 2];
-                count++;
-              }
-              r = Math.floor(r / count);
-              g = Math.floor(g / count);
-              b = Math.floor(b / count);
-              const rgb = `rgb(${r}, ${g}, ${b})`;
-              document.getElementById("bg-wrapper").style.backgroundColor = rgb;
+              const color = getDominantColorFromImage(
+                e.target as HTMLImageElement
+              );
+              document.getElementById("bg-wrapper").style.backgroundColor =
+                color;
 
               setImgLoading(false);
             }}

@@ -32,3 +32,28 @@ export function getFormattedTime(seconds: number) {
 
   return `${formattedMinutes}:${formattedSeconds}`;
 }
+
+export function getDominantColorFromImage(img: HTMLImageElement) {
+  const canvas = document.createElement("canvas");
+  const ctx = canvas.getContext("2d");
+  ctx.drawImage(img, 0, 0);
+  const imageData = ctx.getImageData(0, 0, img.width, img.height);
+  const data = imageData.data;
+  let r = 0;
+  let g = 0;
+  let b = 0;
+  let count = 0;
+  for (let i = 0; i < data.length; i += 4) {
+    if (data[i + 3] <= 0) {
+      continue;
+    }
+    r += data[i];
+    g += data[i + 1];
+    b += data[i + 2];
+    count++;
+  }
+  r = Math.floor(r / count);
+  g = Math.floor(g / count);
+  b = Math.floor(b / count);
+  return `rgb(${r}, ${g}, ${b})`;
+}

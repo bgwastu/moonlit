@@ -1,5 +1,4 @@
 "use client";
-export const dynamic = "force-dynamic";
 
 import Dynamic from "@/components/Dynamic";
 import {
