@@ -8,6 +8,9 @@ dependencies:
   '@distube/ytdl-core':
     specifier: ^4.13.2
     version: 4.13.2(deasync@0.1.28)
+  '@mantine/colors-generator':
+    specifier: ^7.1.0
+    version: 7.1.0(chroma-js@2.4.2)
   '@mantine/core':
     specifier: 6.0.20
     version: 6.0.20(@emotion/react@11.11.1)(@mantine/hooks@6.0.20)(@types/react@18.2.21)(react-dom@18.2.0)(react@18.2.0)
@@ -35,6 +38,9 @@ dependencies:
   '@types/react-dom':
     specifier: 18.2.7
     version: 18.2.7
+  chroma-js:
+    specifier: ^2.4.2
+    version: 2.4.2
   color-thief-ts:
     specifier: ^1.1.1
     version: 1.1.1
@@ -342,6 +348,14 @@ packages:
 
   /@humanwhocodes/object-schema@1.2.1:
     resolution: {integrity: sha512-ZnQMnLV4e7hDlUvw8H+U8ASL02SS2Gn6+9Ac3wGGLIe7+je2AeAOxPY+izIPJDfFDb7eDjev0Us8MO1iFRN8hA==}
+    dev: false
+
+  /@mantine/colors-generator@7.1.0(chroma-js@2.4.2):
+    resolution: {integrity: sha512-QpbiSBCMJ6exVZpGWKhGqMuohNVKBIK6IBm2fzb6BCVs3X/0dDKIcPw7NRk610QnvvTgcC7QLmOBPG0CaH4/dg==}
+    peerDependencies:
+      chroma-js: ^2.4.2
+    dependencies:
+      chroma-js: 2.4.2
     dev: false
 
   /@mantine/core@6.0.20(@emotion/react@11.11.1)(@mantine/hooks@6.0.20)(@types/react@18.2.21)(react-dom@18.2.0)(react@18.2.0):
@@ -1074,6 +1088,10 @@ packages:
     dependencies:
       ansi-styles: 4.3.0
       supports-color: 7.2.0
+    dev: false
+
+  /chroma-js@2.4.2:
+    resolution: {integrity: sha512-U9eDw6+wt7V8z5NncY2jJfZa+hUH8XEj8FQHgFJTrUFnJfXYf4Ml4adI2vXZOjqRDpFWtYVWypDfZwnJ+HIR4A==}
     dev: false
 
   /client-only@0.0.1:

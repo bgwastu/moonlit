@@ -15,6 +15,8 @@ import {
   Flex,
   Image,
   Loader,
+  MantineTheme,
+  MantineThemeOverride,
   MediaQuery,
   Modal,
   SegmentedControl,
@@ -43,6 +45,8 @@ import { atom, useAtom } from "jotai";
 import { useEffect, useMemo, useState } from "react";
 import { Player as PlayerTone, Reverb } from "tone";
 import { IconPause } from "./IconPause";
+import { themeAtom } from "@/state";
+import { generateColors } from "@mantine/colors-generator";
 
 type State = "playing" | "stop" | "finished";
 const stateAtom = atom<State>("stop");
@@ -201,7 +205,10 @@ export function Player({ song }: { song: Song }) {
     customPlaybackSettingsAtom
   );
   const songLength = getSongLength(player.buffer.duration, player.playbackRate);
+
   const theme = useMantineTheme();
+  const [globalTheme, setGlobalTheme] = useAtom(themeAtom);
+
   const { start: startInterval, stop: stopInterval } = useInterval(
     () => setCurrentPlayback((s) => s + 1),
     1000
@@ -672,8 +679,34 @@ export function Player({ song }: { song: Song }) {
               const color = getDominantColorFromImage(
                 e.target as HTMLImageElement
               );
+
+              // change global theme based on dominant color
+              const colors = generateColors(color);
+              console.log(colors);
+
+              const newTheme: MantineThemeOverride = {
+                ...globalTheme,
+                colors: {
+                  ...globalTheme.colors,
+                  brand: [
+                    colors[0],
+                    colors[1],
+                    colors[2],
+                    colors[3],
+                    colors[4],
+                    colors[5],
+                    colors[6],
+                    colors[7],
+                    colors[8],
+                    colors[9],
+                  ],
+                },
+                primaryColor: "brand",
+              };
+
+              setGlobalTheme(newTheme);
               document.getElementById("bg-wrapper").style.backgroundColor =
-                color;
+                colors[8];
 
               setImgLoading(false);
             }}

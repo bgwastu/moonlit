@@ -1,6 +1,7 @@
 "use client";
 
 import Dynamic from "@/components/Dynamic";
+import { themeAtom } from "@/state";
 import {
   Button,
   Dialog,
@@ -10,6 +11,7 @@ import {
 } from "@mantine/core";
 import { useLocalStorage, useOs } from "@mantine/hooks";
 import { Notifications } from "@mantine/notifications";
+import { useAtom } from "jotai";
 import { PostHogProvider } from "posthog-js/react";
 
 export default function RootLayout({
@@ -18,6 +20,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   const theme = useMantineTheme();
+  const [globalTheme, setGlobalTheme] = useAtom(themeAtom);
 
   const os = useOs();
   const [iosDismissed, setIosDismissed] = useLocalStorage({
@@ -43,13 +46,7 @@ export default function RootLayout({
             <MantineProvider
               withGlobalStyles
               withNormalizeCSS
-              theme={{
-                focusRing: "never",
-                colorScheme: "dark",
-                primaryColor: "violet",
-                primaryShade: 5,
-                white: theme.colors.violet[0],
-              }}
+              theme={globalTheme}
             >
               <>
                 <Notifications />
