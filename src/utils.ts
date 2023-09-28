@@ -36,24 +36,37 @@ export function getFormattedTime(seconds: number) {
 export function getDominantColorFromImage(img: HTMLImageElement) {
   const canvas = document.createElement("canvas");
   const ctx = canvas.getContext("2d");
+  canvas.width = img.width;
+  canvas.height = img.height;
   ctx.drawImage(img, 0, 0);
   const imageData = ctx.getImageData(0, 0, img.width, img.height);
   const data = imageData.data;
-  let r = 0;
-  let g = 0;
-  let b = 0;
-  let count = 0;
+
+  const colorCounts = new Map();
+
   for (let i = 0; i < data.length; i += 4) {
     if (data[i + 3] <= 0) {
       continue;
     }
-    r += data[i];
-    g += data[i + 1];
-    b += data[i + 2];
-    count++;
+
+    const rgb = `${data[i]}, ${data[i + 1]}, ${data[i + 2]}`;
+
+    if (colorCounts.has(rgb)) {
+      colorCounts.set(rgb, colorCounts.get(rgb) + 1);
+    } else {
+      colorCounts.set(rgb, 1);
+    }
   }
-  r = Math.floor(r / count);
-  g = Math.floor(g / count);
-  b = Math.floor(b / count);
-  return `rgb(${r}, ${g}, ${b})`;
+
+  let maxCount = 0;
+  let dominantColor = "";
+
+  colorCounts.forEach((count, color) => {
+    if (count > maxCount) {
+      maxCount = count;
+      dominantColor = color;
+    }
+  });
+
+  return `rgb(${dominantColor})`;
 }
