@@ -33,40 +33,30 @@ export function getFormattedTime(seconds: number) {
   return `${formattedMinutes}:${formattedSeconds}`;
 }
 
-export function getDominantColorFromImage(img: HTMLImageElement) {
+export function getDominantColorFromImage(img: HTMLImageElement, palenessFactor: number = 0.8) {
   const canvas = document.createElement("canvas");
   const ctx = canvas.getContext("2d");
-  canvas.width = img.width;
-  canvas.height = img.height;
   ctx.drawImage(img, 0, 0);
   const imageData = ctx.getImageData(0, 0, img.width, img.height);
   const data = imageData.data;
-
-  const colorCounts = new Map();
-
+  let r = 0;
+  let g = 0;
+  let b = 0;
+  let count = 0;
+  
   for (let i = 0; i < data.length; i += 4) {
     if (data[i + 3] <= 0) {
       continue;
     }
-
-    const rgb = `${data[i]}, ${data[i + 1]}, ${data[i + 2]}`;
-
-    if (colorCounts.has(rgb)) {
-      colorCounts.set(rgb, colorCounts.get(rgb) + 1);
-    } else {
-      colorCounts.set(rgb, 1);
-    }
+    r += data[i];
+    g += data[i + 1];
+    b += data[i + 2];
+    count++;
   }
-
-  let maxCount = 0;
-  let dominantColor = "";
-
-  colorCounts.forEach((count, color) => {
-    if (count > maxCount) {
-      maxCount = count;
-      dominantColor = color;
-    }
-  });
-
-  return `rgb(${dominantColor})`;
+  
+  r = Math.floor((r / count) * palenessFactor);
+  g = Math.floor((g / count) * palenessFactor);
+  b = Math.floor((b / count) * palenessFactor);
+  
+  return `rgb(${r}, ${g}, ${b})`;
 }
