@@ -9,7 +9,7 @@ import {
   Text,
   useMantineTheme,
 } from "@mantine/core";
-import { useDisclosure, useLocalStorage, useOs } from "@mantine/hooks";
+import { useLocalStorage, useOs } from "@mantine/hooks";
 import { Notifications } from "@mantine/notifications";
 import { PostHogProvider } from "posthog-js/react";
 
@@ -39,7 +39,6 @@ export default function RootLayout({
             apiKey={process.env.NEXT_PUBLIC_POSTHOG_API_KEY}
             options={{
               api_host: "/phog",
-              opt_in_site_apps: true,
             }}
           >
             <MantineProvider
