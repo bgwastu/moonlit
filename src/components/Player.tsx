@@ -182,6 +182,7 @@ const customPlaybackSettingsAtom = atom(
 
 export function Player({ song }: { song: Song }) {
   const [imgLoading, setImgLoading] = useState(true);
+  const [imageFallback, setImageFallback] = useState(false);
   const router = useRouter();
   const [currentPlayback, setCurrentPlayback] = useAtom(currentPlaybackAtom);
   const [state, setState] = useAtom(stateAtom);
@@ -200,9 +201,12 @@ export function Player({ song }: { song: Song }) {
     ? `https://i.ytimg.com/vi/${song.metadata.id}/maxresdefault.jpg`
     : fallbackBackgroundUrl;
 
-  const [backgroundUrl, setBackgroundUrl] = useState(
-    storageBackgroundUrl ? storageBackgroundUrl: defaultBackgroundUrl
-  );
+  const backgroundUrl = storageBackgroundUrl
+    ? storageBackgroundUrl
+    : imageFallback
+    ? fallbackBackgroundUrl
+    : defaultBackgroundUrl;
+
   const [player] = useAtom(playerAtom);
   const [reverb] = useAtom(reverbAtom);
   const [playbackMode, setPlaybackMode] = useAtom(playbackModeAtom);
@@ -435,7 +439,6 @@ export function Player({ song }: { song: Song }) {
                 variant="default"
                 onClick={() => {
                   setStorageBackgroundUrl(null);
-                  setBackgroundUrl(defaultBackgroundUrl);
                   notifications.show({
                     title: "Background is changed!",
                     message: "Please wait...",
@@ -468,7 +471,6 @@ export function Player({ song }: { song: Song }) {
                 }
 
                 setStorageBackgroundUrl(url);
-                setBackgroundUrl(url);
                 notifications.show({
                   title: "Background is changed!",
                   message: "Please wait...",
@@ -754,7 +756,7 @@ export function Player({ song }: { song: Song }) {
             crossOrigin="anonymous"
             src={`https://wsrv.nl/?url=${backgroundUrl}&output=webp&n=-1`}
             onError={() => {
-              setBackgroundUrl(fallbackBackgroundUrl);
+              setImageFallback(true);
               setImgLoading(false);
             }}
             onLoad={(e) => {
