@@ -195,7 +195,7 @@ export function Player({ song }: { song: Song }) {
   });
   const defaultBackgroundUrl = song.metadata.id
     ? `https://i.ytimg.com/vi/${song.metadata.id}/maxresdefault.jpg`
-    : "https://i.pinimg.com/originals/08/2d/91/082d9121613b89feea2978e756e41a39.gif";
+    : "https://i.pinimg.com/originals/08/2d/91/082d9121613b89feea2978e756e41a39.gif&n=-1";
 
   const backgroundUrl = storageBackgroundUrl
     ? storageBackgroundUrl + "&n=-1"
