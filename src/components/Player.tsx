@@ -18,6 +18,7 @@ import {
   MantineTheme,
   MantineThemeOverride,
   MediaQuery,
+  Menu,
   Modal,
   SegmentedControl,
   Slider,
@@ -35,12 +36,17 @@ import {
 import { notifications } from "@mantine/notifications";
 import {
   IconAdjustments,
+  IconBrandYoutube,
+  IconDownload,
   IconExternalLink,
+  IconMenu2,
   IconMusic,
+  IconPhotoEdit,
   IconPlayerPlayFilled,
   IconRewindBackward5,
   IconRewindForward5,
   IconRotate,
+  IconShare,
 } from "@tabler/icons-react";
 import { atom, useAtom } from "jotai";
 import { useEffect, useMemo, useState } from "react";
@@ -184,10 +190,13 @@ export function Player({ song }: { song: Song }) {
     key: "background-url",
     defaultValue: null,
   });
-  const defaultBackgroundUrl =
-    song.metadata.id ? `https://i.ytimg.com/vi/${song.metadata.id}/maxresdefault.jpg` : "https://i.pinimg.com/originals/08/2d/91/082d9121613b89feea2978e756e41a39.gif";
-  
-    const backgroundUrl = storageBackgroundUrl ? storageBackgroundUrl + "&n=-1" : defaultBackgroundUrl;
+  const defaultBackgroundUrl = song.metadata.id
+    ? `https://i.ytimg.com/vi/${song.metadata.id}/maxresdefault.jpg`
+    : "https://i.pinimg.com/originals/08/2d/91/082d9121613b89feea2978e756e41a39.gif";
+
+  const backgroundUrl = storageBackgroundUrl
+    ? storageBackgroundUrl + "&n=-1"
+    : defaultBackgroundUrl;
 
   const [player] = useAtom(playerAtom);
   const [reverb] = useAtom(reverbAtom);
@@ -398,7 +407,7 @@ export function Player({ song }: { song: Song }) {
             href="https://id.pinterest.com/bznkmmbd/aesthetic/"
             target="_blank"
           >
-            pinboard aesthetic references <IconExternalLink size={16}/>
+            pinboard aesthetic references <IconExternalLink size={16} />
           </Anchor>
           <Flex justify="end" mt="md" gap="md" align="center">
             {storageBackgroundUrl && (
@@ -527,9 +536,42 @@ export function Player({ song }: { song: Song }) {
                 songLength
               )}`}</Text>
             </MediaQuery>
-            <Button size="sm" variant="default" onClick={openBgModal}>
-              Change Image
-            </Button>
+            <Menu shadow="md" width={200} position="top-end">
+              <Menu.Target>
+                <Button variant="default" leftIcon={<IconMenu2 size={18} />}>
+                  Menu
+                </Button>
+              </Menu.Target>
+
+              <Menu.Dropdown>
+                <Menu.Label>Options</Menu.Label>
+                <Menu.Item
+                  icon={<IconPhotoEdit size={14} />}
+                  onClick={openBgModal}
+                >
+                  Background
+                </Menu.Item>
+                {song.metadata.id && (
+                  <Menu.Item
+                    icon={<IconBrandYoutube size={14} />}
+                    rightSection={<IconExternalLink size={12} />}
+                    component="a"
+                    href={`https://www.youtube.com/watch?v=${song.metadata.id}`}
+                    target="_blank"
+                  >
+                    YouTube
+                  </Menu.Item>
+                )}
+                <Menu.Divider />
+                <Menu.Label>Music (under development)</Menu.Label>
+                <Menu.Item icon={<IconShare size={14} />} disabled>
+                  Share
+                </Menu.Item>
+                <Menu.Item icon={<IconDownload size={14} />} disabled>
+                  Download
+                </Menu.Item>
+              </Menu.Dropdown>
+            </Menu>
           </Flex>
           <Slider
             value={currentPlayback}
