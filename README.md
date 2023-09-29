@@ -7,8 +7,9 @@ See it in action: [moonlit.wastu.net](https://moonlit.wastu.net)
 
 You can also listen to your favorite tracks from YouTube on Moonlit. Just add `lit` to the URL of any YouTube video (example: [youtube**lit**.com/watch?v=...](https://www.youtubelit.com/watch?v=dQw4w9WgXcQ)).
 
-# Demo
-https://github.com/bgwastu/moonlit/assets/67826350/d9ee5596-dcee-4191-a1ab-7949d5f5de54
+# Demo 🔊
+https://github.com/bgwastu/moonlit/assets/67826350/a60fa36b-528a-4216-a925-971055a9ff42
+
 
 # Features
 - **Customizable playback settings**: Change the playback speed, add reverb, and more!
