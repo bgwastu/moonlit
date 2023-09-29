@@ -193,14 +193,16 @@ export function Player({ song }: { song: Song }) {
     key: "background-url",
     defaultValue: null,
   });
+  const fallbackBackgroundUrl =
+    "https://i.pinimg.com/originals/08/2d/91/082d9121613b89feea2978e756e41a39.gif&n=-1";
+
   const defaultBackgroundUrl = song.metadata.id
     ? `https://i.ytimg.com/vi/${song.metadata.id}/maxresdefault.jpg`
-    : "https://i.pinimg.com/originals/08/2d/91/082d9121613b89feea2978e756e41a39.gif&n=-1";
+    : fallbackBackgroundUrl;
 
-  const backgroundUrl = storageBackgroundUrl
-    ? storageBackgroundUrl + "&n=-1"
-    : defaultBackgroundUrl;
-
+  const [backgroundUrl, setBackgroundUrl] = useState(
+    storageBackgroundUrl ? storageBackgroundUrl + "&n=-1" : defaultBackgroundUrl
+  );
   const [player] = useAtom(playerAtom);
   const [reverb] = useAtom(reverbAtom);
   const [playbackMode, setPlaybackMode] = useAtom(playbackModeAtom);
@@ -749,6 +751,10 @@ export function Player({ song }: { song: Song }) {
             }}
             crossOrigin="anonymous"
             src={`https://wsrv.nl/?url=${backgroundUrl}&output=webp`}
+            onError={() => {
+              setBackgroundUrl(fallbackBackgroundUrl);
+              setImgLoading(false);
+            }}
             onLoad={(e) => {
               const color = getDominantColorFromImage(
                 e.target as HTMLImageElement
