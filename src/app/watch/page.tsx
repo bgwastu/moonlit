@@ -102,7 +102,7 @@ export default function WatchPage() {
                 Moonlit
               </Text>
             </Flex>
-            <Text weight={600} color="dimmed">Music Detail</Text>
+            <Text weight={600} color="dimmed">Music Details</Text>
             <Flex gap="md" align="center">
               <Image
                 src={song.metadata.coverUrl}
