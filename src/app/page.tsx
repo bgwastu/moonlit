@@ -24,7 +24,7 @@ import {
   IconExternalLink,
   IconMusicCheck,
   IconMusicPlus,
-  IconMusicX
+  IconMusicX,
 } from "@tabler/icons-react";
 import parse from "id3-parser";
 import { convertFileToBuffer } from "id3-parser/lib/util";
@@ -82,6 +82,10 @@ function LocalUpload() {
             metadata,
           });
           router.push("/player");
+          setLoading({
+            status: false,
+            message: null,
+          });
         } else {
           setSong({
             fileUrl: URL.createObjectURL(files[0]),
@@ -93,6 +97,10 @@ function LocalUpload() {
             },
           });
           router.push("/player");
+          setLoading({
+            status: false,
+            message: null,
+          });
         }
       }}
       onReject={(files) => {

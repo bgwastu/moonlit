@@ -1,11 +1,13 @@
 import LoadingOverlay from "@/components/LoadingOverlay";
 import { useInterval } from "@/hooks/useInterval";
 import { PlaybackSettings, Song } from "@/interfaces";
+import { themeAtom } from "@/state";
 import {
   getDominantColorFromImage,
   getFormattedTime,
   getSongLength,
 } from "@/utils";
+import { generateColors } from "@mantine/colors-generator";
 import {
   ActionIcon,
   Anchor,
@@ -15,7 +17,6 @@ import {
   Flex,
   Image,
   Loader,
-  MantineTheme,
   MantineThemeOverride,
   MediaQuery,
   Menu,
@@ -24,7 +25,7 @@ import {
   Slider,
   Text,
   TextInput,
-  useMantineTheme,
+  useMantineTheme
 } from "@mantine/core";
 import {
   useDisclosure,
@@ -51,12 +52,11 @@ import {
   IconShare,
 } from "@tabler/icons-react";
 import { atom, useAtom } from "jotai";
-import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
 import { Player as PlayerTone, Reverb } from "tone";
 import { IconPause } from "./IconPause";
-import { themeAtom } from "@/state";
-import { generateColors } from "@mantine/colors-generator";
-import Link from "next/link";
 
 type State = "playing" | "stop" | "finished";
 const stateAtom = atom<State>("stop");
@@ -182,7 +182,7 @@ const customPlaybackSettingsAtom = atom(
 
 export function Player({ song }: { song: Song }) {
   const [imgLoading, setImgLoading] = useState(true);
-
+  const router = useRouter();
   const [currentPlayback, setCurrentPlayback] = useAtom(currentPlaybackAtom);
   const [state, setState] = useAtom(stateAtom);
   useDocumentTitle(`${song.metadata.title} - Moonlit`);
@@ -246,7 +246,14 @@ export function Player({ song }: { song: Song }) {
       setState("playing");
     }
 
-    setupTone();
+    setupTone().catch((e) => {
+      notifications.show({
+        title: "Error",
+        message: "An error occured while loading the song",
+      });
+      console.error(e);
+      router.push("/");
+    });
   }, []);
 
   useShallowEffect(() => {
@@ -261,6 +268,14 @@ export function Player({ song }: { song: Song }) {
       stopInterval();
       player.stop();
       window.onbeforeunload = null;
+
+      // change theme back to default
+      setGlobalTheme({
+        colorScheme: "dark",
+        primaryColor: "violet",
+        primaryShade: 5,
+        white: "#f3f0ff", // violet[0],
+      });
     };
   }, []);
 
@@ -565,11 +580,10 @@ export function Player({ song }: { song: Song }) {
                 </Menu.Item>
                 <Menu.Item
                   icon={<IconBug size={14} />}
-                  component='a'
+                  component="a"
                   href="https://github.com/bgwastu/moonlit/issues"
                   rightSection={<IconExternalLink size={12} />}
                   target="_blank"
-                  
                 >
                   Report Bug
                 </Menu.Item>
