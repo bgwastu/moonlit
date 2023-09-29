@@ -5,6 +5,9 @@ settings:
   excludeLinksFromLockfile: false
 
 dependencies:
+  '@mantine/colors-generator':
+    specifier: ^7.1.0
+    version: 7.1.0(chroma-js@2.4.2)
   '@mantine/core':
     specifier: 6.0.20
     version: 6.0.20(@emotion/react@11.11.1)(@mantine/hooks@6.0.20)(@types/react@18.2.21)(react-dom@18.2.0)(react@18.2.0)
