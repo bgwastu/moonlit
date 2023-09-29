@@ -37,8 +37,10 @@ import { notifications } from "@mantine/notifications";
 import {
   IconAdjustments,
   IconBrandYoutube,
+  IconBug,
   IconDownload,
   IconExternalLink,
+  IconHome,
   IconMenu2,
   IconMusic,
   IconPhotoEdit,
@@ -54,6 +56,7 @@ import { Player as PlayerTone, Reverb } from "tone";
 import { IconPause } from "./IconPause";
 import { themeAtom } from "@/state";
 import { generateColors } from "@mantine/colors-generator";
+import Link from "next/link";
 
 type State = "playing" | "stop" | "finished";
 const stateAtom = atom<State>("stop");
@@ -549,7 +552,26 @@ export function Player({ song }: { song: Song }) {
                   icon={<IconPhotoEdit size={14} />}
                   onClick={openBgModal}
                 >
-                  Background
+                  Change Background
+                </Menu.Item>
+                <Menu.Divider />
+                <Menu.Label>Navigation</Menu.Label>
+                <Menu.Item
+                  icon={<IconHome size={14} />}
+                  component={Link}
+                  href="/"
+                >
+                  Home
+                </Menu.Item>
+                <Menu.Item
+                  icon={<IconBug size={14} />}
+                  component='a'
+                  href="https://github.com/bgwastu/moonlit/issues"
+                  rightSection={<IconExternalLink size={12} />}
+                  target="_blank"
+                  
+                >
+                  Report Bug
                 </Menu.Item>
                 {song.metadata.id && (
                   <Menu.Item
