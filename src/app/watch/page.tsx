@@ -1,11 +1,20 @@
 "use client";
 
+import Icon from "@/components/Icon";
 import LoadingOverlay from "@/components/LoadingOverlay";
 import { Player } from "@/components/Player";
 import { Song } from "@/interfaces";
 import { songAtom } from "@/state";
 import { getYouTubeId, isYoutubeURL } from "@/utils";
-import { Button, Center, Container, Flex, Image, Text } from "@mantine/core";
+import {
+  Button,
+  Center,
+  Container,
+  Flex,
+  Image,
+  Text,
+  rem,
+} from "@mantine/core";
 import { useShallowEffect } from "@mantine/hooks";
 import { notifications } from "@mantine/notifications";
 import { IconMusic } from "@tabler/icons-react";
@@ -80,7 +89,20 @@ export default function WatchPage() {
             gap="md"
             direction="column"
           >
-            <Text>Download Completed</Text>
+            <Flex gap={6} align="center" mb="sm">
+              <Icon size={18} />
+              <Text
+                fz={rem(20)}
+                fw="bold"
+                lts={rem(0.2)}
+                style={{
+                  userSelect: "none",
+                }}
+              >
+                Moonlit
+              </Text>
+            </Flex>
+            <Text weight={600} color="dimmed">Music Detail</Text>
             <Flex gap="md" align="center">
               <Image
                 src={song.metadata.coverUrl}
