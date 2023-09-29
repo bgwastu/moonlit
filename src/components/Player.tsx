@@ -194,14 +194,14 @@ export function Player({ song }: { song: Song }) {
     defaultValue: null,
   });
   const fallbackBackgroundUrl =
-    "https://i.pinimg.com/originals/08/2d/91/082d9121613b89feea2978e756e41a39.gif&n=-1";
+    "https://i.pinimg.com/originals/08/2d/91/082d9121613b89feea2978e756e41a39.gif";
 
   const defaultBackgroundUrl = song.metadata.id
     ? `https://i.ytimg.com/vi/${song.metadata.id}/maxresdefault.jpg`
     : fallbackBackgroundUrl;
 
   const [backgroundUrl, setBackgroundUrl] = useState(
-    storageBackgroundUrl ? storageBackgroundUrl + "&n=-1" : defaultBackgroundUrl
+    storageBackgroundUrl ? storageBackgroundUrl: defaultBackgroundUrl
   );
   const [player] = useAtom(playerAtom);
   const [reverb] = useAtom(reverbAtom);
@@ -752,7 +752,7 @@ export function Player({ song }: { song: Song }) {
               maxHeight: "50dvh",
             }}
             crossOrigin="anonymous"
-            src={`https://wsrv.nl/?url=${backgroundUrl}&output=webp`}
+            src={`https://wsrv.nl/?url=${backgroundUrl}&output=webp&n=-1`}
             onError={() => {
               setBackgroundUrl(fallbackBackgroundUrl);
               setImgLoading(false);
