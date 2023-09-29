@@ -25,7 +25,7 @@ import {
   Slider,
   Text,
   TextInput,
-  useMantineTheme
+  useMantineTheme,
 } from "@mantine/core";
 import {
   useDisclosure,
@@ -445,6 +445,10 @@ export function Player({ song }: { song: Song }) {
             )}
             <Button
               type="submit"
+              disabled={
+                (document.getElementById("background-url") as HTMLInputElement)
+                  ?.value === backgroundUrl
+              }
               onClick={(e) => {
                 e.preventDefault();
                 const url = (
