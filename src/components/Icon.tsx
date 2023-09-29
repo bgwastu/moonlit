@@ -15,7 +15,7 @@ export default function Icon({ size }: Props) {
       style={{
         backgroundColor: theme.colors.violet[9],
         color: theme.colors.violet[0],
-        padding: rem(8),
+        padding: rem(size / 2),
         borderRadius: theme.radius.md,
         display: "flex",
         alignItems: "center",
