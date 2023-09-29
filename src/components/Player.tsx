@@ -435,6 +435,7 @@ export function Player({ song }: { song: Song }) {
                 variant="default"
                 onClick={() => {
                   setStorageBackgroundUrl(null);
+                  setBackgroundUrl(defaultBackgroundUrl);
                   notifications.show({
                     title: "Background is changed!",
                     message: "Please wait...",
@@ -467,6 +468,7 @@ export function Player({ song }: { song: Song }) {
                 }
 
                 setStorageBackgroundUrl(url);
+                setBackgroundUrl(url);
                 notifications.show({
                   title: "Background is changed!",
                   message: "Please wait...",
