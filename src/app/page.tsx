@@ -34,6 +34,7 @@ import { usePostHog } from "posthog-js/react";
 import Icon from "../components/Icon";
 import { songAtom } from "../state";
 import { getYouTubeId, isYoutubeURL } from "../utils";
+import useNoSleep from "@/hooks/useNoSleep";
 
 const loadingAtom = atom<{
   status: boolean;
@@ -48,6 +49,8 @@ function LocalUpload() {
   const [, setSong] = useAtom(songAtom);
   const posthog = usePostHog();
   const router = useRouter();
+  const [noSleepEnabled, setNoSleepEnabled] = useNoSleep();
+
   return (
     <Dropzone
       accept={["audio/mpeg"]}
@@ -86,6 +89,8 @@ function LocalUpload() {
             status: false,
             message: null,
           });
+
+          setNoSleepEnabled(true);
         } else {
           setSong({
             fileUrl: URL.createObjectURL(files[0]),
