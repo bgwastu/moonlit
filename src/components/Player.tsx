@@ -1,5 +1,6 @@
 import LoadingOverlay from "@/components/LoadingOverlay";
 import { useInterval } from "@/hooks/useInterval";
+import useNoSleep from "@/hooks/useNoSleep";
 import { PlaybackSettings, Song } from "@/interfaces";
 import { themeAtom } from "@/state";
 import {
@@ -217,7 +218,7 @@ export function Player({ song }: { song: Song }) {
 
   const theme = useMantineTheme();
   const [globalTheme, setGlobalTheme] = useAtom(themeAtom);
-
+const [noSleepEnabled, setNoSleepEnabled] = useNoSleep();
   const { start: startInterval, stop: stopInterval } = useInterval(
     () => setCurrentPlayback((s) => s + 1),
     1000
@@ -302,28 +303,25 @@ export function Player({ song }: { song: Song }) {
 
     if (getFormattedTime(currentPlayback) == getFormattedTime(songLength)) {
       setState("finished");
+      setNoSleepEnabled(false);
       stopInterval();
     }
-  }, [
-    currentPlayback,
-    player.state,
-    setState,
-    songLength,
-    startInterval,
-    stopInterval,
-  ]);
+  }, [currentPlayback, player.state, setNoSleepEnabled, setState, songLength, startInterval, stopInterval]);
 
   function togglePlayer() {
     if (state === "playing") {
       player.stop();
       setState("stop");
+      setNoSleepEnabled(false);
     } else if (state === "stop") {
       player.start(0, currentPlayback * player.playbackRate);
       setState("playing");
+      setNoSleepEnabled(true);
     } else if (state === "finished") {
       setCurrentPlayback(0);
       player.start(0);
       setState("playing");
+      setNoSleepEnabled(true);
     }
   }
 
@@ -331,6 +329,7 @@ export function Player({ song }: { song: Song }) {
     if (state === "playing" || state === "finished") {
       player.stop();
       player.start(0, value * player.playbackRate);
+      setNoSleepEnabled(true);
     }
     setCurrentPlayback(value);
   }

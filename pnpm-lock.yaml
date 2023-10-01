@@ -59,6 +59,9 @@ dependencies:
   next:
     specifier: 13.4.19
     version: 13.4.19(react-dom@18.2.0)(react@18.2.0)
+  nosleep.js:
+    specifier: ^0.12.0
+    version: 0.12.0
   posthog-js:
     specifier: ^1.79.0
     version: 1.79.0
@@ -2503,6 +2506,10 @@ packages:
   /node-bitmap@0.0.1:
     resolution: {integrity: sha512-Jx5lPaaLdIaOsj2mVLWMWulXF6GQVdyLvNSxmiYCvZ8Ma2hfKX0POoR2kgKOqz+oFsRreq0yYZjQ2wjE9VNzCA==}
     engines: {node: '>=v0.6.5'}
+    dev: false
+
+  /nosleep.js@0.12.0:
+    resolution: {integrity: sha512-9d1HbpKLh3sdWlhXMhU6MMH+wQzKkrgfRkYV0EBdvt99YJfj0ilCJrWRDYG2130Tm4GXbEoTCx5b34JSaP+HhA==}
     dev: false
 
   /oauth-sign@0.9.0:

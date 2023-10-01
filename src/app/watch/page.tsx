@@ -3,6 +3,7 @@
 import Icon from "@/components/Icon";
 import LoadingOverlay from "@/components/LoadingOverlay";
 import { Player } from "@/components/Player";
+import useNoSleep from "@/hooks/useNoSleep";
 import { Song } from "@/interfaces";
 import { songAtom } from "@/state";
 import { getYouTubeId, isYoutubeURL } from "@/utils";
@@ -32,6 +33,7 @@ export default function WatchPage() {
   const [loading, setLoading] = useAtom(loadingAtom);
   const [song, setSong] = useAtom(songAtom);
   const [isPlayer, setIsPlayer] = useState(false);
+  const [noSleepEnabled, setNoSleepEnabled] = useNoSleep();
   const posthog = usePostHog();
 
   useShallowEffect(() => {
@@ -102,7 +104,9 @@ export default function WatchPage() {
                 Moonlit
               </Text>
             </Flex>
-            <Text weight={600} color="dimmed">Music Details</Text>
+            <Text weight={600} color="dimmed">
+              Music Details
+            </Text>
             <Flex gap="md" align="center">
               <Image
                 src={song.metadata.coverUrl}
@@ -125,6 +129,10 @@ export default function WatchPage() {
             <Button
               onClick={() => {
                 setIsPlayer(true);
+
+                if (!noSleepEnabled) {
+                  setNoSleepEnabled(true);
+                }
               }}
             >
               Go to Player
