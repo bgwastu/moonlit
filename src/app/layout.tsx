@@ -39,8 +39,36 @@ export default function RootLayout({
     <html lang="en">
       <head>
         <title>Moonlit</title>
-        <meta name="description" content="Your melancholy music player" />
-        <meta name="theme-color" content="#1A1B1E" />
+        <meta
+          name="description"
+          content="Slowed+Reverb & Nightcore Music Generator with YouTube Integration"
+        />
+        <meta
+          name="keywords"
+          content="slowed+reverb generator, youtube slowed+reverb generator, nightcore, Moonlit, customizable playback web player"
+        />
+        <meta name="author" content="Bagas Wastu" />
+        <meta name="robots" content="index, follow" />
+        <meta
+          name="og:title"
+          content="Slowed+Reverb & Nightcore Music Generator with YouTube Integration"
+        />
+        <meta
+          name="og:description"
+          content="Create custom slowed+reverb and nightcore music with Moonlit's seamless YouTube integration."
+        />
+        <meta name="og:type" content="website" />
+        <meta name="og:site_name" content="Moonlit" />
+        <meta
+          name="twitter:title"
+          content="Slowed+Reverb & Nightcore Music Generator with YouTube Integration"
+        />
+        <meta
+          name="twitter:description"
+          content="Create custom slowed+reverb and nightcore music with Moonlit's seamless YouTube integration."
+        />
+        <meta name="twitter:url" content="https://moonlit.wastu.net" />
+        <title>Moonlit</title>
       </head>
       <body style={{ margin: 0 }}>
         <Dynamic>
