@@ -5,8 +5,11 @@ import { themeAtom } from "@/state";
 import {
   Button,
   Dialog,
+  Flex,
+  Image,
   MantineProvider,
   Text,
+  Title,
   useMantineTheme,
 } from "@mantine/core";
 import { useLocalStorage, useOs } from "@mantine/hooks";
@@ -25,6 +28,10 @@ export default function RootLayout({
   const os = useOs();
   const [iosDismissed, setIosDismissed] = useLocalStorage({
     key: "warning-dismissed",
+    defaultValue: false,
+  });
+  const [youtubelitDismissed, setYoutubelitDismissed] = useLocalStorage({
+    key: "youtubelit-dismissed",
     defaultValue: false,
   });
 
@@ -71,6 +78,38 @@ export default function RootLayout({
                   >
                     I understand
                   </Button>
+                </Dialog>
+                <Dialog
+                  opened={!youtubelitDismissed}
+                  withCloseButton
+                  onClose={() => {
+                    setYoutubelitDismissed(true);
+                  }}
+                  size="lg"
+                  bg={theme.colors.dark[6]}
+                  radius="md"
+                >
+                  <Flex direction="column" gap="md">
+                    <Title size="md">Quick tip</Title>
+                    <Text size="sm" mb="xs" fw={500}>
+                      Use Moonlit faster by adding <b>lit</b> after youtube in
+                      the URL.
+                    </Text>
+                    <video width="100%" height="auto" autoPlay loop>
+                      <source src="youtubelit-demo.webm" type="video/webm" />
+                      Your browser does not support the video tag.
+                    </video>
+                    <Flex>
+                      <Button
+                        onClick={() => {
+                          setYoutubelitDismissed(true);
+                        }}
+                        variant="default"
+                      >
+                        Dismiss
+                      </Button>
+                    </Flex>
+                  </Flex>
                 </Dialog>
                 {children}
               </>
