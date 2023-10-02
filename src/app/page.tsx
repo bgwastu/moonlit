@@ -269,7 +269,7 @@ export default function UploadPage() {
       <LoadingOverlay visible={loading.status} message={loading.message} />
 
       <AppShell footer={<FooterSection />} mt={28}>
-        <Container size="sm" p="xl">
+        <Container size="sm">
           <Flex direction="column" gap="xl">
             <Center>
               <Flex gap={6} align="center">
