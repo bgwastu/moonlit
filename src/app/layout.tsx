@@ -68,6 +68,7 @@ export default function RootLayout({
           content="Create custom slowed+reverb and nightcore music with Moonlit's seamless YouTube integration."
         />
         <meta name="twitter:url" content="https://moonlit.wastu.net" />
+        <meta name="google-site-verification" content="pIhibbB-PxDaY9RoagyBKnOOxpT4YT3gV0uCETuKEUU" />
         <title>Moonlit</title>
       </head>
       <body style={{ margin: 0 }}>
