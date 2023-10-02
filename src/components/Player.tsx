@@ -607,14 +607,6 @@ const [noSleepEnabled, setNoSleepEnabled] = useNoSleep();
                     YouTube
                   </Menu.Item>
                 )}
-                <Menu.Divider />
-                <Menu.Label>Music (under development)</Menu.Label>
-                <Menu.Item icon={<IconShare size={14} />} disabled>
-                  Share
-                </Menu.Item>
-                <Menu.Item icon={<IconDownload size={14} />} disabled>
-                  Download
-                </Menu.Item>
               </Menu.Dropdown>
             </Menu>
           </Flex>

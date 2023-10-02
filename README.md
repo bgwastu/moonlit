@@ -15,8 +15,6 @@ https://github.com/bgwastu/moonlit/assets/67826350/a60fa36b-528a-4216-a925-97105
 - **Customizable playback settings**: Change the playback speed, add reverb, and more!
 - **Quick access**: Seamlessly remix YouTube videos by adding **lit** to the URL (example: youtube**lit**.com/watch?v=...).
 - **Change background**: Change the app's background to suit your mood.
-- **Download music (coming soon)**: ability to download your favorite tracks for offline listening.
-- **YouTube playlist support (coming soon)**: ability to play multiple tracks from YouTube playlists.
 
 # Donating
 If you like this project, please consider [donating](https://www.buymeacoffee.com/moonlitapp). Your support helps me pay for domain and hosting services. Thanks!
