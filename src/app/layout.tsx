@@ -124,7 +124,7 @@ export default function RootLayout({
                       Use Moonlit faster by adding <b>lit</b> after youtube in
                       the URL.
                     </Text>
-                    <video width="100%" height="auto" autoPlay loop>
+                    <video width="100%" height="auto" autoPlay loop muted>
                       <source src="youtubelit-demo.webm" type="video/webm" />
                       Your browser does not support the video tag.
                     </video>
