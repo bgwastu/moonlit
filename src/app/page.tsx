@@ -35,6 +35,7 @@ import Icon from "../components/Icon";
 import { songAtom } from "../state";
 import { getYouTubeId, isYoutubeURL } from "../utils";
 import useNoSleep from "@/hooks/useNoSleep";
+import { useState } from "react";
 
 const loadingAtom = atom<{
   status: boolean;
@@ -153,6 +154,7 @@ function LocalUpload() {
 
 function YoutubeUpload() {
   const router = useRouter();
+  const [loading, setLoading] = useState(false);
   const form = useForm({
     initialValues: {
       url: "",
@@ -163,9 +165,11 @@ function YoutubeUpload() {
     },
   });
 
-  function onSubmit(url: string) {
+  async function onSubmit(url: string) {
+    setLoading(true);
     const id = getYouTubeId(url);
     if (!id) {
+      setLoading(false);
       notifications.show({
         title: "Error",
         message: "Invalid YouTube URL",
@@ -185,8 +189,9 @@ function YoutubeUpload() {
           size="lg"
           type="url"
           {...form.getInputProps("url")}
+          disabled={loading}
         />
-        <Button size="lg" type="submit">
+        <Button size="lg" type="submit" loading={loading}>
           Load music from YouTube
         </Button>
       </Flex>
