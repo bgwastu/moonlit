@@ -4,14 +4,15 @@ export const getSongLength = (bufferDuration: number, playbackRate: number) => {
 
 export function isYoutubeURL(url: string) {
   const youtubeRegex =
-    /^(https?:\/\/)?(www\.)?(m\.)?(youtube\.com\/watch\?v=|music\.youtube\.com\/watch\?v=|youtu\.be\/)([a-zA-Z0-9_-]{11})/;
+    /^.*(?:(?:youtu\.be\/|v\/|vi\/|u\/\w\/|embed\/|shorts\/)|(?:(?:watch)?\?v(?:i)?=|\&v(?:i)?=))([^#\&\?]*).*/;
   return youtubeRegex.test(url);
 }
 
 export function getYouTubeId(url: string) {
   const youtubeRegex =
-    /^(https?:\/\/)?(www\.)?(m\.)?(youtube\.com\/watch\?v=|music\.youtube\.com\/watch\?v=|youtu\.be\/)([a-zA-Z0-9_-]{11})/;
-  return youtubeRegex.exec(url)?.[5];
+    /^.*(?:(?:youtu\.be\/|v\/|vi\/|u\/\w\/|embed\/|shorts\/)|(?:(?:watch)?\?v(?:i)?=|\&v(?:i)?=))([^#\&\?]*).*/;
+  const match = url.match(youtubeRegex);
+  return match ? match[1] : null;
 }
 
 export function isJSONString(str: string) {
@@ -33,7 +34,10 @@ export function getFormattedTime(seconds: number) {
   return `${formattedMinutes}:${formattedSeconds}`;
 }
 
-export function getDominantColorFromImage(img: HTMLImageElement, palenessFactor: number = 0.8) {
+export function getDominantColorFromImage(
+  img: HTMLImageElement,
+  palenessFactor: number = 0.8,
+) {
   const canvas = document.createElement("canvas");
   const ctx = canvas.getContext("2d");
   ctx.drawImage(img, 0, 0);
@@ -43,7 +47,7 @@ export function getDominantColorFromImage(img: HTMLImageElement, palenessFactor:
   let g = 0;
   let b = 0;
   let count = 0;
-  
+
   for (let i = 0; i < data.length; i += 4) {
     if (data[i + 3] <= 0) {
       continue;
@@ -53,10 +57,10 @@ export function getDominantColorFromImage(img: HTMLImageElement, palenessFactor:
     b += data[i + 2];
     count++;
   }
-  
+
   r = Math.floor((r / count) * palenessFactor);
   g = Math.floor((g / count) * palenessFactor);
   b = Math.floor((b / count) * palenessFactor);
-  
+
   return `rgb(${r}, ${g}, ${b})`;
 }
