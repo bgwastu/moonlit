@@ -17,7 +17,7 @@ export default function Page() {
   }, [song, router]);
 
   if (song) {
-    return <Player song={song} />;
+    return <Player song={song} repeating={false}/>;
   }
 
   return <></>;
