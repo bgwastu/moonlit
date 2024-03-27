@@ -305,6 +305,7 @@ export function Player({ song, repeating }: { song: Song, repeating: boolean }) 
         if (state === "finished") {
           setState("playing");
           setCurrentPlayback(0);
+          player.start(0);
         }
       } else {
         player.loop = false;
