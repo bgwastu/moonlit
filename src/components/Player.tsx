@@ -275,6 +275,7 @@ export function Player({ song, repeating }: { song: Song, repeating: boolean }) 
     return () => {
       setState("stop");
       setCurrentPlayback(0);
+      setPlaybackMode("normal");
       stopInterval();
       player.stop();
       window.onbeforeunload = null;
