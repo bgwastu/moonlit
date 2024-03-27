@@ -21,14 +21,14 @@ import { notifications } from "@mantine/notifications";
 import { IconMusic } from "@tabler/icons-react";
 import { atom, useAtom } from "jotai";
 import localforage from "localforage";
-import { useRouter, useSearchParams } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { usePostHog } from "posthog-js/react";
 import { useState } from "react";
 
 const loadingAtom = atom(false);
 
-export default function WatchPage() {
-  const searchParams = useSearchParams();
+export default function ShortsPage() {
+  const pathname = usePathname();
   const router = useRouter();
   const [loading, setLoading] = useAtom(loadingAtom);
   const [song, setSong] = useAtom(songAtom);
@@ -37,8 +37,11 @@ export default function WatchPage() {
   const posthog = usePostHog();
 
   useShallowEffect(() => {
-    posthog.capture("watch_page");
-    if (!searchParams.get("v")) {
+    posthog.capture("shorts_page");
+    const shortsId = pathname.replace("/shorts/", "");
+    const youtubeUrl = `https://youtube.com/shorts/${shortsId}`;
+
+    if (!isYoutubeURL(youtubeUrl)) {
       notifications.show({
         title: "Error",
         message: "Invalid YouTube ID",
@@ -47,20 +50,9 @@ export default function WatchPage() {
       return;
     }
 
-    // check if it's a youtube url
-    const url = "https://youtube.com/watch?v=" + searchParams.get("v");
-    if (!isYoutubeURL(url)) {
-      notifications.show({
-        title: "Error",
-        message: "Invalid YouTube URL",
-      });
-      router.push("/");
-      return;
-    }
-
     setLoading(true);
 
-    getSongFromYouTube(url)
+    getSongFromYouTube(youtubeUrl)
       .then((song) => {
         setSong(song);
         setLoading(false);
@@ -140,7 +132,7 @@ export default function WatchPage() {
           </Flex>
         </Container>
       )}
-      {isPlayer && <Player song={song} repeating={false}/>}
+      {isPlayer && <Player song={song} repeating={true} />}
     </>
   );
 }

@@ -26,6 +26,7 @@ import {
   Slider,
   Text,
   TextInput,
+  Tooltip,
   useMantineTheme,
 } from "@mantine/core";
 import {
@@ -40,17 +41,17 @@ import {
   IconAdjustments,
   IconBrandYoutube,
   IconBug,
-  IconDownload,
   IconExternalLink,
   IconHome,
   IconMenu2,
   IconMusic,
   IconPhotoEdit,
   IconPlayerPlayFilled,
+  IconRepeat,
+  IconRepeatOff,
   IconRewindBackward5,
   IconRewindForward5,
-  IconRotate,
-  IconShare,
+  IconRotate
 } from "@tabler/icons-react";
 import { atom, useAtom } from "jotai";
 import Link from "next/link";
@@ -181,12 +182,13 @@ const customPlaybackSettingsAtom = atom(
   }
 );
 
-export function Player({ song }: { song: Song }) {
+export function Player({ song, repeating }: { song: Song, repeating: boolean }) {
   const [imgLoading, setImgLoading] = useState(true);
   const [imageFallback, setImageFallback] = useState(false);
   const router = useRouter();
   const [currentPlayback, setCurrentPlayback] = useAtom(currentPlaybackAtom);
   const [state, setState] = useAtom(stateAtom);
+  const [isRepeat, setIsRepeat] = useState(repeating);
   useDocumentTitle(`${song.metadata.title} - Moonlit`);
 
   const [storageBackgroundUrl, setStorageBackgroundUrl] = useLocalStorage<
@@ -211,6 +213,7 @@ export function Player({ song }: { song: Song }) {
   const [player] = useAtom(playerAtom);
   const [reverb] = useAtom(reverbAtom);
   const [playbackMode, setPlaybackMode] = useAtom(playbackModeAtom);
+
   const [customPlaybackSettings, setCustomPlaybackSettings] = useAtom(
     customPlaybackSettingsAtom
   );
@@ -218,7 +221,7 @@ export function Player({ song }: { song: Song }) {
 
   const theme = useMantineTheme();
   const [globalTheme, setGlobalTheme] = useAtom(themeAtom);
-const [noSleepEnabled, setNoSleepEnabled] = useNoSleep();
+  const [noSleepEnabled, setNoSleepEnabled] = useNoSleep();
   const { start: startInterval, stop: stopInterval } = useInterval(
     () => setCurrentPlayback((s) => s + 1),
     1000
@@ -294,6 +297,21 @@ const [noSleepEnabled, setNoSleepEnabled] = useNoSleep();
     }
   }, [startInterval, state, stopInterval]);
 
+  useEffect(
+    function handleLoop() {
+      if (isRepeat) {
+        player.loop = true;
+        if (state === "finished") {
+          setState("playing");
+          setCurrentPlayback(0);
+        }
+      } else {
+        player.loop = false;
+      }
+    },
+    [isRepeat, player, setCurrentPlayback, setState, state]
+  );
+
   useEffect(() => {
     if (player.state === "stopped") {
       setState("stop");
@@ -302,11 +320,25 @@ const [noSleepEnabled, setNoSleepEnabled] = useNoSleep();
     }
 
     if (getFormattedTime(currentPlayback) == getFormattedTime(songLength)) {
-      setState("finished");
-      setNoSleepEnabled(false);
-      stopInterval();
+      if (isRepeat === false) {
+        setState("finished");
+        setNoSleepEnabled(false);
+        stopInterval();
+      } else {
+        setCurrentPlayback(0);
+      }
     }
-  }, [currentPlayback, player.state, setNoSleepEnabled, setState, songLength, startInterval, stopInterval]);
+  }, [
+    currentPlayback,
+    isRepeat,
+    player.state,
+    setCurrentPlayback,
+    setNoSleepEnabled,
+    setState,
+    songLength,
+    startInterval,
+    stopInterval,
+  ]);
 
   function togglePlayer() {
     if (state === "playing") {
@@ -663,6 +695,18 @@ const [noSleepEnabled, setNoSleepEnabled] = useNoSleep();
                 <ActionIcon size="lg" onClick={forward} title="Forward 5 sec">
                   <IconRewindForward5 />
                 </ActionIcon>
+                <Tooltip label={isRepeat ? "Turn off Repeat" : "Repeat"}>
+                  <ActionIcon
+                    size="lg"
+                    onClick={() => {
+                      setIsRepeat((s) => !s);
+                    }}
+                    title={isRepeat ? "Turn off Repeat" : "Repeat"}
+                    color={isRepeat ? "brand.4" : null}
+                  >
+                    {isRepeat ? <IconRepeatOff /> : <IconRepeat />}
+                  </ActionIcon>
+                </Tooltip>
                 <MediaQuery smallerThan="md" styles={{ display: "none" }}>
                   <Text
                     fz="sm"
