@@ -703,7 +703,6 @@ export function Player({ song, repeating }: { song: Song, repeating: boolean }) 
                       setIsRepeat((s) => !s);
                     }}
                     title={isRepeat ? "Turn off Repeat" : "Repeat"}
-                    color={isRepeat ? "brand.4" : null}
                   >
                     {isRepeat ? <IconRepeatOff /> : <IconRepeat />}
                   </ActionIcon>
