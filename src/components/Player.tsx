@@ -693,6 +693,16 @@ export function Player({
                 >
                   Report Bug
                 </Menu.Item>
+                <Menu.Item
+                  icon={<IconBrandX size={14} />}
+                  component="a"
+                  href={`https://x.com/intent/tweet?text=I'm listening to ${song.metadata.title} by ${song.metadata.author} on Moonlit!&url=${window.location.href}
+                  `}
+                  rightSection={<IconExternalLink size={12} />}
+                  target="_blank"
+                >
+                  Share on X
+                </Menu.Item>
                 {song.metadata.id && (
                   <Menu.Item
                     icon={<IconBrandYoutube size={14} />}
