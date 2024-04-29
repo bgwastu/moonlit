@@ -256,15 +256,12 @@ export function Player({
     function syncPlaybackSettingToQuery() {
       setMode(playbackMode === "normal" ? null : playbackMode);
 
-      // delete the query if it's not custom
-      if (playbackMode !== "custom") {
-        setRate(null);
-        setRev(null);
-      }
-
       if (playbackMode === "custom") {
         setRate(customPlaybackSettings.playbackRate + "");
         setRev(customPlaybackSettings.reverbWet + "");
+      } else {
+        setRate(null);
+        setRev(null);
       }
     },
     [playbackMode, customPlaybackSettings, setMode, setRate, setRev]
