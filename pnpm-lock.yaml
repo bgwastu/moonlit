@@ -62,6 +62,9 @@ dependencies:
   nosleep.js:
     specifier: ^0.12.0
     version: 0.12.0
+  nuqs:
+    specifier: ^1.17.1
+    version: 1.17.1(next@13.4.19)
   posthog-js:
     specifier: ^1.79.0
     version: 1.79.0
@@ -2431,6 +2434,10 @@ packages:
     resolution: {integrity: sha512-2yyAR8qBkN3YuheJanUpWC5U3bb5osDywNB8RzDVlDwDHbocAJveqqj1u8+SVD7jkWT4yvsHCpWqqWqAxb0zCA==}
     dev: false
 
+  /mitt@3.0.1:
+    resolution: {integrity: sha512-vKivATfr97l2/QBCYAkXYDbrIWPM2IIKEl7YPhjCvKlG3kE2gm+uBo6nEXK3M5/Ffh/FLpKExzOQ3JJoJGFKBw==}
+    dev: false
+
   /ms@2.1.2:
     resolution: {integrity: sha512-sGkPx+VjMtmA6MX27oA4FBFELFCZZ4S4XqeGOXCv68tT+jb3vk/RyaKWP0PTKyWtmLSM0b+adUTEvbs1PEaH2w==}
     dev: false
@@ -2510,6 +2517,15 @@ packages:
 
   /nosleep.js@0.12.0:
     resolution: {integrity: sha512-9d1HbpKLh3sdWlhXMhU6MMH+wQzKkrgfRkYV0EBdvt99YJfj0ilCJrWRDYG2130Tm4GXbEoTCx5b34JSaP+HhA==}
+    dev: false
+
+  /nuqs@1.17.1(next@13.4.19):
+    resolution: {integrity: sha512-zJPisj8L+SzKzt57c5s3fJW0ikksPr+PyeLyNwvx0i5ggTr5XR5uFhCoX/T+Mkmb6X5UxHB/0nnuZyFiQsh0cA==}
+    peerDependencies:
+      next: '>=13.4 <14.0.2 || ^14.0.3'
+    dependencies:
+      mitt: 3.0.1
+      next: 13.4.19(react-dom@18.2.0)(react@18.2.0)
     dev: false
 
   /oauth-sign@0.9.0:

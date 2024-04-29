@@ -15,6 +15,7 @@ import {
   Box,
   Button,
   Center,
+  CopyButton,
   Flex,
   Image,
   Loader,
@@ -24,6 +25,7 @@ import {
   Modal,
   SegmentedControl,
   Slider,
+  Stack,
   Text,
   TextInput,
   Tooltip,
@@ -39,8 +41,10 @@ import {
 import { notifications } from "@mantine/notifications";
 import {
   IconAdjustments,
+  IconBrandX,
   IconBrandYoutube,
   IconBug,
+  IconCheck,
   IconExternalLink,
   IconHome,
   IconMenu2,
@@ -51,11 +55,12 @@ import {
   IconRepeatOff,
   IconRewindBackward5,
   IconRewindForward5,
-  IconRotate
+  IconRotate,
 } from "@tabler/icons-react";
 import { atom, useAtom } from "jotai";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useQueryState } from "nuqs";
 import { useEffect, useState } from "react";
 import { Player as PlayerTone, Reverb } from "tone";
 import { IconPause } from "./IconPause";
@@ -68,7 +73,7 @@ const currentPlaybackAtom = atom(0);
 
 type PlaybackMode = "slowed" | "normal" | "speedup" | "custom";
 const playbackModeAtom = atom(
-  "slowed",
+  "normal",
   async (get, set, playbackMode: PlaybackMode) => {
     set(playbackModeAtom, playbackMode);
     let playbackSettings: PlaybackSettings | null = null;
@@ -182,7 +187,13 @@ const customPlaybackSettingsAtom = atom(
   }
 );
 
-export function Player({ song, repeating }: { song: Song, repeating: boolean }) {
+export function Player({
+  song,
+  repeating,
+}: {
+  song: Song;
+  repeating: boolean;
+}) {
   const [imgLoading, setImgLoading] = useState(true);
   const [imageFallback, setImageFallback] = useState(false);
   const router = useRouter();
@@ -237,7 +248,29 @@ export function Player({ song, repeating }: { song: Song, repeating: boolean }) 
     ["Space", () => togglePlayer()],
   ]);
 
-  useShallowEffect(() => {
+  // I HATE rewrite the things that I've already forgotten how it works, so I'll just sync the playback state with nuqs instead of rewriting playback state from scratch.
+  const [mode, setMode] = useQueryState("mode");
+  const [rate, setRate] = useQueryState("rate");
+  const [rev, setRev] = useQueryState("rev");
+  useEffect(
+    function syncPlaybackSettingToQuery() {
+      setMode(playbackMode === "normal" ? null : playbackMode);
+
+      // delete the query if it's not custom
+      if (playbackMode !== "custom") {
+        setRate(null);
+        setRev(null);
+      }
+
+      if (playbackMode === "custom") {
+        setRate(customPlaybackSettings.playbackRate + "");
+        setRev(customPlaybackSettings.reverbWet + "");
+      }
+    },
+    [playbackMode, customPlaybackSettings, setMode, setRate, setRev]
+  );
+
+  useShallowEffect(function initial() {
     async function setupTone() {
       const p1 = reverb.generate();
       const p2 = player.load(song.fileUrl);
@@ -245,8 +278,21 @@ export function Player({ song, repeating }: { song: Song, repeating: boolean }) 
       reverb.toDestination();
       player.connect(reverb);
 
-      // set to normal mode
-      await setPlaybackMode("normal");
+      // check if mode is PlaybackMode type, if not then fallback to "normal"
+      if (!["slowed", "normal", "speedup", "custom"].includes(mode as string)) {
+        setPlaybackMode("normal");
+      } else {
+        // set based on query
+        setPlaybackMode(mode as PlaybackMode);
+        if (mode === "custom") {
+          setCustomPlaybackSettings({
+            playbackRate: parseFloat(rate as string),
+            reverbWet: parseFloat(rev as string),
+            reverbDecay: 6,
+            reverbPreDelay: 0.1,
+          });
+        }
+      }
 
       while (!player.loaded) {
         continue;
@@ -397,51 +443,68 @@ export function Player({ song, repeating }: { song: Song, repeating: boolean }) 
         overlayProps={{ opacity: 0.5, blur: 4 }}
         title="Customize Playback"
       >
-        <Flex direction="column" mb={22} gap={2}>
-          <Text>Playback Rate</Text>
-          <Slider
-            min={0.5}
-            thumbSize={20}
-            max={1.5}
-            step={0.01}
-            style={{ zIndex: 1000 }}
-            marks={[
-              { value: 0.8, label: "Slowed" },
-              { value: 1, label: "Normal" },
-              { value: 1.25, label: "Speed Up" },
-            ]}
-            label={(v) => {
-              if (v < 0.7) return `who hurt u? 😭`;
-              return `${v}x`;
-            }}
-            defaultValue={customPlaybackSettings.playbackRate}
-            onChange={(e) => {
-              setCustomPlaybackSettings({
-                ...customPlaybackSettings,
-                playbackRate: e,
-              });
-            }}
-          />
-          <Text mt="sm">Reverb</Text>
-          <Slider
-            min={0}
-            max={1}
-            thumbSize={20}
-            step={0.05}
-            marks={[
-              { value: 0, label: "None" },
-              { value: 0.4, label: "Sweet" },
-              { value: 1, label: "Full" },
-            ]}
-            defaultValue={customPlaybackSettings.reverbWet}
-            onChange={(e) => {
-              setCustomPlaybackSettings({
-                ...customPlaybackSettings,
-                reverbWet: e,
-              });
-            }}
-          />
-        </Flex>
+        <Stack>
+          <Flex direction="column" mb={22} gap={2}>
+            <Text>Playback Rate</Text>
+            <Slider
+              min={0.5}
+              thumbSize={20}
+              max={1.5}
+              step={0.01}
+              style={{ zIndex: 1000 }}
+              marks={[
+                { value: 0.8, label: "Slowed" },
+                { value: 1, label: "Normal" },
+                { value: 1.25, label: "Speed Up" },
+              ]}
+              label={(v) => {
+                if (v < 0.7) return `who hurt u? 😭`;
+                return `${v}x`;
+              }}
+              defaultValue={customPlaybackSettings.playbackRate}
+              onChange={(e) => {
+                setCustomPlaybackSettings({
+                  ...customPlaybackSettings,
+                  playbackRate: e,
+                });
+              }}
+            />
+            <Text mt="sm">Reverb</Text>
+            <Slider
+              min={0}
+              max={1}
+              thumbSize={20}
+              step={0.05}
+              marks={[
+                { value: 0, label: <Text ml={16}>None</Text> },
+                { value: 0.4, label: "Sweet" },
+                { value: 1, label: "Full" },
+              ]}
+              defaultValue={customPlaybackSettings.reverbWet}
+              onChange={(e) => {
+                setCustomPlaybackSettings({
+                  ...customPlaybackSettings,
+                  reverbWet: e,
+                });
+              }}
+            />
+          </Flex>
+          <Box>
+            <CopyButton value={`${window.location.href}`}>
+              {({ copied, copy }) => (
+                <Button
+                  leftIcon={
+                    copied ? <IconCheck size={18} /> : <IconMusic size={18} />
+                  }
+                  color={copied ? "violet" : "primary"}
+                  onClick={copy}
+                >
+                  {copied ? "Copied url!" : "Share this Remix"}
+                </Button>
+              )}
+            </CopyButton>
+          </Box>
+        </Stack>
       </Modal>
       <Modal
         opened={modalBgOpened}
