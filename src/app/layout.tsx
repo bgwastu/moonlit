@@ -5,6 +5,11 @@ export const metadata: Metadata = {
   title: "Moonlit",
   description:
     "Slowed+Reverb & Nightcore Music Generator with YouTube Integration",
+  twitter: {
+    title: "Moonlit",
+    description:
+      "Slowed+Reverb & Nightcore Music Generator with YouTube Integration.",
+  },
   verification: {
     google: "pIhibbB-PxDaY9RoagyBKnOOxpT4YT3gV0uCETuKEUU",
   },

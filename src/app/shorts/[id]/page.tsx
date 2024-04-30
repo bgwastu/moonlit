@@ -1,18 +1,23 @@
 import ytdl from "ytdl-core";
 import ShortsPage from "./ShortsPage";
+import { Metadata } from "next";
 
 type Props = {
   params: { id: string };
   searchParams: { [key: string]: string | string[] | undefined };
 };
 
-export async function generateMetadata({ params }: Props) {
+export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const id = params.id;
 
   const info = await ytdl.getBasicInfo(id);
   return {
     title: info.videoDetails.title + " - Moonlit",
     description: "Play music with Slowed+Reverb & Nightcore effects.",
+    twitter: {
+      title: info.videoDetails.title + " - Moonlit",
+      description: "Play music with Slowed+Reverb & Nightcore effects.",
+    },
     // TODO: add pretty og image
   };
 }
