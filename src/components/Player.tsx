@@ -138,18 +138,12 @@ const playbackModeAtom = atom(
   }
 );
 
-const customPlaybackSettingsTemp = atom(
-  typeof window !== "undefined" &&
-    (JSON.parse(
-      localStorage.getItem("custom-playback-settings") ??
-        JSON.stringify({
-          playbackRate: 1,
-          reverbWet: 0,
-          reverbDecay: 6,
-          reverbPreDelay: 0.1,
-        })
-    ) as PlaybackSettings)
-);
+const customPlaybackSettingsTemp = atom({
+  playbackRate: 1,
+  reverbWet: 0,
+  reverbDecay: 6,
+  reverbPreDelay: 0.1,
+} as PlaybackSettings);
 
 const customPlaybackSettingsAtom = atom(
   (get) => get(customPlaybackSettingsTemp),
@@ -275,6 +269,10 @@ export function Player({
       reverb.toDestination();
       player.connect(reverb);
 
+      while (!player.loaded) {
+        continue;
+      }
+
       // check if mode is PlaybackMode type, if not then fallback to "normal"
       if (!["slowed", "normal", "speedup", "custom"].includes(mode as string)) {
         setPlaybackMode("normal");
@@ -283,16 +281,11 @@ export function Player({
         setPlaybackMode(mode as PlaybackMode);
         if (mode === "custom") {
           setCustomPlaybackSettings({
+            ...customPlaybackSettings,
             playbackRate: parseFloat(rate as string),
             reverbWet: parseFloat(rev as string),
-            reverbDecay: 6,
-            reverbPreDelay: 0.1,
           });
         }
-      }
-
-      while (!player.loaded) {
-        continue;
       }
 
       player.start(0, currentPlayback * player.playbackRate);
