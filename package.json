@@ -9,13 +9,13 @@
     "lint": "next lint"
   },
   "dependencies": {
-    "@mantine/colors-generator": "^7.8.1",
+    "@mantine/colors-generator": "^7.1.0",
     "@mantine/core": "6.0.20",
     "@mantine/dropzone": "6.0.20",
     "@mantine/form": "6.0.20",
     "@mantine/hooks": "6.0.20",
     "@mantine/notifications": "6.0.20",
-    "@tabler/icons-react": "^2.47.0",
+    "@tabler/icons-react": "^2.34.0",
     "@types/node": "20.6.0",
     "@types/react": "18.2.21",
     "@types/react-dom": "18.2.7",
@@ -24,17 +24,17 @@
     "eslint": "8.49.0",
     "eslint-config-next": "13.4.19",
     "id3-parser": "^3.0.0",
-    "jotai": "^2.8.0",
+    "jotai": "^2.4.2",
     "localforage": "^1.10.0",
     "next": "13.4.19",
     "nosleep.js": "^0.12.0",
     "nuqs": "^1.17.1",
-    "posthog-js": "^1.130.1",
+    "posthog-js": "^1.79.0",
     "react": "18.2.0",
     "react-dom": "18.2.0",
-    "tone": "^14.9.17",
+    "tone": "^14.7.77",
     "typescript": "5.2.2",
-    "worker-timers": "^7.1.7",
-    "ytdl-core": "github:khlevon/node-ytdl-core#v4.11.4-patch.2"
+    "worker-timers": "^7.0.75",
+    "ytdl-core": "git+ssh://git@github.com:khlevon/node-ytdl-core.git#v4.11.4-patch.2"
   }
 }
