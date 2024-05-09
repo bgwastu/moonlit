@@ -3,11 +3,16 @@ const nextConfig = {
   async rewrites() {
     return [
       {
-        source: "/phog/:path*",
-        destination: "https://app.posthog.com/:path*",
+        source: "/ev/static/:path*",
+        destination: "https://us-assets.i.posthog.com/static/:path*",
+      },
+      {
+        source: "/ev/:path*",
+        destination: "https://us.i.posthog.com/:path*",
       },
     ];
   },
-}
+  skipTrailingSlashRedirect: true,
+};
 
-module.exports = nextConfig
+module.exports = nextConfig;
