@@ -39,7 +39,8 @@ export default function LayoutWrapper({
       <PostHogProvider
         apiKey={process.env.NEXT_PUBLIC_POSTHOG_API_KEY}
         options={{
-          api_host: "/phog",
+          api_host: "/ev",
+          ui_host: "https://us.i.posthog.com",
         }}
       >
         <MantineProvider withGlobalStyles withNormalizeCSS theme={globalTheme}>
