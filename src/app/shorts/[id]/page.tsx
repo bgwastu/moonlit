@@ -1,6 +1,6 @@
-import ytdl from "ytdl-core";
-import ShortsPage from "./ShortsPage";
+import ytdl from "@distube/ytdl-core";
 import { Metadata } from "next";
+import ShortsPage from "./ShortsPage";
 
 type Props = {
   params: { id: string };

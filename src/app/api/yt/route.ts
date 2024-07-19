@@ -1,6 +1,6 @@
 import { isYoutubeURL } from "@/utils";
+import * as ytdl from "@distube/ytdl-core";
 import { NextResponse } from "next/server";
-import * as ytdl from "ytdl-core";
 
 export async function POST(req: Request) {
   const { url } = await req.json();
@@ -18,7 +18,7 @@ export async function POST(req: Request) {
             message: "Video is not available",
           },
           {
-            status: 400
+            status: 400,
           }
         );
       }

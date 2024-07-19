@@ -1,8 +1,8 @@
-import ytdl from "ytdl-core";
-import WatchPage from "./WatchPage";
 import { isYoutubeURL } from "@/utils";
-import { notFound } from "next/navigation";
+import ytdl from "@distube/ytdl-core";
 import { Metadata } from "next";
+import { notFound } from "next/navigation";
+import WatchPage from "./WatchPage";
 
 type Props = {
   params: { id: string };
