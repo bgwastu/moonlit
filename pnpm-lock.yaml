@@ -6,8 +6,8 @@ settings:
 
 dependencies:
   '@distube/ytdl-core':
-    specifier: ^4.13.5
-    version: 4.13.5
+    specifier: ^4.13.7
+    version: 4.13.7
   '@mantine/colors-generator':
     specifier: ^7.1.0
     version: 7.1.0(chroma-js@2.4.2)
@@ -152,8 +152,8 @@ packages:
       to-fast-properties: 2.0.0
     dev: false
 
-  /@distube/ytdl-core@4.13.5:
-    resolution: {integrity: sha512-g+4UJIR/auAJbia7iB0aWvaJDbs22P53NySWa47b1NT4xMTDJYguxHFArPrvRkcJrb/AgKjv/XoSZGghpL0CJA==}
+  /@distube/ytdl-core@4.13.7:
+    resolution: {integrity: sha512-xpovwZVPwQ0R4Mrwt/fhh1rqmBjiZ5qj30ck5kz+mQJ5XPzW9dUiTDz89qCxO3YvgbCAqaC5BNNnWiFC2uCV5Q==}
     engines: {node: '>=16'}
     dependencies:
       http-cookie-agent: 6.0.5(tough-cookie@4.1.4)(undici@6.19.2)
