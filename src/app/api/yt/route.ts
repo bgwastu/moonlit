@@ -11,7 +11,9 @@ export async function POST(req: Request) {
   }
 
   return ytdl
-    .getInfo(url)
+    .getInfo(url, {
+      agent,
+    })
     .then((info) => {
       if (info.player_response.playabilityStatus.status !== "OK") {
         return NextResponse.json(
