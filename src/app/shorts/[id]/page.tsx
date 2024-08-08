@@ -1,3 +1,4 @@
+import { agent } from "@/lib/yt";
 import ytdl from "@distube/ytdl-core";
 import { Metadata } from "next";
 import ShortsPage from "./ShortsPage";
@@ -10,7 +11,7 @@ type Props = {
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const id = params.id;
 
-  const info = await ytdl.getBasicInfo(id);
+  const info = await ytdl.getBasicInfo(id, { agent });
   return {
     title: info.videoDetails.title + " - Moonlit",
     description: "Play music with Slowed+Reverb & Nightcore effects.",
