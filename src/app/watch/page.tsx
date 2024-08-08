@@ -1,3 +1,4 @@
+import { agent } from "@/lib/yt";
 import { isYoutubeURL } from "@/utils";
 import ytdl from "@distube/ytdl-core";
 import { Metadata } from "next";
@@ -18,7 +19,7 @@ export async function generateMetadata({
     notFound();
   }
 
-  const info = await ytdl.getBasicInfo(id);
+  const info = await ytdl.getBasicInfo(id, { agent });
   return {
     title: info.videoDetails.title + " - Moonlit",
     description: "Play music with Slowed+Reverb & Nightcore effects.",
