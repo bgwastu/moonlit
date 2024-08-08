@@ -1,3 +1,4 @@
+import { agent } from "@/lib/yt";
 import { isYoutubeURL } from "@/utils";
 import * as ytdl from "@distube/ytdl-core";
 import { NextResponse } from "next/server";
@@ -46,6 +47,7 @@ export async function POST(req: Request) {
 
       const stream = ytdl.downloadFromInfo(info, {
         filter: "audioonly",
+        agent,
       });
 
       return new Promise<Buffer>((resolve, reject) => {
