@@ -1,8 +1,10 @@
 "use client";
 
 import LoadingOverlay from "@/components/LoadingOverlay";
+import useNoSleep from "@/hooks/useNoSleep";
 import {
   ActionIcon,
+  Alert,
   Anchor,
   AppShell,
   Button,
@@ -31,11 +33,10 @@ import { convertFileToBuffer } from "id3-parser/lib/util";
 import { atom, useAtom } from "jotai";
 import { useRouter } from "next/navigation";
 import { usePostHog } from "posthog-js/react";
+import { useState } from "react";
 import Icon from "../components/Icon";
 import { songAtom } from "../state";
 import { getYouTubeId, isYoutubeURL } from "../utils";
-import useNoSleep from "@/hooks/useNoSleep";
-import { useState } from "react";
 
 const loadingAtom = atom<{
   status: boolean;
@@ -189,9 +190,9 @@ function YoutubeUpload() {
           size="lg"
           type="url"
           {...form.getInputProps("url")}
-          disabled={loading}
+          disabled={true}
         />
-        <Button size="lg" type="submit" loading={loading}>
+        <Button size="lg" type="submit" loading={loading} disabled>
           Load music from YouTube
         </Button>
       </Flex>
@@ -292,6 +293,16 @@ export default function UploadPage() {
               </Flex>
             </Center>
             <YoutubeUpload />
+            <Alert
+              variant="light"
+              color="red"
+              title="YouTube Integration Disabled!"
+              icon={<IconBrandYoutube />}
+            >
+              YouTube functionality is currently disabled due to many
+              restrictions. You can manually download the music from
+              https://cobalt.tools/ and upload it here.
+            </Alert>
             <Divider label="OR" labelPosition="center" />
             <LocalUpload />
           </Flex>
