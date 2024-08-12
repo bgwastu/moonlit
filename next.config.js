@@ -13,6 +13,7 @@ const nextConfig = {
     ];
   },
   skipTrailingSlashRedirect: true,
+  output: "standalone",
 };
 
 module.exports = nextConfig;
