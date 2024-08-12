@@ -3,15 +3,13 @@
 import Dynamic from "@/components/Dynamic";
 import { themeAtom } from "@/state";
 import {
-  MantineProvider,
-  Dialog,
   Button,
-  Flex,
-  Title,
+  Dialog,
+  MantineProvider,
   Text,
   useMantineTheme,
 } from "@mantine/core";
-import { useOs, useLocalStorage } from "@mantine/hooks";
+import { useLocalStorage, useOs } from "@mantine/hooks";
 import { Notifications } from "@mantine/notifications";
 import { useAtom } from "jotai";
 import { PostHogProvider } from "posthog-js/react";
@@ -68,7 +66,7 @@ export default function LayoutWrapper({
                 I understand
               </Button>
             </Dialog>
-            <Dialog
+            {/* <Dialog
               opened={!youtubelitDismissed}
               withCloseButton
               onClose={() => {
@@ -99,7 +97,7 @@ export default function LayoutWrapper({
                   </Button>
                 </Flex>
               </Flex>
-            </Dialog>
+            </Dialog> */}
             {children}
           </>
         </MantineProvider>
