@@ -1,3 +1,24 @@
-import * as ytdl from "@distube/ytdl-core";
+export const getDownloadUrl = async (url: string) => {
+  "use server";
 
-export const agent = ytdl.createAgent(JSON.parse(process.env.TOKEN));
+  const response = await fetch(process.env.COBALT_API_URL, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      accept: "application/json",
+    },
+    body: JSON.stringify({
+      url: url,
+      downloadMode: "audio",
+      videoQuality: "720",
+    }),
+  });
+
+  if (response.ok) {
+    const data = await response.json();
+    const downloadUrl = data.url;
+    return downloadUrl;
+  } else {
+    throw new Error("Failed to get download URL");
+  }
+};

@@ -190,9 +190,8 @@ function YoutubeUpload() {
           size="lg"
           type="url"
           {...form.getInputProps("url")}
-          disabled={true}
         />
-        <Button size="lg" type="submit" loading={loading} disabled>
+        <Button size="lg" type="submit" loading={loading}>
           Load music from YouTube
         </Button>
       </Flex>
@@ -293,16 +292,6 @@ export default function UploadPage() {
               </Flex>
             </Center>
             <YoutubeUpload />
-            <Alert
-              variant="light"
-              color="red"
-              title="YouTube Integration Disabled!"
-              icon={<IconBrandYoutube />}
-            >
-              YouTube functionality is currently disabled due to many
-              restrictions. You can manually download the music from
-              https://cobalt.tools/ and upload it here.
-            </Alert>
             <Divider label="OR" labelPosition="center" />
             <LocalUpload />
           </Flex>
