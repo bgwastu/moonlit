@@ -2,6 +2,8 @@ import { getDownloadUrl } from "@/lib/yt";
 import { isYoutubeURL } from "@/utils";
 import { NextResponse } from "next/server";
 
+export const maxDuration = 300;
+
 const YOUTUBE_API_KEY = process.env.YOUTUBE_API_KEY;
 const YOUTUBE_API_URL = "https://www.googleapis.com/youtube/v3/videos";
 
