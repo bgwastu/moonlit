@@ -1,11 +1,8 @@
-import { getDownloadUrl } from "@/lib/yt";
+import { getAudioStream, getVideoInfo } from "@/lib/yt";
 import { isYoutubeURL } from "@/utils";
 import { NextResponse } from "next/server";
 
 export const maxDuration = 60;
-
-const YOUTUBE_API_KEY = process.env.YOUTUBE_API_KEY;
-const YOUTUBE_API_URL = "https://www.googleapis.com/youtube/v3/videos";
 
 export async function POST(req: Request) {
   const { url } = await req.json();
@@ -14,33 +11,11 @@ export async function POST(req: Request) {
     return NextResponse.json({ message: "Invalid YouTube URL", status: 400 });
   }
 
-  const videoId = new URL(url).searchParams.get("v");
-  if (!videoId) {
-    return NextResponse.json({ message: "Invalid YouTube URL", status: 400 });
-  }
-
   try {
-    const response = await fetch(
-      `${YOUTUBE_API_URL}?id=${videoId}&part=snippet,contentDetails&key=${YOUTUBE_API_KEY}`
-    );
-    const data = await response.json();
+    // Get video info first to check duration and get metadata
+    const videoInfo = await getVideoInfo(url);
 
-    if (!response.ok || !data.items || data.items.length === 0) {
-      return NextResponse.json(
-        {
-          message: "Video is not available",
-        },
-        {
-          status: 400,
-        }
-      );
-    }
-
-    const videoDetails = data.items[0];
-    const duration = videoDetails.contentDetails.duration;
-    const lengthSeconds = parseDuration(duration);
-
-    if (lengthSeconds > 1800) {
+    if (videoInfo.lengthSeconds > 1800) {
       return NextResponse.json(
         {
           message: "The video is too long. The maximum length is 30 minutes",
@@ -51,26 +26,32 @@ export async function POST(req: Request) {
       );
     }
 
-    const title = videoDetails.snippet.title
-      .replace(" (Official Music Video)", "")
-      .replace(" [Official Music Video]", "")
-      .replace("", "");
-
-    const author = videoDetails.snippet.channelTitle
-      .replace(" - Topic", "")
-      .replace("VEVO", "");
-
     try {
-      const downloadUrl = await getDownloadUrl(url);
-      const response = await fetch(downloadUrl);
-      const buffer = await response.arrayBuffer();
+      const audioStream = await getAudioStream(url);
+
+      // Convert stream to buffer
+      const chunks = [];
+      for await (const chunk of audioStream) {
+        chunks.push(chunk);
+      }
+      const buffer = Buffer.concat(chunks);
+
+      // Clean up title and author
+      const title = videoInfo.title
+        .replace(" (Official Music Video)", "")
+        .replace(" [Official Music Video]", "")
+        .replace("", "");
+
+      const author = videoInfo.author
+        .replace(" - Topic", "")
+        .replace("VEVO", "");
 
       const headers = {
         "Content-Type": "audio/mpeg",
         "Content-Length": buffer.byteLength.toString(),
         Title: encodeURI(title),
         Author: encodeURI(author),
-        Thumbnail: encodeURI(videoDetails.snippet.thumbnails.default.url) || "",
+        Thumbnail: encodeURI(videoInfo.thumbnail) || "",
       };
 
       return new Response(buffer, { headers });
@@ -92,12 +73,4 @@ export async function POST(req: Request) {
       { status: 500 }
     );
   }
-}
-
-function parseDuration(duration: string): number {
-  const match = duration.match(/PT(\d+H)?(\d+M)?(\d+S)?/);
-  const hours = (parseInt(match[1]) || 0) * 3600;
-  const minutes = (parseInt(match[2]) || 0) * 60;
-  const seconds = parseInt(match[3]) || 0;
-  return hours + minutes + seconds;
 }
