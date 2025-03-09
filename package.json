@@ -9,6 +9,7 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@distube/ytdl-core": "^4.16.4",
     "@mantine/colors-generator": "^7.1.0",
     "@mantine/core": "6.0.20",
     "@mantine/dropzone": "6.0.20",

@@ -1,24 +1,34 @@
-export const getDownloadUrl = async (url: string) => {
+import ytdl from '@distube/ytdl-core';
+
+// Create a reusable agent with cookies
+const agent = ytdl.createAgent(
+  process.env.YOUTUBE_COOKIES ? JSON.parse(process.env.YOUTUBE_COOKIES) : undefined
+);
+
+export const getVideoInfo = async (url: string) => {
   "use server";
 
-  const response = await fetch(process.env.COBALT_API_URL, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      accept: "application/json",
-    },
-    body: JSON.stringify({
-      url: url,
-      downloadMode: "audio",
-      videoQuality: "720",
-    }),
+  const info = await ytdl.getInfo(url, { agent });
+  return {
+    title: info.videoDetails.title,
+    author: info.videoDetails.author.name,
+    thumbnail: info.videoDetails.thumbnails[0].url,
+    lengthSeconds: parseInt(info.videoDetails.lengthSeconds)
+  };
+};
+
+export const getAudioStream = async (url: string) => {
+  "use server";
+  
+  // Get only audio format with highest quality
+  const info = await ytdl.getInfo(url, { agent });
+  const format = ytdl.chooseFormat(info.formats, {
+    quality: 'highestaudio',
+    filter: 'audioonly'
   });
 
-  if (response.ok) {
-    const data = await response.json();
-    const downloadUrl = data.url;
-    return downloadUrl;
-  } else {
-    throw new Error("Failed to get download URL");
-  }
+  return ytdl(url, { 
+    format,
+    agent
+  });
 };
