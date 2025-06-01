@@ -1,0 +1,10 @@
+node_modules
+.next
+.git
+.gitignore
+.dockerignore
+README.md
+LICENSE
+.vercel
+.DS_Store
+data 
