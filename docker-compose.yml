@@ -33,8 +33,6 @@ services:
     depends_on:
       warp:
         condition: service_healthy
-    ports:
-      - "30000:3000"
     environment:
       - NODE_ENV=production
       - PROXY=socks5://warp:1080
