@@ -1,7 +1,7 @@
+import InitialPlayer from "@/components/InitialPlayer";
 import { isYoutubeURL } from "@/utils";
 import { Metadata } from "next";
 import { notFound } from "next/navigation";
-import ShortsPage from "./ShortsPage";
 
 type Props = {
   params: { id: string };
@@ -47,12 +47,22 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   };
 }
 
-export default function Page({ params }: Props) {
+export default async function Page({ params }: Props) {
   const id = params.id;
   if (!isYoutubeURL("https://youtube.com/shorts/" + id)) {
     notFound();
   }
+  const metadata = await fetchVideoDetails(id);
 
-  // TODO: pass the url to the page, so it can fetch the song immediately
-  return <ShortsPage id={id} />;
+  return (
+    <InitialPlayer
+      youtubeId={id}
+      isShorts={true}
+      metadata={{
+        title: metadata.title,
+        author: metadata.channelTitle,
+        coverUrl: metadata.thumbnails.default.url,
+      }}
+    />
+  );
 }
