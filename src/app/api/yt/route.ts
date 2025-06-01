@@ -27,14 +27,7 @@ export async function POST(req: Request) {
     }
 
     try {
-      const audioStream = await getAudioStream(url);
-
-      // Convert stream to buffer
-      const chunks = [];
-      for await (const chunk of audioStream) {
-        chunks.push(chunk);
-      }
-      const buffer = Buffer.concat(chunks);
+      const buffer = await getAudioStream(url);
 
       // Clean up title and author
       const title = videoInfo.title
