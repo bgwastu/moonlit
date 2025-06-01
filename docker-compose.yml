@@ -34,6 +34,7 @@ services:
       warp:
         condition: service_healthy
     environment:
-      - NODE_ENV=production
-      - PROXY=socks5://warp:1080
+      - NODE_ENV=${NODE_ENV:-production}
+      - PROXY=${PROXY:-socks5://warp:1080}
+      - YOUTUBE_API_KEY=${YOUTUBE_API_KEY}
     restart: unless-stopped
