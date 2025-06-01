@@ -3,12 +3,9 @@ version: "3"
 services:
   warp:
     image: caomingjun/warp
-    container_name: warp
     restart: always
     device_cgroup_rules:
-      - "c 10:200 rwm"
-    ports:
-      - "1080:1080"
+      - 'c 10:200 rwm'
     environment:
       - WARP_SLEEP=2
       # - WARP_LICENSE_KEY= # optional
@@ -35,20 +32,12 @@ services:
 
   moonlit:
     build: .
-    container_name: moonlit
-    restart: always
     depends_on:
       warp:
         condition: service_healthy
     ports:
-      - "3000:3000"
+      - "30000:3000"
     environment:
       - NODE_ENV=production
       - PROXY=socks5://warp:1080
-      - YOUTUBE_API_KEY="***REMOVED***"
-    networks:
-      - default
-
-networks:
-  default:
-    driver: bridge
+    restart: unless-stopped
