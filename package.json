@@ -16,7 +16,6 @@
     "@mantine/hooks": "6.0.20",
     "@mantine/notifications": "6.0.20",
     "@tabler/icons-react": "^2.34.0",
-    "@types/node": "20.6.0",
     "@types/react": "18.2.21",
     "@types/react-dom": "18.2.7",
     "chroma-js": "^2.4.2",
@@ -35,5 +34,8 @@
     "tone": "^14.7.77",
     "typescript": "5.2.2",
     "worker-timers": "^7.1.7"
+  },
+  "devDependencies": {
+    "@types/node": "20.6.0"
   }
 }

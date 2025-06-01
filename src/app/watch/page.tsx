@@ -1,7 +1,7 @@
+import InitialPlayer from "@/components/InitialPlayer";
 import { isYoutubeURL } from "@/utils";
 import { Metadata } from "next";
 import { notFound } from "next/navigation";
-import WatchPage from "./WatchPage";
 
 const YOUTUBE_API_KEY = process.env.YOUTUBE_API_KEY;
 const YOUTUBE_API_URL = "https://www.googleapis.com/youtube/v3/videos";
@@ -52,12 +52,22 @@ export async function generateMetadata({
   };
 }
 
-export default function Page({ searchParams }: Props) {
+export default async function Page({ searchParams }: Props) {
   const id = searchParams.v as string;
   if (!isYoutubeURL("https://youtube.com/watch?v=" + id)) {
     notFound();
   }
+  const metadata = await fetchVideoDetails(id);
 
-  // TODO: pass the url to the page, so it can fetch the song immediately
-  return <WatchPage id={id} />;
+  return (
+    <InitialPlayer
+      youtubeId={id as string}
+      isShorts={false}
+      metadata={{
+        title: metadata.title,
+        author: metadata.channelTitle,
+        coverUrl: metadata.thumbnails.default.url,
+      }}
+    />
+  );
 }
