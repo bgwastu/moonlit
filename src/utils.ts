@@ -8,11 +8,37 @@ export function isYoutubeURL(url: string) {
   return youtubeRegex.test(url);
 }
 
+export function isTikTokURL(url: string) {
+  const tiktokRegex = /^https?:\/\/(www\.)?tiktok\.com\/@[\w.-]+\/video\/\d+/;
+  return tiktokRegex.test(url);
+}
+
+export function isSupportedURL(url: string) {
+  return isYoutubeURL(url) || isTikTokURL(url) || isInstagramURL(url);
+}
+
 export function getYouTubeId(url: string) {
   const youtubeRegex =
     /^.*(?:(?:youtu\.be\/|v\/|vi\/|u\/\w\/|embed\/|shorts\/)|(?:(?:watch)?\?v(?:i)?=|\&v(?:i)?=))([^#\&\?]*).*/;
   const match = url.match(youtubeRegex);
   return match ? match[1] : null;
+}
+
+export function getTikTokId(url: string) {
+  const tiktokRegex = /^https?:\/\/(www\.)?tiktok\.com\/@[\w.-]+\/video\/(\d+)/;
+  const match = url.match(tiktokRegex);
+  return match ? match[2] : null;
+}
+
+export function isInstagramURL(url: string) {
+  const instagramRegex = /^https?:\/\/(www\.)?instagram\.com\/reels\/[\w-]+/;
+  return instagramRegex.test(url);
+}
+
+export function getInstagramId(url: string) {
+  const instagramRegex = /^https?:\/\/(www\.)?instagram\.com\/reels\/([\w-]+)/;
+  const match = url.match(instagramRegex);
+  return match ? match[2] : null;
 }
 
 export function isJSONString(str: string) {

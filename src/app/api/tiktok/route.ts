@@ -1,5 +1,5 @@
 import { getAudioStream, getVideoInfo } from "@/lib/yt";
-import { isYoutubeURL } from "@/utils";
+import { isTikTokURL } from "@/utils";
 import { NextResponse } from "next/server";
 
 export const maxDuration = 10000;
@@ -7,8 +7,8 @@ export const maxDuration = 10000;
 export async function POST(req: Request) {
   const { url, metadataOnly } = await req.json();
 
-  if (!isYoutubeURL(url)) {
-    return NextResponse.json({ message: "Invalid YouTube URL", status: 400 });
+  if (!isTikTokURL(url)) {
+    return NextResponse.json({ message: "Invalid TikTok URL", status: 400 });
   }
 
   try {
@@ -18,7 +18,7 @@ export async function POST(req: Request) {
     const title = videoInfo.title
       .replace(/ \(Official Music Video\)/gi, "")
       .replace(/ \[Official Music Video\]/gi, "")
-      .replace(/ (Lyric Video)/gi, "") // Added more common patterns
+      .replace(/ (Lyric Video)/gi, "")
       .replace(/ \[Lyric Video\]/gi, "")
       .replace(/ (Official Audio)/gi, "")
       .replace(/ \[Official Audio\]/gi, "")
@@ -31,13 +31,12 @@ export async function POST(req: Request) {
 
     if (metadataOnly) {
       const headers = {
-        "Content-Type": "application/json", // Ensure correct content type for JSON response
+        "Content-Type": "application/json",
         Title: encodeURI(title),
         Author: encodeURI(author),
         Thumbnail: encodeURI(videoInfo.thumbnail) || "",
         LengthSeconds: videoInfo.lengthSeconds.toString(),
       };
-      // Return only metadata as JSON. We are sending it in headers for client-side convenience for now.
       return new Response(JSON.stringify({ title, author, thumbnail: videoInfo.thumbnail, lengthSeconds: videoInfo.lengthSeconds }), { headers });
     }
 

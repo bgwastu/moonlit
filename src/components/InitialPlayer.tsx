@@ -3,7 +3,7 @@
 import useNoSleep from "@/hooks/useNoSleep";
 import { Song } from "@/interfaces";
 import { songAtom } from "@/state"; // This might be removed if song state is fully internal
-import { getYouTubeId, isYoutubeURL } from "@/utils";
+import { getYouTubeId, isSupportedURL } from "@/utils";
 import {
   Button,
   Center,
@@ -62,10 +62,10 @@ export default function InitialPlayer({
       ? `https://youtube.com/shorts/${youtubeId}`
       : `https://youtube.com/watch?v=${youtubeId}`;
 
-    if (!isYoutubeURL(url)) {
+    if (!isSupportedURL(url)) {
       notifications.show({
         title: "Error",
-        message: "Invalid YouTube URL generated.",
+        message: "Invalid URL generated.",
       });
       router.push("/");
       return;

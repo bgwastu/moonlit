@@ -4,7 +4,6 @@ import LoadingOverlay from "@/components/LoadingOverlay";
 import useNoSleep from "@/hooks/useNoSleep";
 import {
   ActionIcon,
-  Alert,
   Anchor,
   AppShell,
   Button,
@@ -16,7 +15,6 @@ import {
   Text,
   TextInput,
   rem,
-  useMantineTheme,
 } from "@mantine/core";
 import { Dropzone } from "@mantine/dropzone";
 import { useForm } from "@mantine/form";
@@ -36,7 +34,7 @@ import { usePostHog } from "posthog-js/react";
 import { useState } from "react";
 import Icon from "../components/Icon";
 import { songAtom } from "../state";
-import { getYouTubeId, isYoutubeURL } from "../utils";
+import { getYouTubeId, getTikTokId, isSupportedURL, isTikTokURL, isInstagramURL } from "../utils";
 
 const loadingAtom = atom<{
   status: boolean;
@@ -51,7 +49,7 @@ function LocalUpload() {
   const [, setSong] = useAtom(songAtom);
   const posthog = usePostHog();
   const router = useRouter();
-  const [noSleepEnabled, setNoSleepEnabled] = useNoSleep();
+  const [, setNoSleepEnabled] = useNoSleep();
 
   return (
     <Dropzone
@@ -162,23 +160,78 @@ function YoutubeUpload() {
     },
     validate: {
       url: (value) =>
-        !isYoutubeURL(value) ? "Must be YouTube or YouTube Music URL" : null,
+        !isSupportedURL(value) ? "Must be YouTube, TikTok, or Instagram Reel URL" : null,
     },
   });
 
   async function onSubmit(url: string) {
     setLoading(true);
-    const id = getYouTubeId(url);
-    if (!id) {
-      setLoading(false);
-      notifications.show({
-        title: "Error",
-        message: "Invalid YouTube URL",
-      });
-      return;
-    }
+    
+    if (isTikTokURL(url)) {
+      // For TikTok URLs, make a direct POST request to the TikTok API
+      try {
+        const response = await fetch("/api/tiktok", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ url, metadataOnly: true }),
+        });
 
-    router.push("/watch?v=" + id);
+        if (!response.ok) {
+          const error = await response.json();
+          throw new Error(error.message || "Failed to fetch TikTok metadata");
+        }
+
+        const metadata = await response.json();
+        // Navigate directly to player with TikTok URL as parameter
+        const encodedUrl = encodeURIComponent(url);
+        router.push(`/player?url=${encodedUrl}&title=${encodeURIComponent(metadata.title || '')}&author=${encodeURIComponent(metadata.author || '')}&thumbnail=${encodeURIComponent(metadata.thumbnail || '')}`);
+      } catch (error) {
+        setLoading(false);
+        notifications.show({
+          title: "Error",
+          message: error.message || "Failed to load TikTok video",
+        });
+        return;
+      }
+    } else if (isInstagramURL(url)) {
+      // For Instagram URLs, make a direct POST request to the Instagram API
+      try {
+        const response = await fetch("/api/instagram", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ url, metadataOnly: true }),
+        });
+
+        if (!response.ok) {
+          const error = await response.json();
+          throw new Error(error.message || "Failed to fetch Instagram metadata");
+        }
+
+        const metadata = await response.json();
+        // Navigate directly to player with Instagram URL as parameter
+        const encodedUrl = encodeURIComponent(url);
+        router.push(`/player?url=${encodedUrl}&title=${encodeURIComponent(metadata.title || '')}&author=${encodeURIComponent(metadata.author || '')}&thumbnail=${encodeURIComponent(metadata.thumbnail || '')}`);
+      } catch (error) {
+        setLoading(false);
+        notifications.show({
+          title: "Error",
+          message: error.message || "Failed to load Instagram video",
+        });
+        return;
+      }
+    } else {
+      // YouTube URL handling
+      const id = getYouTubeId(url);
+      if (!id) {
+        setLoading(false);
+        notifications.show({
+          title: "Error",
+          message: "Invalid URL",
+        });
+        return;
+      }
+      router.push("/watch?v=" + id);
+    }
   }
 
   return (
@@ -186,13 +239,13 @@ function YoutubeUpload() {
       <Flex direction="column" gap="md">
         <TextInput
           icon={<IconBrandYoutube />}
-          placeholder="YouTube URL"
+          placeholder="YouTube, TikTok, or Instagram Reel URL"
           size="lg"
           type="url"
           {...form.getInputProps("url")}
         />
         <Button size="lg" type="submit" loading={loading}>
-          Load music from YouTube
+          Download & Play
         </Button>
       </Flex>
     </form>
@@ -200,7 +253,6 @@ function YoutubeUpload() {
 }
 
 function FooterSection() {
-  const theme = useMantineTheme();
   return (
     <Footer height={68}>
       <Container size="sm" h="100%">
