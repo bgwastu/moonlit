@@ -89,6 +89,102 @@ export const getVideoInfo = async (url: string): Promise<VideoInfo> => {
   });
 };
 
+export const getVideoStream = async (url: string): Promise<Buffer> => {
+  "use server";
+  
+  return new Promise((resolve, reject) => {
+    const args = [
+      '--format', 'best[ext=mp4]/best',
+      '--output', '-',
+      '--no-playlist',
+      url
+    ];
+
+    // Add proxy if available
+    if (process.env.PROXY) {
+      args.unshift('--proxy', process.env.PROXY);
+    }
+
+    const ytdlp = spawn('yt-dlp', args);
+    
+    const chunks: Uint8Array[] = [];
+    let stderr = '';
+
+    ytdlp.stdout.on('data', (data: Buffer) => {
+      chunks.push(new Uint8Array(data));
+    });
+
+    ytdlp.stderr.on('data', (data) => {
+      stderr += data.toString();
+    });
+
+    ytdlp.on('close', (code) => {
+      if (code !== 0) {
+        const userFriendlyMessage = parseYtDlpError(stderr);
+        reject(new Error(userFriendlyMessage));
+        return;
+      }
+
+      resolve(Buffer.concat(chunks));
+    });
+
+    ytdlp.on('error', (error) => {
+      reject(new Error(`Failed to spawn yt-dlp: ${error.message}`));
+    });
+  });
+};
+
+export const getVideoUrl = async (url: string): Promise<string> => {
+  "use server";
+  
+  return new Promise((resolve, reject) => {
+    const args = [
+      '--format', 'best[ext=mp4]/best',
+      '--get-url',
+      '--no-playlist',
+      url
+    ];
+
+    // Add proxy if available
+    if (process.env.PROXY) {
+      args.unshift('--proxy', process.env.PROXY);
+    }
+
+    const ytdlp = spawn('yt-dlp', args);
+    
+    let stdout = '';
+    let stderr = '';
+
+    ytdlp.stdout.on('data', (data) => {
+      stdout += data.toString();
+    });
+
+    ytdlp.stderr.on('data', (data) => {
+      stderr += data.toString();
+    });
+
+    ytdlp.on('close', (code) => {
+      if (code !== 0) {
+        const userFriendlyMessage = parseYtDlpError(stderr);
+        reject(new Error(userFriendlyMessage));
+        return;
+      }
+
+      const videoUrl = stdout.trim();
+      if (!videoUrl) {
+        reject(new Error('Failed to get video URL'));
+        return;
+      }
+
+      resolve(videoUrl);
+    });
+
+    ytdlp.on('error', (error) => {
+      reject(new Error(`Failed to spawn yt-dlp: ${error.message}`));
+    });
+  });
+};
+
 export const getAudioStream = async (url: string): Promise<Buffer> => {
   "use server";
   

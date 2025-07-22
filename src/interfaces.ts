@@ -1,10 +1,12 @@
 export interface Song {
   fileUrl: string;
+  videoUrl?: string;
   metadata: {
     id: string | null;
     title: string;
     author: string;
     coverUrl: string;
+    platform?: "youtube" | "tiktok";
   };
 }
 
