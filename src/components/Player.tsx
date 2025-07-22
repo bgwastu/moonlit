@@ -288,8 +288,11 @@ export function Player({
         }
       }
 
-      player.start(0, currentPlayback * player.playbackRate);
-      setState("playing");
+      // Only start if the player is not already playing
+      if (player.state !== "started") {
+        player.start(0, currentPlayback * player.playbackRate);
+        setState("playing");
+      }
     }
 
     setupTone().catch((e) => {
@@ -783,21 +786,23 @@ export function Player({
                 </MediaQuery>
               </Flex>
               <Flex gap="sm" align="center" style={{ flex: 1 }}>
-                <MediaQuery smallerThan="xs" styles={{ display: "none" }}>
-                  <Image
-                    src={song.metadata.coverUrl}
-                    radius="sm"
-                    height={38}
-                    width={38}
-                    withPlaceholder
-                    placeholder={
-                      <Center>
-                        <IconMusic />
-                      </Center>
-                    }
-                    alt="cover image"
-                  />
-                </MediaQuery>
+                {song.metadata.id && (
+                  <MediaQuery smallerThan="xs" styles={{ display: "none" }}>
+                    <Image
+                      src={song.metadata.coverUrl}
+                      radius="sm"
+                      height={38}
+                      width={38}
+                      withPlaceholder
+                      placeholder={
+                        <Center>
+                          <IconMusic />
+                        </Center>
+                      }
+                      alt="cover image"
+                    />
+                  </MediaQuery>
+                )}
                 <Flex direction="column">
                   <Text weight="600" lineClamp={1} lh={1.2} fz="sm">
                     {song.metadata.title}
