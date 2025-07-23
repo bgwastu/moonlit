@@ -40,7 +40,8 @@ export const getVideoInfo = async (url: string): Promise<VideoInfo> => {
   
   return new Promise((resolve, reject) => {
     const args = [
-      '--dump-json',
+      '--skip-download',
+      '-J',
       '--no-playlist',
       url
     ];

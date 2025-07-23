@@ -14,15 +14,12 @@ export async function POST(req: Request) {
   try {
     const videoInfo = await getVideoInfo(url);
 
-    // For TikTok, only remove hashtags from title
+    // Remove hashtags from title
     const title = videoInfo.title
       .replace(/#\w+/g, "")
       .trim();
 
-    const author = videoInfo.author
-      .replace(/ - Topic$/i, "")
-      .replace(/VEVO$/i, "")
-      .trim();
+    const author = videoInfo.author.trim();
 
     if (metadataOnly) {
       const headers = {

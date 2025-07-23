@@ -32,22 +32,45 @@ export async function generateMetadata({
   }
 
   const videoDetails = await fetchVideoDetails(id);
+  const title = `${videoDetails.title} - Moonlit`;
+  const description = `Listen to "${videoDetails.title}" by ${videoDetails.channelTitle} with customizable slowed and nightcore effects on Moonlit.`;
+  const imageUrl = `https://i.ytimg.com/vi/${id}/maxresdefault.jpg`;
+  const url = `https://moonlit.wastu.net/watch?v=${id}`;
+
   return {
-    title: videoDetails.title + " - Moonlit",
-    description: "Play music with Slowed+Reverb & Nightcore effects.",
-    twitter: {
-      title: videoDetails.title + " - Moonlit",
-      description: "Play music with Slowed+Reverb & Nightcore effects.",
-    },
+    title,
+    description,
+    keywords: ["slowed music", "nightcore", videoDetails.title, videoDetails.channelTitle, "youtube player"],
+    authors: [{ name: "Moonlit" }],
+    creator: "Moonlit",
+    publisher: "Moonlit",
     openGraph: {
+      title,
+      description,
+      url,
+      siteName: "Moonlit",
+      type: "website",
+      locale: "en_US",
       images: [
         {
-          url: `https://i.ytimg.com/vi/${id}/maxresdefault.jpg`,
+          url: imageUrl,
           width: 1280,
           height: 720,
-          alt: "Thumbnail",
+          alt: `${videoDetails.title} - ${videoDetails.channelTitle}`,
         },
       ],
+    },
+    twitter: {
+      card: "summary_large_image",
+      title,
+      description,
+      creator: "@moonlitapp",
+      site: "@moonlitapp",
+      images: [imageUrl],
+    },
+    robots: {
+      index: true,
+      follow: true,
     },
   };
 }
