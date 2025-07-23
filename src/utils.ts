@@ -14,7 +14,7 @@ export function isTikTokURL(url: string) {
 }
 
 export function isSupportedURL(url: string) {
-  return isYoutubeURL(url) || isTikTokURL(url) || isInstagramURL(url);
+  return isYoutubeURL(url) || isTikTokURL(url);
 }
 
 export function getYouTubeId(url: string) {
@@ -30,15 +30,16 @@ export function getTikTokId(url: string) {
   return match ? match[2] : null;
 }
 
-export function isInstagramURL(url: string) {
-  const instagramRegex = /^https?:\/\/(www\.)?instagram\.com\/reels\/[\w-]+/;
-  return instagramRegex.test(url);
+export function getTikTokCreator(url: string) {
+  const tiktokRegex = /^https?:\/\/(www\.)?tiktok\.com\/@([\w.-]+)\/video\/\d+/;
+  const match = url.match(tiktokRegex);
+  return match ? match[2] : null;
 }
 
-export function getInstagramId(url: string) {
-  const instagramRegex = /^https?:\/\/(www\.)?instagram\.com\/reels\/([\w-]+)/;
-  const match = url.match(instagramRegex);
-  return match ? match[2] : null;
+export function getTikTokCreatorAndVideoId(url: string): { creator: string | null, videoId: string | null } {
+  const tiktokRegex = /^https?:\/\/(www\.)?tiktok\.com\/@([\w.-]+)\/video\/(\d+)/;
+  const match = url.match(tiktokRegex);
+  return match ? { creator: match[2], videoId: match[3] } : { creator: null, videoId: null };
 }
 
 export function isJSONString(str: string) {

@@ -14,14 +14,9 @@ export async function POST(req: Request) {
   try {
     const videoInfo = await getVideoInfo(url);
 
-    // Clean up title and author for consistent use
+    // For TikTok, only remove hashtags from title
     const title = videoInfo.title
-      .replace(/ \(Official Music Video\)/gi, "")
-      .replace(/ \[Official Music Video\]/gi, "")
-      .replace(/ (Lyric Video)/gi, "")
-      .replace(/ \[Lyric Video\]/gi, "")
-      .replace(/ (Official Audio)/gi, "")
-      .replace(/ \[Official Audio\]/gi, "")
+      .replace(/#\w+/g, "")
       .trim();
 
     const author = videoInfo.author

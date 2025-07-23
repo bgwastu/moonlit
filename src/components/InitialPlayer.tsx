@@ -2,7 +2,7 @@
 
 import useNoSleep from "@/hooks/useNoSleep";
 import { Song } from "@/interfaces";
-import { songAtom } from "@/state"; // This might be removed if song state is fully internal
+import { songAtom } from "@/state";
 import { getYouTubeId, isSupportedURL } from "@/utils";
 import {
   Button,
@@ -17,9 +17,8 @@ import {
 import { useShallowEffect } from "@mantine/hooks";
 import { notifications } from "@mantine/notifications";
 import { IconMusic } from "@tabler/icons-react";
-import { atom, useAtom } from "jotai"; // Keep for global state if needed, or remove if local
-import localforage from "localforage";
-import { useRouter } from "next/navigation"; // For potential redirects on error
+import { useAtom } from "jotai";
+import { useRouter } from "next/navigation";
 import { usePostHog } from "posthog-js/react";
 import { useState } from "react";
 import Icon from "./Icon";
@@ -29,6 +28,59 @@ interface InitialPlayerProps {
   youtubeId: string;
   isShorts: boolean;
   metadata: Partial<Song["metadata"]>;
+}
+
+async function getSongFromYouTubeInternal(url: string): Promise<Song> {
+  const response = await fetch("/api/yt", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ url }),
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json();
+    throw new Error(errorData.message || "Failed to load YouTube content");
+  }
+
+  const title = decodeURIComponent(response.headers.get("Title") || "Unknown Title");
+  const author = decodeURIComponent(response.headers.get("Author") || "Unknown Artist");
+  const thumbnail = decodeURIComponent(response.headers.get("Thumbnail") || "");
+  const videoMode = response.headers.get("VideoMode") === "true";
+  const videoUrl = response.headers.get("VideoUrl");
+
+  const metadata = {
+    id: getYouTubeId(url),
+    title: title,
+    author: author,
+    coverUrl: thumbnail,
+    platform: "youtube" as const,
+  };
+
+  if (videoMode && videoUrl) {
+    // Short video with direct URL
+    return {
+      fileUrl: decodeURIComponent(videoUrl),
+      videoUrl: decodeURIComponent(videoUrl),
+      metadata,
+    };
+  } else if (videoMode) {
+    // Short video with blob
+    const blob = await response.blob();
+    const blobUrl = URL.createObjectURL(blob);
+    return {
+      fileUrl: blobUrl,
+      videoUrl: blobUrl,
+      metadata,
+    };
+  } else {
+    // Audio-only for longer videos
+    const blob = await response.blob();
+    const audioUrl = URL.createObjectURL(blob);
+    return {
+      fileUrl: audioUrl,
+      metadata,
+    };
+  }
 }
 
 export default function InitialPlayer({
@@ -71,12 +123,12 @@ export default function InitialPlayer({
       return;
     }
 
-    setSong(null);
+    (setSong as (song: Song | null) => void)(null);
     setIsPlayer(false);
 
     getSongFromYouTubeInternal(url)
-      .then((downloadedSong) => {
-        setSong(downloadedSong);
+      .then((downloadedSong: Song) => {
+        (setSong as (song: Song | null) => void)(downloadedSong);
       })
       .catch((e) => {
         console.error(`${pageType}: Download error:`, e);
@@ -85,7 +137,7 @@ export default function InitialPlayer({
           message: e.message || "Could not process the video.",
         });
         router.push("/");
-      })
+      });
   }, [youtubeId, isShorts, router, posthog, setSong]);
 
   const handleGoToPlayer = () => {
@@ -122,7 +174,7 @@ export default function InitialPlayer({
           </Text>
         </Flex>
         <Text weight={600} color="dimmed">
-          Music Details
+          Video Details
         </Text>
         <Flex gap="md" align="center">
           <Image
@@ -139,14 +191,14 @@ export default function InitialPlayer({
             alt="cover image"
           />
           <Flex direction="column">
-            <Text weight={600}>{`${metadata.title}`}</Text>
-            <Text>{`${metadata.author}`}</Text>
+            <Text weight={600}>{metadata.title || "Loading..."}</Text>
+            <Text>{metadata.author || "Loading..."}</Text>
           </Flex>
         </Flex>
         {isLoading ? (
           <Flex gap="md" align="center">
             <Loader size="sm" />
-            <Text>Downloading the song...</Text>
+            <Text>Downloading the video...</Text>
           </Flex>
         ) : (
           <Button onClick={handleGoToPlayer}>Play</Button>
@@ -154,50 +206,4 @@ export default function InitialPlayer({
       </Flex>
     </Container>
   );
-}
-
-async function getSongFromYouTubeInternal(url: string): Promise<Song> {
-  const id = getYouTubeId(url);
-  if (!id) throw new Error("Could not extract YouTube ID from URL: " + url);
-
-  const cachedMusic = (await localforage.getItem(id)) as {
-    blob: Blob;
-    metadata: Song["metadata"];
-  };
-  if (cachedMusic) {
-    return {
-      fileUrl: URL.createObjectURL(cachedMusic.blob),
-      metadata: cachedMusic.metadata,
-    };
-  }
-
-  const response = await fetch("/api/yt", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ url }), // Full download request
-  });
-
-  if (!response.ok) {
-    const body = await response
-      .json()
-      .catch(() => ({ message: `Error downloading: ${response.statusText}` }));
-    throw new Error(
-      body.message || `Error downloading YouTube music (${response.statusText})`
-    );
-  }
-
-  const blob = await response.blob();
-  const metadata: Song["metadata"] = {
-    id,
-    title: decodeURI(response.headers.get("Title") || "Unknown Title"),
-    author: decodeURI(response.headers.get("Author") || "Unknown Artist"),
-    coverUrl: decodeURI(response.headers.get("Thumbnail") || "") || undefined,
-  };
-
-  await localforage.setItem(id, { blob, metadata });
-
-  return {
-    fileUrl: URL.createObjectURL(blob),
-    metadata,
-  };
 }
