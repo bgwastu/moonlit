@@ -1,12 +1,12 @@
-import { atom } from "jotai";
 import { Song } from "./interfaces";
-import { MantineTheme, MantineThemeOverride } from "@mantine/core";
+import { MantineThemeOverride } from "@mantine/core";
+import { atom } from "jotai";
 
-export const songAtom = atom(null as Song | null);
+export const songAtom = atom<Song | null>(null);
 
-export const themeAtom = atom({
+export const themeAtom = atom<MantineThemeOverride>({
   colorScheme: "dark",
   primaryColor: "violet",
   primaryShade: 5,
-  white: "#f3f0ff" // violet[0],
-} as MantineThemeOverride);
+  white: "#f3f0ff", // violet[0]
+});

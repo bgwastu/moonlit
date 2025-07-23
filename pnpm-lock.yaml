@@ -74,9 +74,6 @@ importers:
       react-dom:
         specifier: 18.2.0
         version: 18.2.0(react@18.2.0)
-      tone:
-        specifier: ^14.7.77
-        version: 14.7.77
       typescript:
         specifier: 5.2.2
         version: 5.2.2
@@ -546,10 +543,6 @@ packages:
   attr-accept@2.2.2:
     resolution: {integrity: sha512-7prDjvt9HmqiZ0cl5CRjtS84sEyhsHP2coDkaZKRKVfCDo9s7iw7ChVmar78Gu9pC4SoR/28wFu/G5JJhTnqEg==}
     engines: {node: '>=4'}
-
-  automation-events@6.0.9:
-    resolution: {integrity: sha512-JEJzZRfRb26FMWR8zE2D/H/n5n+NNFZh1BtmDcpZVJOhLYKLGFCImBuxChRBhpZaOyIxqobPtM839amAeu2H9g==}
-    engines: {node: '>=16.1.0'}
 
   available-typed-arrays@1.0.5:
     resolution: {integrity: sha512-DMD0KiN46eipeziST1LPP/STfDU0sufISXmjSgvVsoU2tqxctQeASejWcfNtxYKqETM1UxQ8sp2OrSBWpHY6sw==}
@@ -1679,9 +1672,6 @@ packages:
     engines: {node: '>=0.10.0'}
     hasBin: true
 
-  standardized-audio-context@25.3.56:
-    resolution: {integrity: sha512-f9pubvL/vilyGTQNa73dLX7bIa8V3XzBmKbfrgFF8Ac0EVdO2vIVQy9MSNDe/0pCot6ZxCxCzvVlHnEVHl8nRQ==}
-
   streamsearch@1.1.0:
     resolution: {integrity: sha512-Mcc5wHehp9aXz1ax6bZUyY5afg9u2rv5cqQI3mRrYkGC8rW2hM02jWuwjtL++LS5qinSyhj2QfLyNsuc+VsExg==}
     engines: {node: '>=10.0.0'}
@@ -1759,9 +1749,6 @@ packages:
   to-regex-range@5.0.1:
     resolution: {integrity: sha512-65P7iz6X5yEr1cwcgvQxbbIw7Uk3gOy5dIdtZ4rDveLqhrdJP+Li/Hx6tyK0NEb+2GCyneCMJiGqrADCSNk8sQ==}
     engines: {node: '>=8.0'}
-
-  tone@14.7.77:
-    resolution: {integrity: sha512-tCfK73IkLHyzoKUvGq47gyDyxiKLFvKiVCOobynGgBB9Dl0NkxTM2p+eRJXyCYrjJwy9Y0XCMqD3uOYsYt2Fdg==}
 
   tough-cookie@2.5.0:
     resolution: {integrity: sha512-nlLsUzgm1kfLXSXfRZMc1KLAugd4hqJHDTvc2hDIwS3mZAfMEuMbc03SujMF+GEcpaX/qboeycw6iO8JwVv2+g==}
@@ -2426,11 +2413,6 @@ snapshots:
   asynckit@0.4.0: {}
 
   attr-accept@2.2.2: {}
-
-  automation-events@6.0.9:
-    dependencies:
-      '@babel/runtime': 7.22.15
-      tslib: 2.6.2
 
   available-typed-arrays@1.0.5: {}
 
@@ -3739,12 +3721,6 @@ snapshots:
       safer-buffer: 2.1.2
       tweetnacl: 0.14.5
 
-  standardized-audio-context@25.3.56:
-    dependencies:
-      '@babel/runtime': 7.22.15
-      automation-events: 6.0.9
-      tslib: 2.6.2
-
   streamsearch@1.1.0: {}
 
   string.prototype.matchall@4.0.10:
@@ -3815,11 +3791,6 @@ snapshots:
   to-regex-range@5.0.1:
     dependencies:
       is-number: 7.0.0
-
-  tone@14.7.77:
-    dependencies:
-      standardized-audio-context: 25.3.56
-      tslib: 2.6.2
 
   tough-cookie@2.5.0:
     dependencies:
