@@ -46,28 +46,33 @@ export async function POST(req: Request) {
     try {
       if (videoMode) {
         // Download video buffer and stream it directly (like audio)
-        const buffer = await getVideoStream(url);
+        // Use simpler format selector for TikTok (videos are already browser-compatible)
+        const buffer = await getVideoStream(url, 'best[ext=mp4]/best');
+        // Convert Buffer to Uint8Array for compatibility with Web API
+        const uint8Array = new Uint8Array(buffer);
         const headers = {
           "Content-Type": "video/mp4",
-          "Content-Length": buffer.byteLength.toString(),
+          "Content-Length": buffer.length.toString(),
           Title: encodeURI(title),
           Author: encodeURI(author),
           Thumbnail: encodeURI(videoInfo.thumbnail) || "",
           LengthSeconds: videoInfo.lengthSeconds.toString(),
         };
-        return new Response(buffer, { headers });
+        return new NextResponse(uint8Array, { headers });
       } else {
         // Original audio-only mode
         const buffer = await getAudioStream(url);
+        // Convert Buffer to Uint8Array for compatibility with Web API
+        const uint8Array = new Uint8Array(buffer);
         const headers = {
           "Content-Type": "audio/mpeg",
-          "Content-Length": buffer.byteLength.toString(),
+          "Content-Length": buffer.length.toString(),
           Title: encodeURI(title),
           Author: encodeURI(author),
           Thumbnail: encodeURI(videoInfo.thumbnail) || "",
           LengthSeconds: videoInfo.lengthSeconds.toString(),
         };
-        return new Response(buffer, { headers });
+        return new NextResponse(uint8Array, { headers });
       }
     } catch (e) {
       console.error(e);
