@@ -1,11 +1,11 @@
-import { getAudioStream, getVideoInfo, getVideoStream, getVideoUrl } from "@/lib/yt";
+import { getAudioStream, getVideoInfo, getVideoStream } from "@/lib/yt";
 import { isYoutubeURL } from "@/utils";
 import { NextResponse } from "next/server";
 
 export const maxDuration = 10000;
 
 export async function POST(req: Request) {
-  const { url, metadataOnly, videoMode } = await req.json();
+  const { url, metadataOnly } = await req.json();
 
   if (!isYoutubeURL(url)) {
     return NextResponse.json({ message: "Invalid YouTube URL", status: 400 });
@@ -59,8 +59,8 @@ export async function POST(req: Request) {
     }
 
     try {
-      // For videos <10 minutes, download video if requested or if it's short
-      if (videoInfo.lengthSeconds < 600 && (videoMode || videoInfo.lengthSeconds < 600)) {
+      // For videos <10 minutes, download video
+      if (videoInfo.lengthSeconds < 600) {
         const buffer = await getVideoStream(url);
         const headers = {
           "Content-Type": "video/mp4",
@@ -71,27 +71,7 @@ export async function POST(req: Request) {
           LengthSeconds: videoInfo.lengthSeconds.toString(),
           VideoMode: "true",
         };
-        return new Response(buffer, { headers });
-      } else if (videoInfo.lengthSeconds < 600) {
-        // For short videos, provide video URL instead of streaming
-        const videoUrl = await getVideoUrl(url);
-        const headers = {
-          "Content-Type": "application/json",
-          Title: encodeURI(title),
-          Author: encodeURI(author),
-          Thumbnail: encodeURI(videoInfo.thumbnail) || "",
-          LengthSeconds: videoInfo.lengthSeconds.toString(),
-          VideoMode: "true",
-          VideoUrl: encodeURI(videoUrl),
-        };
-        return new Response(JSON.stringify({ 
-          title, 
-          author, 
-          thumbnail: videoInfo.thumbnail, 
-          lengthSeconds: videoInfo.lengthSeconds,
-          videoUrl: videoUrl,
-          videoMode: true
-        }), { headers });
+        return new Response(buffer as unknown as BodyInit, { headers });
       } else {
         // For videos ≥10 minutes, only provide audio
         const buffer = await getAudioStream(url);
@@ -104,7 +84,7 @@ export async function POST(req: Request) {
           LengthSeconds: videoInfo.lengthSeconds.toString(),
           VideoMode: "false",
         };
-        return new Response(buffer, { headers });
+        return new Response(buffer as unknown as BodyInit, { headers });
       }
     } catch (e) {
       console.error(e);
