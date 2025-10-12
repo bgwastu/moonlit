@@ -105,7 +105,9 @@ export const getVideoStream = async (url: string): Promise<Buffer> => {
       const outputTemplate = path.join(dir, '%(id)s.%(ext)s');
 
       const args = [
-        '--format', 'best[height<=480][ext=mp4]/best[height<=480]',
+        // Prioritize pre-muxed browser-compatible formats, then merge if needed
+        '--format', 'best[height<=480][vcodec^=avc][acodec^=mp4a]/bestvideo[height<=480][vcodec^=avc]+bestaudio[acodec^=mp4a]/best[height<=480]',
+        '--merge-output-format', 'mp4',
         '--output', outputTemplate,
         '--no-playlist',
         url
@@ -166,7 +168,8 @@ export const getVideoUrl = async (url: string): Promise<string> => {
   
   return new Promise((resolve, reject) => {
     const args = [
-      '--format', 'best[height<=480][ext=mp4]/best[height<=480]',
+      // Prioritize pre-muxed browser-compatible formats, then merge if needed
+      '--format', 'best[height<=480][vcodec^=avc][acodec^=mp4a]/bestvideo[height<=480][vcodec^=avc]+bestaudio[acodec^=mp4a]/best[height<=480]',
       '--get-url',
       '--no-playlist',
       url
