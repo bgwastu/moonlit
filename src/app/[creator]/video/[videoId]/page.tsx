@@ -4,6 +4,7 @@ import { Player } from "@/components/Player";
 import LoadingOverlay from "@/components/LoadingOverlay";
 import { Song } from "@/interfaces";
 import { isTikTokURL } from "@/utils";
+import { getMedia, setMedia, getMeta, setMeta } from "@/utils/cache";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { notifications } from "@mantine/notifications";
@@ -35,6 +36,26 @@ export default function TikTokVideoPage({ params }: Props) {
     const loadTikTokVideo = async () => {
       try {
         setLoading(true);
+
+        const cacheKey = `tt:${videoId}:video`;
+        const cached = await getMedia(cacheKey);
+        if (cached) {
+          const blobUrl = URL.createObjectURL(cached);
+          const storedMeta = await getMeta<Partial<Song["metadata"]>>(`tt:${videoId}`);
+          const songData: Song = {
+            fileUrl: blobUrl,
+            videoUrl: blobUrl,
+            metadata: {
+              id: videoId,
+              title: storedMeta?.title || "",
+              author: storedMeta?.author || decodedCreator,
+              coverUrl: storedMeta?.coverUrl || "",
+              platform: "tiktok",
+            },
+          };
+          setSong(songData);
+          return;
+        }
 
         // Fetch video data
         const response = await fetch("/api/tiktok", {
@@ -73,6 +94,8 @@ export default function TikTokVideoPage({ params }: Props) {
           },
         };
 
+        await setMedia(cacheKey, blob);
+        await setMeta(`tt:${videoId}`, songData.metadata);
         setSong(songData);
       } catch (error) {
         console.error("Failed to load TikTok video:", error);

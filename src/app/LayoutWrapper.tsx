@@ -27,10 +27,6 @@ export default function LayoutWrapper({
     key: "warning-dismissed",
     defaultValue: false,
   });
-  const [youtubelitDismissed, setYoutubelitDismissed] = useLocalStorage({
-    key: "youtubelit-dismissed",
-    defaultValue: false,
-  });
 
   return (
     <Dynamic>
@@ -42,7 +38,6 @@ export default function LayoutWrapper({
         }}
       >
         <MantineProvider withGlobalStyles withNormalizeCSS theme={globalTheme}>
-          <>
             <Notifications />
             <Dialog
               opened={os === "ios" && !iosDismissed}
@@ -66,42 +61,9 @@ export default function LayoutWrapper({
                 I understand
               </Button>
             </Dialog>
-            {/* <Dialog
-              opened={!youtubelitDismissed}
-              withCloseButton
-              onClose={() => {
-                setYoutubelitDismissed(true);
-              }}
-              size="lg"
-              bg={theme.colors.dark[6]}
-              radius="md"
-            >
-              <Flex direction="column" gap="md">
-                <Title size="md">Quick tip</Title>
-                <Text size="sm" mb="xs" fw={500}>
-                  Use Moonlit faster by adding <b>lit</b> after youtube in the
-                  URL.
-                </Text>
-                <video width="100%" height="auto" autoPlay loop muted>
-                  <source src="youtubelit-demo.webm" type="video/webm" />
-                  Your browser does not support the video tag.
-                </video>
-                <Flex>
-                  <Button
-                    onClick={() => {
-                      setYoutubelitDismissed(true);
-                    }}
-                    variant="default"
-                  >
-                    Dismiss
-                  </Button>
-                </Flex>
-              </Flex>
-            </Dialog> */}
             {children}
-          </>
         </MantineProvider>
-      </PostHogProvider>
+      </PostHogProvider>  
     </Dynamic>
   );
 }

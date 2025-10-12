@@ -13,6 +13,7 @@ interface UseAudioContextReturn {
   isReady: boolean;
   setReverbAmount: (amount: number) => void;
   reverbAmount: number;
+  isWebAudioActive: boolean;
 }
 
 function generateImpulseResponse(
@@ -39,17 +40,56 @@ export function useAudioContext(
   videoElement: HTMLVideoElement | null
 ): UseAudioContextReturn {
   const audioNodesRef = useRef<AudioNodes | null>(null);
+  const videoElementRef = useRef<HTMLVideoElement | null>(null);
   const [isReady, setIsReady] = useState(false);
   const [reverbAmount, setReverbAmountState] = useState(0);
+  const [isWebAudioActive, setIsWebAudioActive] = useState(false);
+  const resumeIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const handlePlayRef = useRef<(() => void) | null>(null);
 
-  useEffect(() => {
-    if (!videoElement) {
+  const isSafari =
+    typeof window !== "undefined" &&
+    /Safari/.test(navigator.userAgent) &&
+    !/Chrome/.test(navigator.userAgent);
+
+  const initializeWebAudio = async (video: HTMLVideoElement) => {
+    if (audioNodesRef.current) {
+      console.log("Web Audio API already initialized");
       return;
     }
 
     try {
-      const context = new AudioContext();
-      const source = context.createMediaElementSource(videoElement);
+      const context = new AudioContext({
+        latencyHint: "playback",
+        sampleRate: 48000,
+      });
+
+      const ensureContextRunning = async () => {
+        if (context.state === "suspended") {
+          try {
+            await context.resume();
+            console.log("AudioContext resumed");
+          } catch (e) {
+            console.error("Failed to resume AudioContext:", e);
+          }
+        }
+      };
+
+      // IMPORTANT: Resume context BEFORE creating source node
+      await ensureContextRunning();
+
+      resumeIntervalRef.current = setInterval(() => {
+        if (context.state === "suspended" && !video.paused) {
+          ensureContextRunning();
+        }
+      }, 1000);
+
+      // Mute video element BEFORE creating the source node
+      // Once createMediaElementSource is called, audio routing is permanently changed
+      const wasPlaying = !video.paused;
+      const currentTime = video.currentTime;
+
+      const source = context.createMediaElementSource(video);
       const convolver = context.createConvolver();
       const dryGain = context.createGain();
       const wetGain = context.createGain();
@@ -69,6 +109,12 @@ export function useAudioContext(
       wetGain.connect(masterGain);
       masterGain.connect(context.destination);
 
+      handlePlayRef.current = () => {
+        ensureContextRunning();
+      };
+
+      video.addEventListener("play", handlePlayRef.current);
+
       audioNodesRef.current = {
         context,
         source,
@@ -79,13 +125,34 @@ export function useAudioContext(
       };
 
       setIsReady(true);
+      setIsWebAudioActive(true);
 
-      console.log("Web Audio API initialized successfully");
+      console.log("Web Audio API initialized successfully", {
+        state: context.state,
+        sampleRate: context.sampleRate,
+        videoPlaying: wasPlaying,
+      });
     } catch (error) {
       console.error("Failed to initialize Web Audio API:", error);
     }
+  };
 
+  useEffect(() => {
+    videoElementRef.current = videoElement;
+  }, [videoElement]);
+
+  useEffect(() => {
     return () => {
+      if (resumeIntervalRef.current) {
+        clearInterval(resumeIntervalRef.current);
+        resumeIntervalRef.current = null;
+      }
+
+      if (handlePlayRef.current && videoElementRef.current) {
+        videoElementRef.current.removeEventListener("play", handlePlayRef.current);
+        handlePlayRef.current = null;
+      }
+
       if (audioNodesRef.current) {
         try {
           const { context } = audioNodesRef.current;
@@ -96,25 +163,36 @@ export function useAudioContext(
         }
         audioNodesRef.current = null;
         setIsReady(false);
+        setIsWebAudioActive(false);
       }
     };
-  }, [videoElement]);
+  }, []);
 
-  const setReverbAmount = (amount: number) => {
-    if (!audioNodesRef.current) return;
+  const setReverbAmount = async (amount: number) => {
+    if (isSafari) {
+      console.log("Reverb disabled on Safari");
+      return;
+    }
 
     const clampedAmount = Math.max(0, Math.min(1, amount));
     setReverbAmountState(clampedAmount);
 
-    const { dryGain, wetGain } = audioNodesRef.current;
+    if (clampedAmount > 0 && !audioNodesRef.current && videoElementRef.current) {
+      await initializeWebAudio(videoElementRef.current);
+    }
 
-    dryGain.gain.value = 1 - clampedAmount * 0.5;
-    wetGain.gain.value = clampedAmount;
+    if (audioNodesRef.current) {
+      const { dryGain, wetGain } = audioNodesRef.current;
+      dryGain.gain.value = 1 - clampedAmount * 0.5;
+      wetGain.gain.value = clampedAmount;
+      console.log(`Reverb set: dry=${dryGain.gain.value.toFixed(2)}, wet=${wetGain.gain.value.toFixed(2)}`);
+    }
   };
 
   return {
     isReady,
     setReverbAmount,
     reverbAmount,
+    isWebAudioActive,
   };
 }
