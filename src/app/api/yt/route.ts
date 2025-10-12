@@ -62,29 +62,33 @@ export async function POST(req: Request) {
       // For videos <10 minutes, download video
       if (videoInfo.lengthSeconds < 600) {
         const buffer = await getVideoStream(url);
+        // Convert Buffer to Uint8Array for compatibility with Web API
+        const uint8Array = new Uint8Array(buffer);
         const headers = {
           "Content-Type": "video/mp4",
-          "Content-Length": buffer.byteLength.toString(),
+          "Content-Length": buffer.length.toString(),
           Title: encodeURI(title),
           Author: encodeURI(author),
           Thumbnail: encodeURI(videoInfo.thumbnail) || "",
           LengthSeconds: videoInfo.lengthSeconds.toString(),
           VideoMode: "true",
         };
-        return new Response(buffer as unknown as BodyInit, { headers });
+        return new NextResponse(uint8Array, { headers });
       } else {
         // For videos ≥10 minutes, only provide audio
         const buffer = await getAudioStream(url);
+        // Convert Buffer to Uint8Array for compatibility with Web API
+        const uint8Array = new Uint8Array(buffer);
         const headers = {
           "Content-Type": "audio/mpeg",
-          "Content-Length": buffer.byteLength.toString(),
+          "Content-Length": buffer.length.toString(),
           Title: encodeURI(title),
           Author: encodeURI(author),
           Thumbnail: encodeURI(videoInfo.thumbnail) || "",
           LengthSeconds: videoInfo.lengthSeconds.toString(),
           VideoMode: "false",
         };
-        return new Response(buffer as unknown as BodyInit, { headers });
+        return new NextResponse(uint8Array, { headers });
       }
     } catch (e) {
       console.error(e);
