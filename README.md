@@ -6,7 +6,7 @@ Moonlit is a melancholy music app with customizable playback to accompany your m
 See it in action: [moonlit.wastu.net](https://moonlit.wastu.net)
 
 You can listen to your favorite tracks from multiple platforms on Moonlit:
-- **YouTube**: Add `lit` to the URL (example: [youtube**lit**.com/watch?v=...](https://www.youtubelit.com/watch?v=dQw4w9WgXcQ))
+- **YouTube**: Replace `youtube.com` with `moonlit.wastu.net` to the URL (example: [moonlit.wastu.net/watch?v=...](https://moonlit.wastu.net/watch?v=dQw4w9WgXcQ))
 - **TikTok**: Supported via direct URL input
 
 # Demo 🔊
