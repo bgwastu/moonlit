@@ -48,6 +48,9 @@ async function getSongFromYouTubeInternal(
         videoUrl: blobUrl,
         metadata: {
           id,
+          title: "Loading...",
+          author: "Loading...",
+          coverUrl: "",
           platform: "youtube",
           ...(storedMeta || {}),
           ...(preload || {}),
@@ -62,6 +65,9 @@ async function getSongFromYouTubeInternal(
         fileUrl: audioUrl,
         metadata: {
           id,
+          title: "Loading...",
+          author: "Loading...",
+          coverUrl: "",
           platform: "youtube",
           ...(storedMeta || {}),
           ...(preload || {}),
