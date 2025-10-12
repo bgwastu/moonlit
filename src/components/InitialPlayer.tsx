@@ -4,6 +4,7 @@ import useNoSleep from "@/hooks/useNoSleep";
 import { Song } from "@/interfaces";
 import { songAtom } from "@/state";
 import { getYouTubeId, isSupportedURL } from "@/utils";
+import { getMedia, setMedia, setMeta, getMeta } from "@/utils/cache";
 import {
   Button,
   Center,
@@ -30,7 +31,44 @@ interface InitialPlayerProps {
   metadata: Partial<Song["metadata"]>;
 }
 
-async function getSongFromYouTubeInternal(url: string): Promise<Song> {
+async function getSongFromYouTubeInternal(
+  url: string,
+  preload?: Partial<Song["metadata"]>
+): Promise<Song> {
+  const id = getYouTubeId(url);
+  if (id) {
+    const videoKey = `yt:${id}:video`;
+    const audioKey = `yt:${id}:audio`;
+    const cachedVideo = await getMedia(videoKey);
+    if (cachedVideo) {
+      const storedMeta = await getMeta<Partial<Song["metadata"]>>(`yt:${id}`);
+      const blobUrl = URL.createObjectURL(cachedVideo);
+      return {
+        fileUrl: blobUrl,
+        videoUrl: blobUrl,
+        metadata: {
+          id,
+          platform: "youtube",
+          ...(storedMeta || {}),
+          ...(preload || {}),
+        },
+      };
+    }
+    const cachedAudio = await getMedia(audioKey);
+    if (cachedAudio) {
+      const storedMeta = await getMeta<Partial<Song["metadata"]>>(`yt:${id}`);
+      const audioUrl = URL.createObjectURL(cachedAudio);
+      return {
+        fileUrl: audioUrl,
+        metadata: {
+          id,
+          platform: "youtube",
+          ...(storedMeta || {}),
+          ...(preload || {}),
+        },
+      };
+    }
+  }
   const response = await fetch("/api/yt", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -55,27 +93,34 @@ async function getSongFromYouTubeInternal(url: string): Promise<Song> {
     coverUrl: thumbnail,
     platform: "youtube" as const,
   };
+  if (metadata.id) {
+    await setMeta(`yt:${metadata.id}`, metadata);
+  }
 
   if (videoMode && videoUrl) {
-    // Short video with direct URL
+    const targetUrl = decodeURIComponent(videoUrl);
+    const fetched = await fetch(targetUrl);
+    const blob = await fetched.blob();
+    const blobUrl = URL.createObjectURL(blob);
+    if (metadata.id) await setMedia(`yt:${metadata.id}:video`, blob);
     return {
-      fileUrl: decodeURIComponent(videoUrl),
-      videoUrl: decodeURIComponent(videoUrl),
+      fileUrl: blobUrl,
+      videoUrl: blobUrl,
       metadata,
     };
   } else if (videoMode) {
-    // Short video with blob
     const blob = await response.blob();
     const blobUrl = URL.createObjectURL(blob);
+    if (metadata.id) await setMedia(`yt:${metadata.id}:video`, blob);
     return {
       fileUrl: blobUrl,
       videoUrl: blobUrl,
       metadata,
     };
   } else {
-    // Audio-only for longer videos
     const blob = await response.blob();
     const audioUrl = URL.createObjectURL(blob);
+    if (metadata.id) await setMedia(`yt:${metadata.id}:audio`, blob);
     return {
       fileUrl: audioUrl,
       metadata,
@@ -126,7 +171,7 @@ export default function InitialPlayer({
     (setSong as (song: Song | null) => void)(null);
     setIsPlayer(false);
 
-    getSongFromYouTubeInternal(url)
+    getSongFromYouTubeInternal(url, metadata)
       .then((downloadedSong: Song) => {
         (setSong as (song: Song | null) => void)(downloadedSong);
       })

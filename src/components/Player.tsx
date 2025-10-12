@@ -25,6 +25,7 @@ import {
   useDisclosure,
   useDocumentTitle,
   useHotkeys,
+  useOs,
   useShallowEffect,
 } from "@mantine/hooks";
 import { notifications } from "@mantine/notifications";
@@ -46,7 +47,7 @@ import {
   IconRewindBackward5,
   IconRewindForward5,
   IconRotate,
-  IconShare
+  IconShare,
 } from "@tabler/icons-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -76,7 +77,13 @@ export function Player({
 
   const videoRef = useRef<HTMLVideoElement>(null);
 
-  const { isReady: isAudioReady, setReverbAmount, reverbAmount } = useAudioContext(videoElement);
+  const { setReverbAmount, reverbAmount, isWebAudioActive } =
+    useAudioContext(videoElement);
+
+  const isSafari =
+    typeof window !== "undefined" &&
+    /Safari/.test(navigator.userAgent) &&
+    !/Chrome/.test(navigator.userAgent);
 
   useDocumentTitle(`${song.metadata.title} - Moonlit`);
 
@@ -127,10 +134,10 @@ export function Player({
   const getShareUrl = (startTime: number) => {
     const baseUrl = window.location.origin + window.location.pathname;
     const params = new URLSearchParams(window.location.search);
-    
+
     // Add specified start time as startAt parameter
     params.set("startAt", Math.floor(startTime).toString());
-    
+
     // Keep existing mode and rate parameters
     if (playbackMode !== "normal") {
       params.set("mode", playbackMode);
@@ -138,7 +145,7 @@ export function Player({
     if (playbackMode === "custom") {
       params.set("rate", customPlaybackRate.toString());
     }
-    
+
     return `${baseUrl}?${params.toString()}`;
   };
 
@@ -306,9 +313,9 @@ export function Player({
       return "Are you sure?";
     };
 
-          return () => {
-        console.log("Player cleanup started");
-        setPlaybackMode("normal");
+    return () => {
+      console.log("Player cleanup started");
+      setPlaybackMode("normal");
 
       if (videoElement) {
         console.log("Cleaning up video element");
@@ -335,11 +342,13 @@ export function Player({
       }
     };
 
-    videoElement.addEventListener('ended', handleEnded);
-    return () => videoElement.removeEventListener('ended', handleEnded);
+    videoElement.addEventListener("ended", handleEnded);
+    return () => videoElement.removeEventListener("ended", handleEnded);
   }, [videoElement, setNoSleepEnabled]);
 
-  // This effect is no longer needed since we use computed values from videoElement
+  // Note: Once Web Audio API creates a MediaElementSource, the video element's
+  // audio is permanently routed through the Web Audio graph automatically.
+  // No need to manage muted state - the browser handles this for us.
 
   function togglePlayer() {
     if (!videoElement) {
@@ -385,7 +394,7 @@ export function Player({
     }
 
     console.log("Setting playback position to adjusted time:", value);
-    
+
     // Update seek position for smooth UI
     setSeekPosition(value);
     setIsSeeking(false); // End seeking state
@@ -466,24 +475,31 @@ export function Player({
               onChange={setCustomPlaybackRate}
             />
           </Flex>
-          <Flex direction="column" mb={22} gap={2}>
-            <Text>Reverb Amount</Text>
-            <Slider
-              min={0}
-              thumbSize={20}
-              max={1}
-              step={0.01}
-              style={{ zIndex: 1000 }}
-              marks={[
-                { value: 0, label: "Off" },
-                { value: 0.5, label: "Medium" },
-                { value: 1, label: "Full" },
-              ]}
-              label={(v) => `${Math.round(v * 100)}%`}
-              value={reverbAmount}
-              onChange={setReverbAmount}
-            />
-          </Flex>
+          {!isSafari && (
+            <Flex direction="column" mb={22} gap={2}>
+              <Text>Reverb Amount</Text>
+              <Slider
+                min={0}
+                thumbSize={20}
+                max={1}
+                step={0.01}
+                style={{ zIndex: 1000 }}
+                marks={[
+                  { value: 0, label: "Off" },
+                  { value: 0.5, label: "Medium" },
+                  { value: 1, label: "Full" },
+                ]}
+                label={(v) => `${Math.round(v * 100)}%`}
+                value={reverbAmount}
+                onChange={setReverbAmount}
+              />
+            </Flex>
+          )}
+          {isSafari && (
+            <Text size="xs" color="dimmed">
+              Note: Reverb is disabled on Safari for optimal playback performance
+            </Text>
+          )}
         </Stack>
       </Modal>
 
@@ -518,7 +534,9 @@ export function Player({
           <CopyButton value={getShareUrl(shareStartTime)}>
             {({ copied, copy }) => (
               <Button
-                leftIcon={copied ? <IconCheck size={18} /> : <IconCopy size={18} />}
+                leftIcon={
+                  copied ? <IconCheck size={18} /> : <IconCopy size={18} />
+                }
                 color={copied ? "teal" : ""}
                 onClick={copy}
                 fullWidth
@@ -688,7 +706,10 @@ export function Player({
                     rightSection={<IconExternalLink size={12} />}
                     target="_blank"
                   >
-                    Go to {song.metadata.platform === "youtube" ? "YouTube" : "TikTok"}
+                    Go to{" "}
+                    {song.metadata.platform === "youtube"
+                      ? "YouTube"
+                      : "TikTok"}
                   </Menu.Item>
                 )}
                 <Menu.Divider />
@@ -754,13 +775,7 @@ export function Player({
                 <ActionIcon
                   size="xl"
                   onClick={togglePlayer}
-                  title={
-                    isPlaying
-                      ? "Pause"
-                      : isFinished
-                      ? "Replay"
-                      : "Play"
-                  }
+                  title={isPlaying ? "Pause" : isFinished ? "Replay" : "Play"}
                 >
                   {isPlaying ? (
                     <IconPause />
@@ -778,7 +793,7 @@ export function Player({
                   onClick={() => {
                     if (videoElement) {
                       videoElement.loop = !videoElement.loop;
-                      forceUpdate(prev => prev + 1); // Trigger re-render
+                      forceUpdate((prev) => prev + 1); // Trigger re-render
                     }
                   }}
                   title={isRepeat ? "Turn off Repeat" : "Repeat"}
