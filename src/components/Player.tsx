@@ -1,5 +1,6 @@
 import LoadingOverlay from "@/components/LoadingOverlay";
 import useNoSleep from "@/hooks/useNoSleep";
+import { useAudioContext } from "@/hooks/useAudioContext";
 import { Song } from "@/interfaces";
 import { getFormattedTime, getSongLength } from "@/utils";
 import {
@@ -74,6 +75,8 @@ export function Player({
   const [seekPosition, setSeekPosition] = useState(0);
 
   const videoRef = useRef<HTMLVideoElement>(null);
+
+  const { isReady: isAudioReady, setReverbAmount, reverbAmount } = useAudioContext(videoElement);
 
   useDocumentTitle(`${song.metadata.title} - Moonlit`);
 
@@ -461,6 +464,24 @@ export function Player({
               }}
               value={customPlaybackRate}
               onChange={setCustomPlaybackRate}
+            />
+          </Flex>
+          <Flex direction="column" mb={22} gap={2}>
+            <Text>Reverb Amount</Text>
+            <Slider
+              min={0}
+              thumbSize={20}
+              max={1}
+              step={0.01}
+              style={{ zIndex: 1000 }}
+              marks={[
+                { value: 0, label: "Off" },
+                { value: 0.5, label: "Medium" },
+                { value: 1, label: "Full" },
+              ]}
+              label={(v) => `${Math.round(v * 100)}%`}
+              value={reverbAmount}
+              onChange={setReverbAmount}
             />
           </Flex>
         </Stack>
