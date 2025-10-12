@@ -22,7 +22,7 @@ import { useForm } from "@mantine/form";
 import { notifications } from "@mantine/notifications";
 import {
   IconBrandYoutube,
-  IconExternalLink,
+  IconBrandGithub,
   IconMusicCheck,
   IconMusicPlus,
   IconMusicX,
@@ -230,14 +230,8 @@ function FooterSection() {
       <Container size="lg">
         <Flex justify="space-between" align="center">
           <Text color="dimmed" size="sm">
-            Made with ❤️ by{" "}
-            <Anchor
-              href="https://github.com/bgwastu"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              bgwastu
-            </Anchor>
+            Have any feedback? Email: {" "}
+            <Anchor href="mailto:bagas@wastu.net">bagas@wastu.net</Anchor>
           </Text>
           <ActionIcon
             variant="subtle"
@@ -248,7 +242,7 @@ function FooterSection() {
             target="_blank"
             rel="noopener noreferrer"
           >
-            <IconExternalLink size={18} />
+            <IconBrandGithub size={18} />
           </ActionIcon>
         </Flex>
       </Container>
