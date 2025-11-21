@@ -2,40 +2,40 @@
 
 import LoadingOverlay from "@/components/LoadingOverlay";
 import useNoSleep from "@/hooks/useNoSleep";
-import { Song } from "@/interfaces";
+import type { Song } from "@/interfaces";
 import {
   ActionIcon,
   Anchor,
   AppShell,
   Button,
-  Center,
   Container,
   Divider,
   Flex,
   Footer,
-  Text,
-  TextInput,
   rem,
+  Stack,
+  Text,
+  TextInput
 } from "@mantine/core";
 import { Dropzone } from "@mantine/dropzone";
 import { useForm } from "@mantine/form";
 import { notifications } from "@mantine/notifications";
 import {
-  IconBrandYoutube,
   IconBrandGithub,
+  IconBrandYoutube,
   IconMusicCheck,
   IconMusicPlus,
   IconMusicX,
 } from "@tabler/icons-react";
 import parse from "id3-parser";
 import { convertFileToBuffer } from "id3-parser/lib/util";
-import { atom, useAtom, WritableAtom } from "jotai";
+import { atom, useAtom } from "jotai";
 import { useRouter } from "next/navigation";
 import { usePostHog } from "posthog-js/react";
 import { useState } from "react";
 import Icon from "../components/Icon";
 import { songAtom } from "../state";
-import { getYouTubeId, getTikTokCreatorAndVideoId, isSupportedURL, isTikTokURL } from "../utils";
+import { getTikTokCreatorAndVideoId, getYouTubeId, isSupportedURL, isTikTokURL } from "../utils";
 
 const loadingAtom = atom<{
   status: boolean;
@@ -186,7 +186,9 @@ function YoutubeUpload() {
           setLoading(false);
           notifications.show({
             title: "Error",
-            message: error.message || "Failed to load TikTok video",
+            message: `${error.message || "Failed to load TikTok video"}. You can try downloading it manually and uploading it to Moonlit.`,
+            color: "red",
+            autoClose: 8000,
           });
           return;
         }
@@ -254,33 +256,38 @@ export default function UploadPage() {
   const [loading] = useAtom(loadingAtom);
 
   return (
-    <>
-      <LoadingOverlay visible={loading.status} message={loading.message} />
+			<>
+				<LoadingOverlay visible={loading.status} message={loading.message} />
 
-      <AppShell footer={<FooterSection />} mt={28}>
-        <Container size="sm">
-          <Flex direction="column" gap="xl">
-            <Center>
-              <Flex gap={6} align="center">
-                <Icon size={24} />
-                <Text
-                  fz={rem(28)}
-                  fw="bold"
-                  lts={rem(0.2)}
-                  style={{
-                    userSelect: "none",
-                  }}
-                >
-                  Moonlit
-                </Text>
-              </Flex>
-            </Center>
-            <YoutubeUpload />
-            <Divider label="OR" labelPosition="center" />
-            <LocalUpload />
-          </Flex>
-        </Container>
-      </AppShell>
-    </>
-  );
+				<AppShell footer={<FooterSection />} mt={28}>
+					<Container size="sm">
+						<Flex direction="column" gap="xl">
+							<Stack align="center">
+								<Flex gap={6} align="center">
+									<Icon size={24} />
+									<Text
+										fz={rem(28)}
+										fw="bold"
+										lts={rem(0.2)}
+										style={{
+											userSelect: "none",
+										}}
+									>
+										Moonlit
+									</Text>
+								</Flex>
+									
+                 <Text align="center">
+                   Elevate your music experience with real-time audio effects. Stream
+								directly from YouTube & TikTok or play your local files.
+							</Text>
+                 </Stack>
+							<YoutubeUpload />
+							<Divider label="OR" labelPosition="center" />
+							<LocalUpload />
+						</Flex>
+					</Container>
+				</AppShell>
+			</>
+		);
 }

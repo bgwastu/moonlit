@@ -2,12 +2,13 @@
 
 import { Player } from "@/components/Player";
 import LoadingOverlay from "@/components/LoadingOverlay";
-import { Song } from "@/interfaces";
+import type { Song } from "@/interfaces";
 import { isTikTokURL } from "@/utils";
 import { getMedia, setMedia, getMeta, setMeta } from "@/utils/cache";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { notifications } from "@mantine/notifications";
+import { Button, Container, Flex, Text, Title } from "@mantine/core";
 
 type Props = {
   params: { creator: string; videoId: string };
@@ -99,9 +100,13 @@ export default function TikTokVideoPage({ params }: Props) {
         setSong(songData);
       } catch (error) {
         console.error("Failed to load TikTok video:", error);
-        setError(
-          error instanceof Error ? error.message : "Failed to load video"
-        );
+        const errorMessage = error instanceof Error ? error.message : "Failed to load video";
+        setError(errorMessage);
+        notifications.show({
+          title: "Error",
+          message: errorMessage,
+          color: "red",
+        });
       } finally {
         setLoading(false);
       }
@@ -116,20 +121,23 @@ export default function TikTokVideoPage({ params }: Props) {
 
   if (error) {
     return (
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "center",
-          alignItems: "center",
-          height: "100vh",
-          flexDirection: "column",
-          gap: "1rem",
-        }}
-      >
-        <h2>Error Loading Video</h2>
-        <p>{error}</p>
-        <button onClick={() => router.push("/")}>Go Home</button>
-      </div>
+      <Container size="sm">
+        <Flex
+          justify="center"
+          align="center"
+          h="100vh"
+          direction="column"
+          gap="md"
+          ta="center"
+        >
+          <Title order={2}>Error Loading Video</Title>
+          <Text color="red">{error}</Text>
+          <Text>
+            We couldn&apos;t process this video. You can try downloading it manually and uploading it to Moonlit.
+          </Text>
+          <Button onClick={() => router.push("/")}>Go Home</Button>
+        </Flex>
+      </Container>
     );
   }
 
