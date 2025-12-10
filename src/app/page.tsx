@@ -22,10 +22,13 @@ import { useForm } from "@mantine/form";
 import { notifications } from "@mantine/notifications";
 import {
   IconBrandGithub,
+  IconBrandTiktok,
   IconBrandYoutube,
+  IconGlobe,
   IconMusicCheck,
   IconMusicPlus,
   IconMusicX,
+  IconWorld
 } from "@tabler/icons-react";
 import parse from "id3-parser";
 import { convertFileToBuffer } from "id3-parser/lib/util";
@@ -209,21 +212,29 @@ function YoutubeUpload() {
   }
 
   return (
-    <form onSubmit={form.onSubmit((values) => onSubmit(values.url))}>
-      <Flex direction="column" gap="md">
-        <TextInput
-          icon={<IconBrandYoutube />}
-          placeholder="YouTube or TikTok URL"
-          size="lg"
-          type="url"
-          {...form.getInputProps("url")}
-        />
-        <Button size="lg" type="submit" loading={loading}>
-          Download & Play
-        </Button>
-      </Flex>
-    </form>
-  );
+			<form onSubmit={form.onSubmit((values) => onSubmit(values.url))}>
+				<Flex direction="column" gap="md">
+					<TextInput
+						icon={
+							form.values.url.includes("youtube") ? (
+								<IconBrandYoutube />
+							) : form.values.url.includes("tiktok") ? (
+								<IconBrandTiktok />
+							) : (
+								<IconWorld />
+							)
+						}
+						placeholder="YouTube or TikTok URL"
+						size="lg"
+						type="url"
+						{...form.getInputProps("url")}
+					/>
+					<Button size="lg" type="submit" loading={loading}>
+						Download & Play
+					</Button>
+				</Flex>
+			</form>
+		);
 }
 
 function FooterSection() {
@@ -276,11 +287,6 @@ export default function UploadPage() {
 										Moonlit
 									</Text>
 								</Flex>
-									
-                 <Text align="center">
-                   Elevate your music experience with real-time audio effects. Stream
-								directly from YouTube & TikTok or play your local files.
-							</Text>
                  </Stack>
 							<YoutubeUpload />
 							<Divider label="OR" labelPosition="center" />
