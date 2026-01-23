@@ -7,12 +7,36 @@ import path from "path";
 // Default: /app/data/cookies.txt in Docker, can be overridden via COOKIES_PATH env
 const COOKIES_PATH = process.env.COOKIES_PATH || "/app/data/cookies.txt";
 
-// Check if cookies file exists
-const getCookiesArgs = (): string[] => {
-  if (existsSync(COOKIES_PATH)) {
-    return ["--cookies", COOKIES_PATH];
+// Helper to reliably handle cookies by copying them to a temporary writable location
+// This prevents "Permission denied" errors when yt-dlp tries to update the cookie jar
+// on a read-only or permission-restricted volume mount.
+const withTempCookies = async <T>(
+  callback: (cookieArgs: string[]) => Promise<T>,
+): Promise<T> => {
+  let tempDir: string | null = null;
+  const cookieArgs: string[] = [];
+
+  try {
+    if (existsSync(COOKIES_PATH)) {
+      // Create a temp directory
+      tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "moonlit-cookies-"));
+      const tempCookiesPath = path.join(tempDir, "cookies.txt");
+
+      // Copy valid cookies file to temp location
+      // This ensures yt-dlp can write back to it (cookie jar updates) without crashing
+      await fs.copyFile(COOKIES_PATH, tempCookiesPath);
+      cookieArgs.push("--cookies", tempCookiesPath);
+    }
+
+    return await callback(cookieArgs);
+  } finally {
+    // Cleanup
+    if (tempDir) {
+      try {
+        await fs.rm(tempDir, { recursive: true, force: true });
+      } catch {}
+    }
   }
-  return [];
 };
 
 function parseYtDlpError(stderr: string): string {
@@ -58,54 +82,56 @@ interface VideoInfo {
 export const getVideoInfo = async (url: string): Promise<VideoInfo> => {
   "use server";
 
-  return new Promise((resolve, reject) => {
-    const args = ["--skip-download", "-J", "--no-playlist", url];
+  return withTempCookies((cookieArgs) => {
+    return new Promise((resolve, reject) => {
+      const args = ["--skip-download", "-J", "--no-playlist", url];
 
-    // Add cookies if available
-    args.unshift(...getCookiesArgs());
+      // Add cookies if available
+      args.unshift(...cookieArgs);
 
-    // Add proxy if available
-    if (process.env.PROXY) {
-      args.unshift("--proxy", process.env.PROXY);
-    }
-
-    const ytdlp = spawn("yt-dlp", args);
-
-    let stdout = "";
-    let stderr = "";
-
-    ytdlp.stdout.on("data", (data) => {
-      stdout += data.toString();
-    });
-
-    ytdlp.stderr.on("data", (data) => {
-      stderr += data.toString();
-    });
-
-    ytdlp.on("close", (code) => {
-      if (code !== 0) {
-        const userFriendlyMessage = parseYtDlpError(stderr);
-        reject(new Error(userFriendlyMessage));
-        return;
+      // Add proxy if available
+      if (process.env.PROXY) {
+        args.unshift("--proxy", process.env.PROXY);
       }
 
-      try {
-        const info = JSON.parse(stdout);
-        resolve({
-          title: info.title || "",
-          author: info.uploader || info.channel || "",
-          thumbnail: info.thumbnail || "",
-          lengthSeconds: Math.floor(info.duration || 0),
-        });
-      } catch (error) {
-        reject(
-          new Error("Failed to parse video information. Please try again."),
-        );
-      }
-    });
+      const ytdlp = spawn("yt-dlp", args);
 
-    ytdlp.on("error", (error) => {
-      reject(new Error(`Failed to spawn yt-dlp: ${error.message}`));
+      let stdout = "";
+      let stderr = "";
+
+      ytdlp.stdout.on("data", (data) => {
+        stdout += data.toString();
+      });
+
+      ytdlp.stderr.on("data", (data) => {
+        stderr += data.toString();
+      });
+
+      ytdlp.on("close", (code) => {
+        if (code !== 0) {
+          const userFriendlyMessage = parseYtDlpError(stderr);
+          reject(new Error(userFriendlyMessage));
+          return;
+        }
+
+        try {
+          const info = JSON.parse(stdout);
+          resolve({
+            title: info.title || "",
+            author: info.uploader || info.channel || "",
+            thumbnail: info.thumbnail || "",
+            lengthSeconds: Math.floor(info.duration || 0),
+          });
+        } catch (error) {
+          reject(
+            new Error("Failed to parse video information. Please try again."),
+          );
+        }
+      });
+
+      ytdlp.on("error", (error) => {
+        reject(new Error(`Failed to spawn yt-dlp: ${error.message}`));
+      });
     });
   });
 };
@@ -116,147 +142,153 @@ export const getVideoStream = async (
 ): Promise<Buffer> => {
   "use server";
 
-  return new Promise((resolve, reject) => {
-    const tmpDir = fs.mkdtemp(path.join(os.tmpdir(), "moonlit-yt-"));
+  return withTempCookies((cookieArgs) => {
+    return new Promise((resolve, reject) => {
+      const tmpDir = fs.mkdtemp(path.join(os.tmpdir(), "moonlit-yt-"));
 
-    tmpDir
-      .then((dir) => {
-        const outputTemplate = path.join(dir, "%(id)s.%(ext)s");
+      tmpDir
+        .then((dir) => {
+          const outputTemplate = path.join(dir, "%(id)s.%(ext)s");
 
-        // Use custom format or default YouTube 480p format
-        const formatSelector =
-          format ||
-          "best[height<=480][vcodec^=avc][acodec^=mp4a]/bestvideo[height<=480][vcodec^=avc]+bestaudio[acodec^=mp4a]/best[height<=480]";
+          // Use custom format or default YouTube 480p format
+          const formatSelector =
+            format ||
+            "best[height<=480][vcodec^=avc][acodec^=mp4a]/bestvideo[height<=480][vcodec^=avc]+bestaudio[acodec^=mp4a]/best[height<=480]";
 
-        const args = [
-          "--format",
-          formatSelector,
-          "--merge-output-format",
-          "mp4",
-          "--output",
-          outputTemplate,
-          "--no-playlist",
-          url,
-        ];
+          const args = [
+            "--format",
+            formatSelector,
+            "--merge-output-format",
+            "mp4",
+            "--output",
+            outputTemplate,
+            "--no-playlist",
+            url,
+          ];
 
-        // Add cookies if available
-        args.unshift(...getCookiesArgs());
+          // Add cookies if available
+          args.unshift(...cookieArgs);
 
-        if (process.env.PROXY) {
-          args.unshift("--proxy", process.env.PROXY);
-        }
-
-        const ytdlp = spawn("yt-dlp", args);
-
-        let stderr = "";
-
-        ytdlp.stdout.on("data", () => {});
-
-        ytdlp.stderr.on("data", (data) => {
-          stderr += data.toString();
-        });
-
-        ytdlp.on("close", async (code) => {
-          try {
-            if (code !== 0) {
-              const userFriendlyMessage = parseYtDlpError(stderr);
-              reject(new Error(userFriendlyMessage));
-              return;
-            }
-
-            const files = await fs.readdir(dir);
-            // Pick the first non-temporary media file
-            const mediaFile = files.find(
-              (f) => !f.endsWith(".part") && !f.endsWith(".ytdl"),
-            );
-            if (!mediaFile) {
-              reject(new Error("Failed to locate downloaded video file."));
-              return;
-            }
-            const filePath = path.join(dir, mediaFile);
-            const buffer = await fs.readFile(filePath);
-
-            try {
-              await Promise.all(
-                files.map((f) => fs.unlink(path.join(dir, f)).catch(() => {})),
-              );
-              await fs.rmdir(dir).catch(() => {});
-            } catch {}
-
-            resolve(buffer);
-          } catch (err) {
-            reject(
-              err instanceof Error
-                ? err
-                : new Error("Unknown error reading video file"),
-            );
+          if (process.env.PROXY) {
+            args.unshift("--proxy", process.env.PROXY);
           }
-        });
 
-        ytdlp.on("error", (error) => {
-          reject(new Error(`Failed to spawn yt-dlp: ${error.message}`));
-        });
-      })
-      .catch((err) =>
-        reject(
-          err instanceof Error ? err : new Error("Failed to create temp dir"),
-        ),
-      );
+          const ytdlp = spawn("yt-dlp", args);
+
+          let stderr = "";
+
+          ytdlp.stdout.on("data", () => {});
+
+          ytdlp.stderr.on("data", (data) => {
+            stderr += data.toString();
+          });
+
+          ytdlp.on("close", async (code) => {
+            try {
+              if (code !== 0) {
+                const userFriendlyMessage = parseYtDlpError(stderr);
+                reject(new Error(userFriendlyMessage));
+                return;
+              }
+
+              const files = await fs.readdir(dir);
+              // Pick the first non-temporary media file
+              const mediaFile = files.find(
+                (f) => !f.endsWith(".part") && !f.endsWith(".ytdl"),
+              );
+              if (!mediaFile) {
+                reject(new Error("Failed to locate downloaded video file."));
+                return;
+              }
+              const filePath = path.join(dir, mediaFile);
+              const buffer = await fs.readFile(filePath);
+
+              try {
+                await Promise.all(
+                  files.map((f) =>
+                    fs.unlink(path.join(dir, f)).catch(() => {}),
+                  ),
+                );
+                await fs.rmdir(dir).catch(() => {});
+              } catch {}
+
+              resolve(buffer);
+            } catch (err) {
+              reject(
+                err instanceof Error
+                  ? err
+                  : new Error("Unknown error reading video file"),
+              );
+            }
+          });
+
+          ytdlp.on("error", (error) => {
+            reject(new Error(`Failed to spawn yt-dlp: ${error.message}`));
+          });
+        })
+        .catch((err) =>
+          reject(
+            err instanceof Error ? err : new Error("Failed to create temp dir"),
+          ),
+        );
+    });
   });
 };
 
 export const getVideoUrl = async (url: string): Promise<string> => {
   "use server";
 
-  return new Promise((resolve, reject) => {
-    const args = [
-      // Prioritize pre-muxed browser-compatible formats, then merge if needed
-      "--format",
-      "best[height<=480][vcodec^=avc][acodec^=mp4a]/bestvideo[height<=480][vcodec^=avc]+bestaudio[acodec^=mp4a]/best[height<=480]",
-      "--get-url",
-      "--no-playlist",
-      url,
-    ];
+  return withTempCookies((cookieArgs) => {
+    return new Promise((resolve, reject) => {
+      const args = [
+        // Prioritize pre-muxed browser-compatible formats, then merge if needed
+        "--format",
+        "best[height<=480][vcodec^=avc][acodec^=mp4a]/bestvideo[height<=480][vcodec^=avc]+bestaudio[acodec^=mp4a]/best[height<=480]",
+        "--get-url",
+        "--no-playlist",
+        url,
+      ];
 
-    // Add cookies if available
-    args.unshift(...getCookiesArgs());
+      // Add cookies if available
+      args.unshift(...cookieArgs);
 
-    // Add proxy if available
-    if (process.env.PROXY) {
-      args.unshift("--proxy", process.env.PROXY);
-    }
-
-    const ytdlp = spawn("yt-dlp", args);
-
-    let stdout = "";
-    let stderr = "";
-
-    ytdlp.stdout.on("data", (data) => {
-      stdout += data.toString();
-    });
-
-    ytdlp.stderr.on("data", (data) => {
-      stderr += data.toString();
-    });
-
-    ytdlp.on("close", (code) => {
-      if (code !== 0) {
-        const userFriendlyMessage = parseYtDlpError(stderr);
-        reject(new Error(userFriendlyMessage));
-        return;
+      // Add proxy if available
+      if (process.env.PROXY) {
+        args.unshift("--proxy", process.env.PROXY);
       }
 
-      const videoUrl = stdout.trim();
-      if (!videoUrl) {
-        reject(new Error("Failed to get video URL"));
-        return;
-      }
+      const ytdlp = spawn("yt-dlp", args);
 
-      resolve(videoUrl);
-    });
+      let stdout = "";
+      let stderr = "";
 
-    ytdlp.on("error", (error) => {
-      reject(new Error(`Failed to spawn yt-dlp: ${error.message}`));
+      ytdlp.stdout.on("data", (data) => {
+        stdout += data.toString();
+      });
+
+      ytdlp.stderr.on("data", (data) => {
+        stderr += data.toString();
+      });
+
+      ytdlp.on("close", (code) => {
+        if (code !== 0) {
+          const userFriendlyMessage = parseYtDlpError(stderr);
+          reject(new Error(userFriendlyMessage));
+          return;
+        }
+
+        const videoUrl = stdout.trim();
+        if (!videoUrl) {
+          reject(new Error("Failed to get video URL"));
+          return;
+        }
+
+        resolve(videoUrl);
+      });
+
+      ytdlp.on("error", (error) => {
+        reject(new Error(`Failed to spawn yt-dlp: ${error.message}`));
+      });
     });
   });
 };
@@ -264,83 +296,87 @@ export const getVideoUrl = async (url: string): Promise<string> => {
 export const getAudioStream = async (url: string): Promise<Buffer> => {
   "use server";
 
-  return new Promise((resolve, reject) => {
-    const tmpDir = fs.mkdtemp(path.join(os.tmpdir(), "moonlit-yt-"));
+  return withTempCookies((cookieArgs) => {
+    return new Promise((resolve, reject) => {
+      const tmpDir = fs.mkdtemp(path.join(os.tmpdir(), "moonlit-yt-"));
 
-    tmpDir
-      .then((dir) => {
-        const outputTemplate = path.join(dir, "%(id)s.%(ext)s");
+      tmpDir
+        .then((dir) => {
+          const outputTemplate = path.join(dir, "%(id)s.%(ext)s");
 
-        const args = [
-          "--format",
-          "bestaudio/best",
-          "--output",
-          outputTemplate,
-          "--no-playlist",
-          url,
-        ];
+          const args = [
+            "--format",
+            "bestaudio/best",
+            "--output",
+            outputTemplate,
+            "--no-playlist",
+            url,
+          ];
 
-        // Add cookies if available
-        args.unshift(...getCookiesArgs());
+          // Add cookies if available
+          args.unshift(...cookieArgs);
 
-        if (process.env.PROXY) {
-          args.unshift("--proxy", process.env.PROXY);
-        }
-
-        const ytdlp = spawn("yt-dlp", args);
-
-        let stderr = "";
-
-        ytdlp.stdout.on("data", () => {});
-
-        ytdlp.stderr.on("data", (data) => {
-          stderr += data.toString();
-        });
-
-        ytdlp.on("close", async (code) => {
-          try {
-            if (code !== 0) {
-              const userFriendlyMessage = parseYtDlpError(stderr);
-              reject(new Error(userFriendlyMessage));
-              return;
-            }
-
-            const files = await fs.readdir(dir);
-            const mediaFile = files.find(
-              (f) => !f.endsWith(".part") && !f.endsWith(".ytdl"),
-            );
-            if (!mediaFile) {
-              reject(new Error("Failed to locate downloaded audio file."));
-              return;
-            }
-            const filePath = path.join(dir, mediaFile);
-            const buffer = await fs.readFile(filePath);
-
-            try {
-              await Promise.all(
-                files.map((f) => fs.unlink(path.join(dir, f)).catch(() => {})),
-              );
-              await fs.rmdir(dir).catch(() => {});
-            } catch {}
-
-            resolve(buffer);
-          } catch (err) {
-            reject(
-              err instanceof Error
-                ? err
-                : new Error("Unknown error reading audio file"),
-            );
+          if (process.env.PROXY) {
+            args.unshift("--proxy", process.env.PROXY);
           }
-        });
 
-        ytdlp.on("error", (error) => {
-          reject(new Error(`Failed to spawn yt-dlp: ${error.message}`));
-        });
-      })
-      .catch((err) =>
-        reject(
-          err instanceof Error ? err : new Error("Failed to create temp dir"),
-        ),
-      );
+          const ytdlp = spawn("yt-dlp", args);
+
+          let stderr = "";
+
+          ytdlp.stdout.on("data", () => {});
+
+          ytdlp.stderr.on("data", (data) => {
+            stderr += data.toString();
+          });
+
+          ytdlp.on("close", async (code) => {
+            try {
+              if (code !== 0) {
+                const userFriendlyMessage = parseYtDlpError(stderr);
+                reject(new Error(userFriendlyMessage));
+                return;
+              }
+
+              const files = await fs.readdir(dir);
+              const mediaFile = files.find(
+                (f) => !f.endsWith(".part") && !f.endsWith(".ytdl"),
+              );
+              if (!mediaFile) {
+                reject(new Error("Failed to locate downloaded audio file."));
+                return;
+              }
+              const filePath = path.join(dir, mediaFile);
+              const buffer = await fs.readFile(filePath);
+
+              try {
+                await Promise.all(
+                  files.map((f) =>
+                    fs.unlink(path.join(dir, f)).catch(() => {}),
+                  ),
+                );
+                await fs.rmdir(dir).catch(() => {});
+              } catch {}
+
+              resolve(buffer);
+            } catch (err) {
+              reject(
+                err instanceof Error
+                  ? err
+                  : new Error("Unknown error reading audio file"),
+              );
+            }
+          });
+
+          ytdlp.on("error", (error) => {
+            reject(new Error(`Failed to spawn yt-dlp: ${error.message}`));
+          });
+        })
+        .catch((err) =>
+          reject(
+            err instanceof Error ? err : new Error("Failed to create temp dir"),
+          ),
+        );
+    });
   });
 };
