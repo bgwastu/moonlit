@@ -3,7 +3,7 @@ services:
     image: caomingjun/warp
     restart: always
     device_cgroup_rules:
-      - 'c 10:200 rwm'
+      - "c 10:200 rwm"
     environment:
       - WARP_SLEEP=2
       # - WARP_LICENSE_KEY= # optional
@@ -35,6 +35,8 @@ services:
         condition: service_healthy
     environment:
       - NODE_ENV=${NODE_ENV:-production}
-      - PROXY=${PROXY:-socks5://warp:1080}
+      - PROXY=${PROXY:-}
       - YOUTUBE_API_KEY=${YOUTUBE_API_KEY}
+    volumes:
+      - ./data:/app/data
     restart: unless-stopped

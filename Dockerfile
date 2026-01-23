@@ -46,8 +46,8 @@ ENV NODE_ENV=production
 # Uncomment the following line in case you want to disable telemetry during runtime.
 # ENV NEXT_TELEMETRY_DISABLED 1
 
-# Set proxy for yt-dlp
-ENV PROXY=socks5://warp:1080
+# Proxy is configured via docker-compose environment variables
+# ENV PROXY=socks5://warp:1080
 
 RUN addgroup --system --gid 1001 nodejs
 RUN adduser --system --uid 1001 nextjs
