@@ -1,4 +1,5 @@
-FROM node:18-alpine AS base
+# Upgrade to Node 20 (required for yt-dlp EJS support which needs Node >= 20)
+FROM node:20-alpine AS base
 
 # Install dependencies only when needed
 FROM base AS deps
@@ -40,7 +41,11 @@ WORKDIR /app
 
 # Install Python, ffmpeg and yt-dlp - using apk to avoid externally-managed-environment error
 RUN apk add --no-cache python3 py3-pip py3-setuptools ffmpeg vim nano curl bash
-RUN pip3 install --break-system-packages yt-dlp
+# Install yt-dlp with [default] extras to include EJS scripts
+RUN pip3 install --break-system-packages "yt-dlp[default]"
+
+# Configure yt-dlp to use Node.js runtime for EJS
+RUN echo "--js-runtimes node" > /etc/yt-dlp.conf
 
 ENV NODE_ENV=production
 # Uncomment the following line in case you want to disable telemetry during runtime.
@@ -57,6 +62,10 @@ COPY --from=builder /app/public ./public
 # Set the correct permission for prerender cache
 RUN mkdir .next
 RUN chown nextjs:nodejs .next
+
+# Create data directory and set permissions
+RUN mkdir data
+RUN chown nextjs:nodejs data
 
 # Automatically leverage output traces to reduce image size
 # https://nextjs.org/docs/advanced-features/output-file-tracing
