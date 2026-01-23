@@ -39,7 +39,7 @@ FROM base AS runner
 WORKDIR /app
 
 # Install Python, ffmpeg and yt-dlp - using apk to avoid externally-managed-environment error
-RUN apk add --no-cache python3 py3-pip py3-setuptools ffmpeg
+RUN apk add --no-cache python3 py3-pip py3-setuptools ffmpeg vim nano curl bash
 RUN pip3 install --break-system-packages yt-dlp
 
 ENV NODE_ENV=production
