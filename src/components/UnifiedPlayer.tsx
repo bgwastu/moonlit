@@ -211,7 +211,7 @@ export default function UnifiedPlayer({
               onChange={(value) => setQuality(value as "low" | "high")}
               data={[
                 { label: "Low Quality (480p)", value: "low" },
-                { label: "High Quality (HD)", value: "high" },
+                { label: "High Quality (720p)", value: "high" },
               ]}
               mb="xl"
               fullWidth
