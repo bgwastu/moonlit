@@ -1,5 +1,5 @@
 import { spawn } from "child_process";
-import { existsSync, promises as fs } from "fs";
+import { existsSync, readFileSync, promises as fs } from "fs";
 import os from "os";
 import path from "path";
 import { getTempDir } from "@/utils/server";
@@ -190,8 +190,8 @@ function parseYtDlpError(stderr: string): string {
 function hasSystemCookies(): boolean {
   try {
     if (existsSync(SYSTEM_COOKIES_PATH)) {
-      const stats = require("fs").statSync(SYSTEM_COOKIES_PATH);
-      return stats.size > 0;
+      const content = readFileSync(SYSTEM_COOKIES_PATH, "utf-8");
+      return content && content.trim().length > 0;
     }
   } catch {}
   return false;
