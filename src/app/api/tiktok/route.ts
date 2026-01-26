@@ -5,7 +5,7 @@ import { NextResponse } from "next/server";
 export const maxDuration = 10000;
 
 export async function POST(req: Request) {
-  const { url, metadataOnly, videoMode } = await req.json();
+  const { url, metadataOnly, videoMode, cookies } = await req.json();
 
   if (!isTikTokURL(url)) {
     return NextResponse.json(
@@ -15,7 +15,7 @@ export async function POST(req: Request) {
   }
 
   try {
-    const videoInfo = await getVideoInfo(url);
+    const videoInfo = await getVideoInfo(url, cookies);
 
     // Remove hashtags from title
     const title = videoInfo.title.replace(/#\w+/g, "").trim();
@@ -42,6 +42,7 @@ export async function POST(req: Request) {
         // Download video - use simpler format for TikTok (already browser-compatible)
         const buffer = await downloadVideo(url, {
           format: "best[ext=mp4]/best",
+          cookies,
         });
         const uint8Array = new Uint8Array(buffer);
         const headers = {
@@ -55,7 +56,7 @@ export async function POST(req: Request) {
         return new NextResponse(uint8Array, { headers });
       } else {
         // Audio-only mode
-        const buffer = await downloadAudio(url);
+        const buffer = await downloadAudio(url, { cookies });
         const uint8Array = new Uint8Array(buffer);
         const headers = {
           "Content-Type": "audio/mpeg",

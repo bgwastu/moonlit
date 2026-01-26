@@ -4,6 +4,7 @@ import CookiesModal from "@/components/CookiesModal";
 import LoadingOverlay from "@/components/LoadingOverlay";
 import useNoSleep from "@/hooks/useNoSleep";
 import type { Song } from "@/interfaces";
+import { getCookiesToUse } from "@/lib/cookies";
 import {
   ActionIcon,
   Anchor,
@@ -175,10 +176,11 @@ function YoutubeUpload({ onOpenCookies }: { onOpenCookies: () => void }) {
         router.push(`/@${creator}/video/${videoId}`);
       } else {
         try {
+          const { cookies } = await getCookiesToUse();
           const response = await fetch("/api/tiktok", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ url, metadataOnly: true }),
+            body: JSON.stringify({ url, metadataOnly: true, cookies }),
           });
 
           if (!response.ok) {
@@ -300,7 +302,7 @@ export default function UploadPage() {
                     Moonlit
                   </Text>
                 </Flex>
-                <Tooltip label="YouTube Cookies" position="bottom">
+                <Tooltip label="Cookies Settings" position="bottom">
                   <ActionIcon
                     variant="subtle"
                     color="violet"

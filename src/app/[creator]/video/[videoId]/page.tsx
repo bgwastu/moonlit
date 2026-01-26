@@ -5,6 +5,7 @@ import LoadingOverlay from "@/components/LoadingOverlay";
 import type { Song } from "@/interfaces";
 import { isTikTokURL } from "@/utils";
 import { getMedia, setMedia, getMeta, setMeta } from "@/utils/cache";
+import { getCookiesToUse } from "@/lib/cookies";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { notifications } from "@mantine/notifications";
@@ -25,9 +26,11 @@ export default function TikTokVideoPage({ params }: Props) {
     // Remove @ if it exists at the start of creator since we'll add it back
     // URL decode the creator parameter first to handle encoded @ symbols
     const decodedCreator = decodeURIComponent(creator);
-    const cleanCreator = decodedCreator.startsWith("@") ? decodedCreator.slice(1) : decodedCreator;
+    const cleanCreator = decodedCreator.startsWith("@")
+      ? decodedCreator.slice(1)
+      : decodedCreator;
     const url = `https://www.tiktok.com/@${cleanCreator}/video/${videoId}`;
-    console.log(url)
+    console.log(url);
 
     if (!isTikTokURL(url)) {
       router.push("/");
@@ -42,7 +45,9 @@ export default function TikTokVideoPage({ params }: Props) {
         const cached = await getMedia(cacheKey);
         if (cached) {
           const blobUrl = URL.createObjectURL(cached);
-          const storedMeta = await getMeta<Partial<Song["metadata"]>>(`tt:${videoId}`);
+          const storedMeta = await getMeta<Partial<Song["metadata"]>>(
+            `tt:${videoId}`,
+          );
           const songData: Song = {
             fileUrl: blobUrl,
             videoUrl: blobUrl,
@@ -58,11 +63,14 @@ export default function TikTokVideoPage({ params }: Props) {
           return;
         }
 
+        // Get cookies
+        const { cookies } = await getCookiesToUse();
+
         // Fetch video data
         const response = await fetch("/api/tiktok", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ url, videoMode: true }),
+          body: JSON.stringify({ url, videoMode: true, cookies }),
         });
 
         if (!response.ok) {
@@ -74,13 +82,13 @@ export default function TikTokVideoPage({ params }: Props) {
         const videoUrl = URL.createObjectURL(blob);
 
         const title = decodeURIComponent(
-          response.headers.get("Title") || "Unknown Title"
+          response.headers.get("Title") || "Unknown Title",
         );
         const author = decodeURIComponent(
-          response.headers.get("Author") || creator
+          response.headers.get("Author") || creator,
         );
         const thumbnail = decodeURIComponent(
-          response.headers.get("Thumbnail") || ""
+          response.headers.get("Thumbnail") || "",
         );
 
         const songData: Song = {
@@ -100,7 +108,8 @@ export default function TikTokVideoPage({ params }: Props) {
         setSong(songData);
       } catch (error) {
         console.error("Failed to load TikTok video:", error);
-        const errorMessage = error instanceof Error ? error.message : "Failed to load video";
+        const errorMessage =
+          error instanceof Error ? error.message : "Failed to load video";
         setError(errorMessage);
         notifications.show({
           title: "Error",
@@ -133,7 +142,8 @@ export default function TikTokVideoPage({ params }: Props) {
           <Title order={2}>Error Loading Video</Title>
           <Text color="red">{error}</Text>
           <Text>
-            We couldn&apos;t process this video. You can try downloading it manually and uploading it to Moonlit.
+            We couldn&apos;t process this video. You can try downloading it
+            manually and uploading it to Moonlit.
           </Text>
           <Button onClick={() => router.push("/")}>Go Home</Button>
         </Flex>
