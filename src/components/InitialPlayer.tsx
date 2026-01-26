@@ -193,15 +193,37 @@ async function downloadWithProgress(
 
                       onProgress({ status: "complete", percent: 100 });
 
-                      // Convert base64 back to blob
-                      const binaryString = atob(data.data);
-                      const bytes = new Uint8Array(binaryString.length);
-                      for (let i = 0; i < binaryString.length; i++) {
-                        bytes[i] = binaryString.charCodeAt(i);
+                      let blob: Blob;
+
+                      if (data.downloadUrl) {
+                        onProgress({
+                          status: "processing",
+                          percent: 100,
+                          message: "Downloading media file...",
+                        });
+
+                        const res = await fetch(data.downloadUrl);
+                        if (!res.ok)
+                          throw new Error("Failed to retrieve media file");
+                        blob = await res.blob();
+
+                        // Set correct type if provided
+                        if (data.contentType) {
+                          blob = new Blob([blob], { type: data.contentType });
+                        }
+                      } else if (data.data) {
+                        // Legacy base64 support
+                        const binaryString = atob(data.data);
+                        const bytes = new Uint8Array(binaryString.length);
+                        for (let i = 0; i < binaryString.length; i++) {
+                          bytes[i] = binaryString.charCodeAt(i);
+                        }
+                        blob = new Blob([bytes], {
+                          type: data.contentType,
+                        });
+                      } else {
+                        throw new Error("No media data received");
                       }
-                      const blob = new Blob([bytes], {
-                        type: data.contentType,
-                      });
                       const blobUrl = URL.createObjectURL(blob);
 
                       const metadata = {

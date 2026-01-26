@@ -389,12 +389,13 @@ export async function getVideoInfo(
 }
 
 /**
- * Download video and return as Buffer
+ * Download video and return path to file
+ * Caller is responsible for cleaning up the folderPath
  */
-export async function downloadVideo(
+export async function downloadVideoToFile(
   url: string,
   options: DownloadOptions = {},
-): Promise<Buffer> {
+): Promise<{ filePath: string; folderPath: string }> {
   const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "moonlit-yt-"));
   const outputTemplate = path.join(tmpDir, "%(id)s.%(ext)s");
 
@@ -446,29 +447,55 @@ export async function downloadVideo(
     }
 
     const filePath = path.join(tmpDir, mediaFile);
-    const buffer = await fs.readFile(filePath);
-
     options.onProgress?.({ status: "finished" });
 
+    return { filePath, folderPath: tmpDir };
+  } catch (error) {
+    // Cleanup on error
+    try {
+      if (existsSync(tmpDir)) {
+        const files = await fs.readdir(tmpDir);
+        await Promise.all(
+          files.map((f) => fs.unlink(path.join(tmpDir, f)).catch(() => {})),
+        );
+        await fs.rmdir(tmpDir).catch(() => {});
+      }
+    } catch {}
+    throw error;
+  }
+}
+
+/**
+ * Download video and return as Buffer
+ */
+export async function downloadVideo(
+  url: string,
+  options: DownloadOptions = {},
+): Promise<Buffer> {
+  const { filePath, folderPath } = await downloadVideoToFile(url, options);
+
+  try {
+    const buffer = await fs.readFile(filePath);
     return buffer;
   } finally {
     try {
-      const files = await fs.readdir(tmpDir);
+      const files = await fs.readdir(folderPath);
       await Promise.all(
-        files.map((f) => fs.unlink(path.join(tmpDir, f)).catch(() => {})),
+        files.map((f) => fs.unlink(path.join(folderPath, f)).catch(() => {})),
       );
-      await fs.rmdir(tmpDir).catch(() => {});
+      await fs.rmdir(folderPath).catch(() => {});
     } catch {}
   }
 }
 
 /**
- * Download audio only and return as Buffer
+ * Download audio and return path to file
+ * Caller is responsible for cleaning up the folderPath
  */
-export async function downloadAudio(
+export async function downloadAudioToFile(
   url: string,
   options: DownloadOptions = {},
-): Promise<Buffer> {
+): Promise<{ filePath: string; folderPath: string }> {
   const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "moonlit-yt-"));
   const outputTemplate = path.join(tmpDir, "%(id)s.%(ext)s");
 
@@ -509,18 +536,42 @@ export async function downloadAudio(
     }
 
     const filePath = path.join(tmpDir, mediaFile);
-    const buffer = await fs.readFile(filePath);
-
     options.onProgress?.({ status: "finished" });
 
+    return { filePath, folderPath: tmpDir };
+  } catch (error) {
+    try {
+      if (existsSync(tmpDir)) {
+        const files = await fs.readdir(tmpDir);
+        await Promise.all(
+          files.map((f) => fs.unlink(path.join(tmpDir, f)).catch(() => {})),
+        );
+        await fs.rmdir(tmpDir).catch(() => {});
+      }
+    } catch {}
+    throw error;
+  }
+}
+
+/**
+ * Download audio only and return as Buffer
+ */
+export async function downloadAudio(
+  url: string,
+  options: DownloadOptions = {},
+): Promise<Buffer> {
+  const { filePath, folderPath } = await downloadAudioToFile(url, options);
+
+  try {
+    const buffer = await fs.readFile(filePath);
     return buffer;
   } finally {
     try {
-      const files = await fs.readdir(tmpDir);
+      const files = await fs.readdir(folderPath);
       await Promise.all(
-        files.map((f) => fs.unlink(path.join(tmpDir, f)).catch(() => {})),
+        files.map((f) => fs.unlink(path.join(folderPath, f)).catch(() => {})),
       );
-      await fs.rmdir(tmpDir).catch(() => {});
+      await fs.rmdir(folderPath).catch(() => {});
     } catch {}
   }
 }

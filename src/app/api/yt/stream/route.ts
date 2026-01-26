@@ -1,9 +1,10 @@
 import {
-  downloadAudio,
+  downloadAudioToFile,
   DownloadProgress,
-  downloadVideo,
+  downloadVideoToFile,
   getVideoInfo,
 } from "@/lib/yt-dlp";
+import crypto from "crypto";
 import { isYoutubeURL } from "@/utils";
 
 export const maxDuration = 10000;
@@ -93,29 +94,53 @@ export async function POST(req: Request) {
           });
         };
 
-        let buffer: Buffer;
+        let filePath: string;
+        let folderPath: string;
         let contentType: string;
 
         if (videoMode) {
-          buffer = await downloadVideo(url, {
+          const result = await downloadVideoToFile(url, {
             cookies,
             onProgress,
             quality:
               quality || (videoInfo.lengthSeconds < 600 ? "high" : "low"),
           });
+          filePath = result.filePath;
+          folderPath = result.folderPath;
           contentType = "video/mp4";
         } else {
-          buffer = await downloadAudio(url, { cookies, onProgress });
+          const result = await downloadAudioToFile(url, {
+            cookies,
+            onProgress,
+          });
+          filePath = result.filePath;
+          folderPath = result.folderPath;
           contentType = "audio/mpeg";
         }
 
-        // Convert buffer to base64 for SSE transmission
-        const base64 = buffer.toString("base64");
+        // Move file to a stable temp location
+        const { promises: fs } = await import("fs");
+        const path = await import("path");
+        const os = await import("os");
+
+        const mediaDir = path.default.join(
+          os.default.tmpdir(),
+          "moonlit-media",
+        );
+        await fs.mkdir(mediaDir, { recursive: true });
+
+        const fileId = crypto.randomUUID();
+        const targetPath = path.default.join(mediaDir, fileId);
+
+        await fs.rename(filePath, targetPath);
+
+        // Cleanup the original temp folder
+        await fs.rmdir(folderPath).catch(() => {});
 
         send({
           type: "complete",
           contentType,
-          data: base64,
+          downloadUrl: `/api/media/${fileId}`,
           title,
           author,
           thumbnail: videoInfo.thumbnail,
