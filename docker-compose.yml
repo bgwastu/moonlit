@@ -34,8 +34,6 @@ services:
       - ADMIN_PASSWORD=${ADMIN_PASSWORD:-}
     volumes:
       - moonlit-data:/app/data
-    ports:
-      - "3000:3000"
     restart: unless-stopped
 
 volumes:
