@@ -26,7 +26,6 @@
     "localforage": "^1.10.0",
     "next": "14.2.35",
     "nosleep.js": "^0.12.0",
-    "nuqs": "^1.20.0",
     "posthog-js": "^1.335.2",
     "react": "19.2.3",
     "react-dom": "19.2.3",

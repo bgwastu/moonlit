@@ -131,10 +131,6 @@ export function useVideoPlayer({
 
   // Cleanup Effect on Unmount
   useShallowEffect(() => {
-    window.onbeforeunload = () => {
-      return "Are you sure?";
-    };
-
     return () => {
       console.log("Player cleanup started");
       if (videoElement) {
@@ -142,7 +138,6 @@ export function useVideoPlayer({
         videoElement.removeAttribute("src");
         videoElement.load();
       }
-      window.onbeforeunload = null;
       setVideoElement(null);
       setIsVideoReady(false);
       console.log("Player cleanup completed");
