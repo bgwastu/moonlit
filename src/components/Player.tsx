@@ -868,7 +868,7 @@ export function Player({
                   icon={<IconCookie size={14} />}
                   onClick={openCookiesModal}
                 >
-                  YouTube Cookies
+                  Cookies Settings
                 </Menu.Item>
               </Menu.Dropdown>
             </Menu>
