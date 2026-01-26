@@ -3,8 +3,14 @@
 import useNoSleep from "@/hooks/useNoSleep";
 import { useMediaDownloader } from "@/hooks/useMediaDownloader";
 import { Song } from "@/interfaces";
-import { songAtom } from "@/state";
+import {
+  getSongLength,
+  getTikTokId,
+  getYouTubeId,
+  isYoutubeURL,
+} from "@/utils";
 import { getMedia } from "@/utils/cache";
+import { songAtom } from "@/state";
 import {
   Button,
   Center,
@@ -23,57 +29,40 @@ import { notifications } from "@mantine/notifications";
 import { IconMusic } from "@tabler/icons-react";
 import { useAtom } from "jotai";
 import { useRouter } from "next/navigation";
-import { usePostHog } from "posthog-js/react";
 import { useEffect, useRef, useState } from "react";
-import Icon from "./Icon";
-import { Player } from "./Player";
+import Icon from "@/components/Icon";
+import { Player } from "@/components/Player";
 
-interface InitialPlayerProps {
-  youtubeId: string;
-  isShorts: boolean;
+interface UnifiedPlayerProps {
+  url: string;
   metadata: Partial<Song["metadata"]>;
   duration?: number;
 }
 
-export default function InitialPlayer({
-  youtubeId,
-  isShorts,
+export default function UnifiedPlayer({
+  url,
   metadata,
   duration,
-}: InitialPlayerProps) {
+}: UnifiedPlayerProps) {
   const router = useRouter();
-  const posthog = usePostHog();
-
   const [song] = useAtom(songAtom);
   const [isPlayer, setIsPlayer] = useState(false);
   const [noSleepEnabled, setNoSleepEnabled] = useNoSleep();
 
-  const { downloadState, startDownload } = useMediaDownloader(
-    youtubeId,
-    isShorts,
-    metadata,
-  );
+  const { downloadState, startDownload } = useMediaDownloader(url, metadata);
 
   const [confirmationOpened, setConfirmationOpened] = useState(false);
   const [includeVideo, setIncludeVideo] = useState(false);
   const [quality, setQuality] = useState<"low" | "high">("low");
 
-  // Ref to prevent double-call in React Strict Mode
   const downloadStarted = useRef(false);
-
   const isLoading = !song;
+  const isYouTube = isYoutubeURL(url);
 
   useEffect(() => {
-    // Prevent double-call in dev mode (React Strict Mode)
-    if (downloadStarted.current) {
-      return;
-    }
-
-    if (!youtubeId) {
-      notifications.show({
-        title: "Error",
-        message: "No YouTube ID provided.",
-      });
+    if (downloadStarted.current) return;
+    if (!url) {
+      notifications.show({ title: "Error", message: "No URL provided." });
       router.push("/");
       return;
     }
@@ -81,28 +70,47 @@ export default function InitialPlayer({
     downloadStarted.current = true;
 
     async function checkAndStart() {
-      // Check cache first
-      const videoKey = `yt:${youtubeId}:video`;
-      const audioKey = `yt:${youtubeId}:audio`;
-      const cachedVideo = await getMedia(videoKey);
-      const cachedAudio = await getMedia(audioKey);
+      // Determine IDs and Keys for cache checking
+      let videoKey: string | null = null;
+      let audioKey: string | null = null;
+
+      if (isYouTube) {
+        const id = getYouTubeId(url);
+        if (id) {
+          videoKey = `yt:${id}:video`;
+          audioKey = `yt:${id}:audio`;
+        }
+      } else {
+        const id = getTikTokId(url);
+        if (id) {
+          videoKey = `tt:${id}:video`;
+          // TikTok usually uses one key for video, but we can check standard pattern
+        }
+      }
+
+      const cachedVideo = videoKey ? await getMedia(videoKey) : null;
+      const cachedAudio = audioKey ? await getMedia(audioKey) : null;
 
       if (cachedVideo || cachedAudio) {
-        // If cached, just proceed, downloadWithProgress will handle it fast
         startDownload(undefined, "high");
         return;
       }
 
-      // If not cached and duration > 600 (10 mins), ask permission
-      if (duration && duration > 600) {
+      // If duration > 10 mins (YouTube only mostly), ask permission
+      if (isYouTube && duration && duration > 600) {
         setConfirmationOpened(true);
       } else {
+        // Default behavior: download video for tiktok, high quality audio for YT
+        // Actually, previous logic was: startDownload(true, "high")
+        // But for YouTube we default to audio+video?
+        // InitialPlayer code: startDownload(true, "high");
+        // We likely want video by default if possible.
         startDownload(true, "high");
       }
     }
 
     checkAndStart();
-  }, [youtubeId, duration, router, startDownload]);
+  }, [url, duration, router, startDownload, isYouTube]);
 
   const handleGoToPlayer = () => {
     setIsPlayer(true);
@@ -112,23 +120,21 @@ export default function InitialPlayer({
   };
 
   if (isPlayer && song) {
-    return <Player song={song} repeating={isShorts} />;
+    // For Shorts/TikTok, we might want repeating=true by default
+    const isShortForm = !isYouTube || url.includes("/shorts/");
+    return <Player song={song} repeating={isShortForm} />;
   }
 
   const getStatusText = () => {
     switch (downloadState.status) {
       case "fetching":
-        return downloadState.message || "Fetching video info...";
+        return downloadState.message || "Fetching info...";
       case "downloading":
-        if (
-          downloadState.percent > 0 &&
-          downloadState.speed &&
-          downloadState.eta
-        ) {
-          return `Downloading: ${downloadState.percent.toFixed(1)}% • ${downloadState.speed} • ETA: ${downloadState.eta}`;
-        }
         if (downloadState.percent > 0) {
-          return `Downloading: ${downloadState.percent.toFixed(1)}%`;
+          let text = `Downloading: ${downloadState.percent.toFixed(1)}%`;
+          if (downloadState.speed) text += ` • ${downloadState.speed}`;
+          if (downloadState.eta) text += ` • ETA: ${downloadState.eta}`;
+          return text;
         }
         return "Starting download...";
       case "processing":
@@ -142,7 +148,6 @@ export default function InitialPlayer({
     }
   };
 
-  // Determine if progress bar should be indeterminate (striped + animated)
   const isIndeterminate =
     downloadState.status === "fetching" ||
     downloadState.status === "processing" ||
@@ -161,14 +166,12 @@ export default function InitialPlayer({
           This video is longer than 10 minutes. Do you want to continue
           downloading?
         </Text>
-
         <Switch
           label="Include Video (Larger file size)"
           checked={includeVideo}
           onChange={(event) => setIncludeVideo(event.currentTarget.checked)}
           mb="sm"
         />
-
         {includeVideo && (
           <SegmentedControl
             value={quality}
@@ -181,7 +184,6 @@ export default function InitialPlayer({
             fullWidth
           />
         )}
-
         <Group position="right">
           <Button variant="default" onClick={() => router.push("/")}>
             Cancel
@@ -196,6 +198,7 @@ export default function InitialPlayer({
           </Button>
         </Group>
       </Modal>
+
       <Flex
         h="100dvh"
         align="stretch"
@@ -209,9 +212,7 @@ export default function InitialPlayer({
             fz={rem(20)}
             fw="bold"
             lts={rem(0.2)}
-            style={{
-              userSelect: "none",
-            }}
+            style={{ userSelect: "none" }}
           >
             Moonlit
           </Text>

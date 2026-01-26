@@ -7,10 +7,10 @@ import { useRouter } from "next/navigation";
 import { usePostHog } from "posthog-js/react";
 import { useCallback, useState } from "react";
 import { Song } from "@/interfaces";
+import { isYoutubeURL, isTikTokURL } from "@/utils";
 
 export function useMediaDownloader(
-  youtubeId: string,
-  isShorts: boolean,
+  url: string,
   metadata: Partial<Song["metadata"]>,
 ) {
   const router = useRouter();
@@ -24,17 +24,17 @@ export function useMediaDownloader(
 
   const startDownload = useCallback(
     (withVideo?: boolean, downloadQuality: "high" | "low" = "high") => {
-      const pageType = isShorts ? "shorts_page" : "watch_page";
-      posthog.capture(pageType, { youtubeId });
+      // Analytics
+      let eventName = "media_download";
+      if (isYoutubeURL(url)) eventName = "youtube_download";
+      else if (isTikTokURL(url)) eventName = "tiktok_download";
 
-      const url = isShorts
-        ? `https://youtube.com/shorts/${youtubeId}`
-        : `https://youtube.com/watch?v=${youtubeId}`;
+      posthog.capture(eventName, { url });
 
       if (!isSupportedURL(url)) {
         notifications.show({
           title: "Error",
-          message: "Invalid URL generated.",
+          message: "Invalid URL provided.",
         });
         router.push("/");
         return () => {};
@@ -58,7 +58,7 @@ export function useMediaDownloader(
         })
         .catch((e) => {
           if (e.name === "AbortError") return;
-          console.error(`${pageType}: Download error:`, e);
+          console.error("Download error:", e);
           setDownloadState({
             status: "error",
             percent: 0,
@@ -66,7 +66,7 @@ export function useMediaDownloader(
           });
           notifications.show({
             title: "Download error",
-            message: e.message || "Could not process the video.",
+            message: e.message || "Could not process the media.",
           });
           router.push("/");
         });
@@ -75,7 +75,7 @@ export function useMediaDownloader(
         abortController.abort();
       };
     },
-    [isShorts, youtubeId, router, posthog, setSong, metadata],
+    [url, router, posthog, setSong, metadata],
   );
 
   return { downloadState, startDownload };

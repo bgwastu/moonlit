@@ -1,6 +1,6 @@
 import { Song } from "@/interfaces";
 import { getCookiesToUse } from "@/lib/cookies";
-import { getYouTubeId } from "@/utils";
+import { getTikTokId, getYouTubeId, isTikTokURL, isYoutubeURL } from "@/utils";
 import { getMedia, getMeta, setMedia, setMeta } from "@/utils/cache";
 
 export interface DownloadState {
@@ -25,15 +25,32 @@ export async function downloadWithProgress(
   videoMode?: boolean,
   quality?: "high" | "low",
 ): Promise<Song> {
-  const id = getYouTubeId(url);
+  // For backward compat with YT/TikTok, we can still try to extract IDs
+  const isYouTube = isYoutubeURL(url);
+  const isTikTok = isTikTokURL(url);
+
+  let id: string | null = null;
+  let prefix = "media"; // Default prefix for generic media
+
+  if (isYouTube) {
+    id = getYouTubeId(url);
+    prefix = "yt";
+  } else if (isTikTok) {
+    id = getTikTokId(url);
+    prefix = "tt";
+  }
 
   // Check cache first
   if (id) {
-    const videoKey = `yt:${id}:video`;
-    const audioKey = `yt:${id}:audio`;
+    const videoKey = `${prefix}:${id}:video`;
+    const audioKey = `${prefix}:${id}:audio`;
+
+    // Check video cache first if videoMode is requested or generic check
     const cachedVideo = await getMedia(videoKey);
     if (cachedVideo) {
-      const storedMeta = await getMeta<Partial<Song["metadata"]>>(`yt:${id}`);
+      const storedMeta = await getMeta<Partial<Song["metadata"]>>(
+        `${prefix}:${id}`,
+      );
       const blobUrl = URL.createObjectURL(cachedVideo);
       onProgress({ status: "complete", percent: 100 });
       return {
@@ -41,28 +58,32 @@ export async function downloadWithProgress(
         videoUrl: blobUrl,
         metadata: {
           id,
-          title: "Loading...",
-          author: "Loading...",
+          title: "",
+          author: "",
           coverUrl: "",
-          platform: "youtube",
+          platform: isYouTube ? "youtube" : isTikTok ? "tiktok" : null,
           ...(storedMeta || {}),
           ...(preload || {}),
         },
       };
     }
+
+    // Check audio cache
     const cachedAudio = await getMedia(audioKey);
     if (cachedAudio) {
-      const storedMeta = await getMeta<Partial<Song["metadata"]>>(`yt:${id}`);
+      const storedMeta = await getMeta<Partial<Song["metadata"]>>(
+        `${prefix}:${id}`,
+      );
       const audioUrl = URL.createObjectURL(cachedAudio);
       onProgress({ status: "complete", percent: 100 });
       return {
         fileUrl: audioUrl,
         metadata: {
           id,
-          title: "Loading...",
-          author: "Loading...",
+          title: "",
+          author: "",
           coverUrl: "",
-          platform: "youtube",
+          platform: isYouTube ? "youtube" : isTikTok ? "tiktok" : null,
           ...(storedMeta || {}),
           ...(preload || {}),
         },
@@ -79,6 +100,7 @@ export async function downloadWithProgress(
   // Get cookies based on user preference
   const { cookies } = await getCookiesToUse();
 
+  // Unified Download Path (SSE)
   return new Promise((resolve, reject) => {
     const controller = new AbortController();
 
@@ -87,7 +109,7 @@ export async function downloadWithProgress(
       abortSignal.addEventListener("abort", () => controller.abort());
     }
 
-    fetch("/api/yt/stream", {
+    fetch("/api/stream", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ url, cookies, videoMode, quality }),
@@ -129,10 +151,6 @@ export async function downloadWithProgress(
                         percent: 0,
                         message: data.message,
                       });
-                      break;
-
-                    case "metadata":
-                      // Update metadata but keep downloading
                       break;
 
                     case "progress":
@@ -193,21 +211,26 @@ export async function downloadWithProgress(
                       }
                       const blobUrl = URL.createObjectURL(blob);
 
+                      // Use preload metadata from server-side
                       const metadata = {
-                        id: getYouTubeId(url),
-                        title: data.title,
-                        author: data.author,
-                        coverUrl: data.thumbnail,
-                        platform: "youtube" as const,
+                        id: id || "unknown",
+                        title: preload.title || "",
+                        author: preload.author || "",
+                        coverUrl: preload.coverUrl || "",
+                        platform: isYouTube
+                          ? ("youtube" as const)
+                          : isTikTok
+                            ? ("tiktok" as const)
+                            : preload.platform,
                       };
 
                       // Cache the media
-                      if (metadata.id) {
+                      if (id) {
                         const cacheKey = data.videoMode
-                          ? `yt:${metadata.id}:video`
-                          : `yt:${metadata.id}:audio`;
+                          ? `${prefix}:${id}:video`
+                          : `${prefix}:${id}:audio`;
                         setMedia(cacheKey, blob).catch(() => {});
-                        setMeta(`yt:${metadata.id}`, metadata).catch(() => {});
+                        setMeta(`${prefix}:${id}`, metadata).catch(() => {});
                       }
 
                       resolve({

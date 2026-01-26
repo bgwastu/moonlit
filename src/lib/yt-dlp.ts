@@ -401,12 +401,22 @@ export async function downloadVideoToFile(
 
   const quality = options.quality || "low";
 
-  const videoFormat =
-    quality === "high"
-      ? "bestvideo[height<=1080][vcodec^=avc]+bestaudio[acodec^=mp4a]/best[height<=1080][vcodec^=avc][acodec^=mp4a]"
-      : "bestvideo[height<=480][vcodec^=avc]+bestaudio[acodec^=mp4a]/best[height<=480][vcodec^=avc][acodec^=mp4a]";
+  /* Check if TikTok */
+  const isTikTok = url.includes("tiktok.com");
 
-  const format = options.format || videoFormat;
+  let format = options.format;
+
+  if (!format) {
+    if (isTikTok) {
+      format = "best[ext=mp4]/best";
+    } else {
+      // YouTube / Default
+      format =
+        quality === "high"
+          ? "bestvideo[height<=1080][vcodec^=avc]+bestaudio[acodec^=mp4a]/best[height<=1080][vcodec^=avc][acodec^=mp4a]"
+          : "bestvideo[height<=480][vcodec^=avc]+bestaudio[acodec^=mp4a]/best[height<=480][vcodec^=avc][acodec^=mp4a]";
+    }
+  }
 
   try {
     const result = await executeYtDlp({
