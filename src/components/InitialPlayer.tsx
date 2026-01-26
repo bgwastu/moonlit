@@ -11,8 +11,11 @@ import {
   Center,
   Container,
   Flex,
+  Group,
   Image,
+  Modal,
   Progress,
+  Switch,
   Text,
   rem,
 } from "@mantine/core";
@@ -24,11 +27,13 @@ import { usePostHog } from "posthog-js/react";
 import { useState, useEffect, useRef } from "react";
 import Icon from "./Icon";
 import { Player } from "./Player";
+import { metadata } from "@/app/layout";
 
 interface InitialPlayerProps {
   youtubeId: string;
   isShorts: boolean;
   metadata: Partial<Song["metadata"]>;
+  duration?: number;
 }
 
 interface DownloadState {
@@ -50,6 +55,7 @@ async function downloadWithProgress(
   preload: Partial<Song["metadata"]>,
   onProgress: (state: DownloadState) => void,
   abortSignal?: AbortSignal,
+  videoMode?: boolean,
 ): Promise<Song> {
   const id = getYouTubeId(url);
 
@@ -116,7 +122,7 @@ async function downloadWithProgress(
     fetch("/api/yt/stream", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ url, cookies }),
+      body: JSON.stringify({ url, cookies, videoMode }),
       signal: controller.signal,
     })
       .then((response) => {
@@ -175,6 +181,15 @@ async function downloadWithProgress(
                       break;
 
                     case "complete":
+                      onProgress({
+                        status: "processing",
+                        percent: 100,
+                        message: "Finalizing download...",
+                      });
+
+                      // Yield to allow UI update
+                      await new Promise((resolve) => setTimeout(resolve, 100));
+
                       onProgress({ status: "complete", percent: 100 });
 
                       // Convert base64 back to blob
@@ -239,6 +254,7 @@ export default function InitialPlayer({
   youtubeId,
   isShorts,
   metadata,
+  duration,
 }: InitialPlayerProps) {
   const router = useRouter();
   const posthog = usePostHog();
@@ -251,28 +267,15 @@ export default function InitialPlayer({
     percent: 0,
   });
 
+  const [confirmationOpened, setConfirmationOpened] = useState(false);
+  const [includeVideo, setIncludeVideo] = useState(false);
+
   // Ref to prevent double-call in React Strict Mode
   const downloadStarted = useRef(false);
 
   const isLoading = !song;
 
-  useEffect(() => {
-    // Prevent double-call in dev mode (React Strict Mode)
-    if (downloadStarted.current) {
-      return;
-    }
-
-    if (!youtubeId) {
-      notifications.show({
-        title: "Error",
-        message: "No YouTube ID provided.",
-      });
-      router.push("/");
-      return;
-    }
-
-    downloadStarted.current = true;
-
+  const startDownload = (withVideo?: boolean) => {
     const pageType = isShorts ? "shorts_page" : "watch_page";
     posthog.capture(pageType, { youtubeId });
 
@@ -300,6 +303,7 @@ export default function InitialPlayer({
       metadata,
       setDownloadState,
       abortController.signal,
+      withVideo,
     )
       .then((downloadedSong: Song) => {
         (setSong as (song: Song | null) => void)(downloadedSong);
@@ -322,7 +326,48 @@ export default function InitialPlayer({
     return () => {
       abortController.abort();
     };
-  }, [youtubeId, isShorts, router, posthog, setSong, metadata]);
+  };
+
+  useEffect(() => {
+    // Prevent double-call in dev mode (React Strict Mode)
+    if (downloadStarted.current) {
+      return;
+    }
+
+    if (!youtubeId) {
+      notifications.show({
+        title: "Error",
+        message: "No YouTube ID provided.",
+      });
+      router.push("/");
+      return;
+    }
+
+    downloadStarted.current = true;
+
+    async function checkAndStart() {
+      // Check cache first
+      const videoKey = `yt:${youtubeId}:video`;
+      const audioKey = `yt:${youtubeId}:audio`;
+      const cachedVideo = await getMedia(videoKey);
+      const cachedAudio = await getMedia(audioKey);
+
+      if (cachedVideo || cachedAudio) {
+        // If cached, just proceed, downloadWithProgress will handle it fast
+        startDownload();
+        return;
+      }
+
+      // If not cached and duration > 600 (10 mins), ask permission
+      if (duration && duration > 600) {
+        setConfirmationOpened(true);
+      } else {
+        startDownload();
+      }
+    }
+
+    checkAndStart();
+  }, [youtubeId, isShorts, router, posthog, setSong, metadata, duration]);
 
   const handleGoToPlayer = () => {
     setIsPlayer(true);
@@ -371,6 +416,38 @@ export default function InitialPlayer({
 
   return (
     <Container size="xs">
+      <Modal
+        opened={confirmationOpened}
+        onClose={() => router.push("/")}
+        title="Big file detected"
+        centered
+      >
+        <Text size="sm" mb="md">
+          This video is longer than 10 minutes. Do you want to continue
+          downloading?
+        </Text>
+
+        <Switch
+          label="Include Video (Larger file size)"
+          checked={includeVideo}
+          onChange={(event) => setIncludeVideo(event.currentTarget.checked)}
+          mb="xl"
+        />
+
+        <Group position="right">
+          <Button variant="default" onClick={() => router.push("/")}>
+            Cancel
+          </Button>
+          <Button
+            onClick={() => {
+              setConfirmationOpened(false);
+              startDownload(includeVideo);
+            }}
+          >
+            Download
+          </Button>
+        </Group>
+      </Modal>
       <Flex
         h="100dvh"
         align="stretch"
@@ -378,7 +455,7 @@ export default function InitialPlayer({
         gap="md"
         direction="column"
       >
-        <Flex gap={6} align="center" mb="sm">
+        <Flex gap={12} align="center" mb="sm">
           <Icon size={18} />
           <Text
             fz={rem(20)}

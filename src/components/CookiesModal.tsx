@@ -122,13 +122,13 @@ export default function CookiesModal({ opened, onClose }: CookiesModalProps) {
         <Alert icon={<IconInfoCircle size={16} />} color="blue" variant="light">
           <Text size="sm">
             Cookies help bypass age restrictions and improve download
-            reliability. Export from your browser using{" "}
+            reliability. Export from your browser using the{" "}
             <Anchor
-              href="https://github.com/yt-dlp/yt-dlp/wiki/FAQ#how-do-i-pass-cookies-to-yt-dlp"
+              href="https://chromewebstore.google.com/detail/get-cookiestxt-locally/cclelndahbckbenkjhflpdbgdldlbecc"
               target="_blank"
               rel="noopener noreferrer"
             >
-              these instructions
+              Get cookies.txt LOCALLY extension
             </Anchor>
             .
           </Text>

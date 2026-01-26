@@ -10,7 +10,7 @@ export const maxDuration = 10000;
 export const dynamic = "force-dynamic";
 
 export async function POST(req: Request) {
-  const { url, cookies } = await req.json();
+  const { url, cookies, videoMode: requestedVideoMode } = await req.json();
 
   if (!isYoutubeURL(url)) {
     return new Response(
@@ -47,7 +47,12 @@ export async function POST(req: Request) {
           .replace(/VEVO$/i, "")
           .trim();
 
-        const videoMode = videoInfo.lengthSeconds < 600;
+        let videoMode: boolean;
+        if (typeof requestedVideoMode === "boolean") {
+          videoMode = requestedVideoMode;
+        } else {
+          videoMode = videoInfo.lengthSeconds < 600;
+        }
 
         // Send metadata
         send({
