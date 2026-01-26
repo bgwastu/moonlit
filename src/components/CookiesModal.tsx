@@ -93,13 +93,7 @@ export default function CookiesModal({ opened, onClose }: CookiesModalProps) {
   };
 
   return (
-    <Modal
-      opened={opened}
-      onClose={onClose}
-      title="YouTube Cookies"
-      size="lg"
-      centered
-    >
+    <Modal opened={opened} onClose={onClose} title="Cookies" size="lg" centered>
       <Stack spacing="md">
         {/* Privacy Notice */}
         <Alert icon={<IconShieldLock size={16} />} color="gray" variant="light">
@@ -121,8 +115,9 @@ export default function CookiesModal({ opened, onClose }: CookiesModalProps) {
         {/* Info about cookies */}
         <Alert icon={<IconInfoCircle size={16} />} color="blue" variant="light">
           <Text size="sm">
-            Cookies help bypass age restrictions and improve download
-            reliability. Export from your browser using the{" "}
+            Cookies help bypass age restrictions, avoid captchas, and improve
+            download reliability for YouTube and TikTok. Export from your
+            browser using the{" "}
             <Anchor
               href="https://chromewebstore.google.com/detail/get-cookiestxt-locally/cclelndahbckbenkjhflpdbgdldlbecc"
               target="_blank"
@@ -137,7 +132,7 @@ export default function CookiesModal({ opened, onClose }: CookiesModalProps) {
         {/* Custom Cookies Toggle */}
         <Switch
           label="Enable custom cookies"
-          description="Use your own cookies for YouTube downloads"
+          description="Use your own cookies for downloads"
           checked={customEnabled}
           onChange={(e) => setCustomEnabled(e.currentTarget.checked)}
           size="md"
@@ -177,7 +172,7 @@ export default function CookiesModal({ opened, onClose }: CookiesModalProps) {
             {!cookies.trim() && (
               <Text size="xs" color="orange">
                 Custom cookies enabled but no cookies provided. Downloads may
-                fail for age-restricted content.
+                fail for age-restricted content or encounter rate limits.
               </Text>
             )}
           </>
