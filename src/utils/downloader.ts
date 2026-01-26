@@ -245,7 +245,20 @@ export async function downloadWithProgress(
                       return;
                   }
                 } catch (e) {
-                  console.error("Failed to parse SSE message:", e);
+                  if (
+                    e instanceof Error &&
+                    (e.message.includes("Failed to retrieve") ||
+                      e.message.includes("No media data"))
+                  ) {
+                    reject(e);
+                    return;
+                  }
+                  console.error(
+                    "Failed to parse SSE message or process download:",
+                    e,
+                  );
+                  reject(e);
+                  return;
                 }
               }
             }
