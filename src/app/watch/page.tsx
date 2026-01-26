@@ -13,7 +13,7 @@ type Props = {
 
 async function fetchVideoDetails(id: string) {
   const response = await fetch(
-    `${YOUTUBE_API_URL}?id=${id}&part=snippet&key=${YOUTUBE_API_KEY}`
+    `${YOUTUBE_API_URL}?id=${id}&part=snippet&key=${YOUTUBE_API_KEY}`,
   );
   const data = await response.json();
   if (!response.ok || !data.items || data.items.length === 0) {
@@ -34,13 +34,25 @@ export async function generateMetadata({
   const videoDetails = await fetchVideoDetails(id);
   const title = `${videoDetails.title} - Moonlit`;
   const description = `Listen to "${videoDetails.title}" by ${videoDetails.channelTitle} with customizable slowed and nightcore effects on Moonlit.`;
-  const imageUrl = `https://i.ytimg.com/vi/${id}/maxresdefault.jpg`;
+  const imageUrl = `https://moonlit.wastu.net/api/og?title=${encodeURIComponent(
+    videoDetails.title,
+  )}&cover=${encodeURIComponent(
+    videoDetails.thumbnails.maxres?.url ||
+      videoDetails.thumbnails.high?.url ||
+      videoDetails.thumbnails.default.url,
+  )}`;
   const url = `https://moonlit.wastu.net/watch?v=${id}`;
 
   return {
     title,
     description,
-    keywords: ["slowed music", "nightcore", videoDetails.title, videoDetails.channelTitle, "youtube player"],
+    keywords: [
+      "slowed music",
+      "nightcore",
+      videoDetails.title,
+      videoDetails.channelTitle,
+      "youtube player",
+    ],
     authors: [{ name: "Moonlit" }],
     creator: "Moonlit",
     publisher: "Moonlit",
@@ -64,8 +76,6 @@ export async function generateMetadata({
       card: "summary_large_image",
       title,
       description,
-      creator: "@moonlitapp",
-      site: "@moonlitapp",
       images: [imageUrl],
     },
     robots: {
