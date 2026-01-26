@@ -1,11 +1,10 @@
 "use client";
 
 import useNoSleep from "@/hooks/useNoSleep";
+import { useMediaDownloader } from "@/hooks/useMediaDownloader";
 import { Song } from "@/interfaces";
-import { getCookiesToUse } from "@/lib/cookies";
 import { songAtom } from "@/state";
-import { getYouTubeId, isSupportedURL } from "@/utils";
-import { getMedia, getMeta, setMedia, setMeta } from "@/utils/cache";
+import { getMedia } from "@/utils/cache";
 import {
   Button,
   Center,
@@ -25,7 +24,7 @@ import { IconMusic } from "@tabler/icons-react";
 import { useAtom } from "jotai";
 import { useRouter } from "next/navigation";
 import { usePostHog } from "posthog-js/react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Icon from "./Icon";
 import { Player } from "./Player";
 
@@ -34,243 +33,6 @@ interface InitialPlayerProps {
   isShorts: boolean;
   metadata: Partial<Song["metadata"]>;
   duration?: number;
-}
-
-interface DownloadState {
-  status:
-    | "idle"
-    | "fetching"
-    | "downloading"
-    | "processing"
-    | "complete"
-    | "error";
-  percent: number;
-  speed?: string;
-  eta?: string;
-  message?: string;
-}
-
-async function downloadWithProgress(
-  url: string,
-  preload: Partial<Song["metadata"]>,
-  onProgress: (state: DownloadState) => void,
-  abortSignal?: AbortSignal,
-  videoMode?: boolean,
-  quality?: "high" | "low",
-): Promise<Song> {
-  const id = getYouTubeId(url);
-
-  // Check cache first
-  if (id) {
-    const videoKey = `yt:${id}:video`;
-    const audioKey = `yt:${id}:audio`;
-    const cachedVideo = await getMedia(videoKey);
-    if (cachedVideo) {
-      const storedMeta = await getMeta<Partial<Song["metadata"]>>(`yt:${id}`);
-      const blobUrl = URL.createObjectURL(cachedVideo);
-      onProgress({ status: "complete", percent: 100 });
-      return {
-        fileUrl: blobUrl,
-        videoUrl: blobUrl,
-        metadata: {
-          id,
-          title: "Loading...",
-          author: "Loading...",
-          coverUrl: "",
-          platform: "youtube",
-          ...(storedMeta || {}),
-          ...(preload || {}),
-        },
-      };
-    }
-    const cachedAudio = await getMedia(audioKey);
-    if (cachedAudio) {
-      const storedMeta = await getMeta<Partial<Song["metadata"]>>(`yt:${id}`);
-      const audioUrl = URL.createObjectURL(cachedAudio);
-      onProgress({ status: "complete", percent: 100 });
-      return {
-        fileUrl: audioUrl,
-        metadata: {
-          id,
-          title: "Loading...",
-          author: "Loading...",
-          coverUrl: "",
-          platform: "youtube",
-          ...(storedMeta || {}),
-          ...(preload || {}),
-        },
-      };
-    }
-  }
-
-  onProgress({
-    status: "fetching",
-    percent: 0,
-    message: "Fetching video info...",
-  });
-
-  // Get cookies based on user preference
-  const { cookies } = await getCookiesToUse();
-
-  return new Promise((resolve, reject) => {
-    const controller = new AbortController();
-
-    // Link external abort signal if provided
-    if (abortSignal) {
-      abortSignal.addEventListener("abort", () => controller.abort());
-    }
-
-    fetch("/api/yt/stream", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ url, cookies, videoMode, quality }),
-      signal: controller.signal,
-    })
-      .then((response) => {
-        if (!response.ok) {
-          throw new Error("Failed to start download");
-        }
-
-        const reader = response.body?.getReader();
-        if (!reader) {
-          throw new Error("No response body");
-        }
-
-        const decoder = new TextDecoder();
-        let buffer = "";
-
-        const processStream = async () => {
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-
-            buffer += decoder.decode(value, { stream: true });
-
-            // Process complete SSE messages
-            const lines = buffer.split("\n\n");
-            buffer = lines.pop() || "";
-
-            for (const line of lines) {
-              if (line.startsWith("data: ")) {
-                try {
-                  const data = JSON.parse(line.slice(6));
-
-                  switch (data.type) {
-                    case "status":
-                      onProgress({
-                        status: "fetching",
-                        percent: 0,
-                        message: data.message,
-                      });
-                      break;
-
-                    case "metadata":
-                      // Update metadata but keep downloading
-                      break;
-
-                    case "progress":
-                      onProgress({
-                        status:
-                          data.status === "processing"
-                            ? "processing"
-                            : "downloading",
-                        percent: data.percent || 0,
-                        speed: data.speed,
-                        eta: data.eta,
-                        message: data.message,
-                      });
-                      break;
-
-                    case "complete":
-                      onProgress({
-                        status: "processing",
-                        percent: 100,
-                        message: "Finalizing download...",
-                      });
-
-                      // Yield to allow UI update
-                      await new Promise((resolve) => setTimeout(resolve, 100));
-
-                      onProgress({ status: "complete", percent: 100 });
-
-                      let blob: Blob;
-
-                      if (data.downloadUrl) {
-                        onProgress({
-                          status: "processing",
-                          percent: 100,
-                          message: "Downloading media file...",
-                        });
-
-                        const res = await fetch(data.downloadUrl);
-                        if (!res.ok)
-                          throw new Error("Failed to retrieve media file");
-                        blob = await res.blob();
-
-                        // Set correct type if provided
-                        if (data.contentType) {
-                          blob = new Blob([blob], { type: data.contentType });
-                        }
-                      } else if (data.data) {
-                        // Legacy base64 support
-                        const binaryString = atob(data.data);
-                        const bytes = new Uint8Array(binaryString.length);
-                        for (let i = 0; i < binaryString.length; i++) {
-                          bytes[i] = binaryString.charCodeAt(i);
-                        }
-                        blob = new Blob([bytes], {
-                          type: data.contentType,
-                        });
-                      } else {
-                        throw new Error("No media data received");
-                      }
-                      const blobUrl = URL.createObjectURL(blob);
-
-                      const metadata = {
-                        id: getYouTubeId(url),
-                        title: data.title,
-                        author: data.author,
-                        coverUrl: data.thumbnail,
-                        platform: "youtube" as const,
-                      };
-
-                      // Cache the media
-                      if (metadata.id) {
-                        const cacheKey = data.videoMode
-                          ? `yt:${metadata.id}:video`
-                          : `yt:${metadata.id}:audio`;
-                        setMedia(cacheKey, blob).catch(() => {});
-                        setMeta(`yt:${metadata.id}`, metadata).catch(() => {});
-                      }
-
-                      resolve({
-                        fileUrl: blobUrl,
-                        videoUrl: data.videoMode ? blobUrl : undefined,
-                        metadata,
-                      });
-                      return;
-
-                    case "error":
-                      reject(new Error(data.message));
-                      return;
-                  }
-                } catch (e) {
-                  console.error("Failed to parse SSE message:", e);
-                }
-              }
-            }
-          }
-        };
-
-        processStream().catch(reject);
-      })
-      .catch((err) => {
-        if (err.name === "AbortError") {
-          return; // Ignore abort errors
-        }
-        reject(err);
-      });
-  });
 }
 
 export default function InitialPlayer({
@@ -282,13 +44,15 @@ export default function InitialPlayer({
   const router = useRouter();
   const posthog = usePostHog();
 
-  const [song, setSong] = useAtom(songAtom);
+  const [song] = useAtom(songAtom);
   const [isPlayer, setIsPlayer] = useState(false);
   const [noSleepEnabled, setNoSleepEnabled] = useNoSleep();
-  const [downloadState, setDownloadState] = useState<DownloadState>({
-    status: "idle",
-    percent: 0,
-  });
+
+  const { downloadState, startDownload } = useMediaDownloader(
+    youtubeId,
+    isShorts,
+    metadata,
+  );
 
   const [confirmationOpened, setConfirmationOpened] = useState(false);
   const [includeVideo, setIncludeVideo] = useState(false);
@@ -298,63 +62,6 @@ export default function InitialPlayer({
   const downloadStarted = useRef(false);
 
   const isLoading = !song;
-
-  const startDownload = useCallback(
-    (withVideo?: boolean, downloadQuality: "high" | "low" = "high") => {
-      const pageType = isShorts ? "shorts_page" : "watch_page";
-      posthog.capture(pageType, { youtubeId });
-
-      const url = isShorts
-        ? `https://youtube.com/shorts/${youtubeId}`
-        : `https://youtube.com/watch?v=${youtubeId}`;
-
-      if (!isSupportedURL(url)) {
-        notifications.show({
-          title: "Error",
-          message: "Invalid URL generated.",
-        });
-        router.push("/");
-        return;
-      }
-
-      (setSong as (song: Song | null) => void)(null);
-      setIsPlayer(false);
-      setDownloadState({ status: "idle", percent: 0 });
-
-      const abortController = new AbortController();
-
-      downloadWithProgress(
-        url,
-        metadata,
-        setDownloadState,
-        abortController.signal,
-        withVideo,
-        downloadQuality,
-      )
-        .then((downloadedSong: Song) => {
-          (setSong as (song: Song | null) => void)(downloadedSong);
-        })
-        .catch((e) => {
-          if (e.name === "AbortError") return;
-          console.error(`${pageType}: Download error:`, e);
-          setDownloadState({
-            status: "error",
-            percent: 0,
-            message: e.message,
-          });
-          notifications.show({
-            title: "Download error",
-            message: e.message || "Could not process the video.",
-          });
-          router.push("/");
-        });
-
-      return () => {
-        abortController.abort();
-      };
-    },
-    [isShorts, youtubeId, router, posthog, setSong, metadata],
-  );
 
   useEffect(() => {
     // Prevent double-call in dev mode (React Strict Mode)
@@ -395,16 +102,7 @@ export default function InitialPlayer({
     }
 
     checkAndStart();
-  }, [
-    youtubeId,
-    isShorts,
-    router,
-    posthog,
-    setSong,
-    metadata,
-    duration,
-    startDownload,
-  ]);
+  }, [youtubeId, duration, router, startDownload]);
 
   const handleGoToPlayer = () => {
     setIsPlayer(true);
