@@ -16,3 +16,5 @@ export interface PlaybackSettings {
   reverbDecay: number;
   reverbPreDelay: number;
 }
+
+export type PlaybackMode = "slowed" | "normal" | "speedup" | "custom";

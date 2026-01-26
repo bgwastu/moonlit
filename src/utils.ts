@@ -36,19 +36,16 @@ export function getTikTokCreator(url: string) {
   return match ? match[2] : null;
 }
 
-export function getTikTokCreatorAndVideoId(url: string): { creator: string | null, videoId: string | null } {
-  const tiktokRegex = /^https?:\/\/(www\.)?tiktok\.com\/@([\w.-]+)\/video\/(\d+)/;
+export function getTikTokCreatorAndVideoId(url: string): {
+  creator: string | null;
+  videoId: string | null;
+} {
+  const tiktokRegex =
+    /^https?:\/\/(www\.)?tiktok\.com\/@([\w.-]+)\/video\/(\d+)/;
   const match = url.match(tiktokRegex);
-  return match ? { creator: match[2], videoId: match[3] } : { creator: null, videoId: null };
-}
-
-export function isJSONString(str: string) {
-  try {
-    JSON.parse(str);
-  } catch (e) {
-    return false;
-  }
-  return true;
+  return match
+    ? { creator: match[2], videoId: match[3] }
+    : { creator: null, videoId: null };
 }
 
 export function getFormattedTime(seconds: number) {
@@ -61,44 +58,13 @@ export function getFormattedTime(seconds: number) {
   return `${formattedMinutes}:${formattedSeconds}`;
 }
 
-export function getDominantColorFromImage(
-  img: HTMLImageElement,
-  palenessFactor: number = 0.8,
-) {
-  const canvas = document.createElement("canvas");
-  const ctx = canvas.getContext("2d");
-  ctx.drawImage(img, 0, 0);
-  const imageData = ctx.getImageData(0, 0, img.width, img.height);
-  const data = imageData.data;
-  let r = 0;
-  let g = 0;
-  let b = 0;
-  let count = 0;
-
-  for (let i = 0; i < data.length; i += 4) {
-    if (data[i + 3] <= 0) {
-      continue;
-    }
-    r += data[i];
-    g += data[i + 1];
-    b += data[i + 2];
-    count++;
-  }
-
-  r = Math.floor((r / count) * palenessFactor);
-  g = Math.floor((g / count) * palenessFactor);
-  b = Math.floor((b / count) * palenessFactor);
-
-  return `rgb(${r}, ${g}, ${b})`;
-}
-
 export function parseISO8601Duration(duration: string): number {
   const match = duration.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
   if (!match) return 0;
-  
+
   const hours = parseInt(match[1] || "0");
   const minutes = parseInt(match[2] || "0");
   const seconds = parseInt(match[3] || "0");
-  
+
   return hours * 3600 + minutes * 60 + seconds;
 }

@@ -1,8 +1,8 @@
 import LoadingOverlay from "@/components/LoadingOverlay";
-import useNoSleep from "@/hooks/useNoSleep";
 import { useAudioContext } from "@/hooks/useAudioContext";
-import { Song } from "@/interfaces";
-import { getFormattedTime, getSongLength } from "@/utils";
+import { useVideoPlayer } from "@/hooks/useVideoPlayer";
+import { PlaybackMode, Song } from "@/interfaces";
+import { getFormattedTime } from "@/utils";
 import {
   ActionIcon,
   Box,
@@ -21,14 +21,7 @@ import {
   TextInput,
   useMantineTheme,
 } from "@mantine/core";
-import {
-  useDisclosure,
-  useDocumentTitle,
-  useHotkeys,
-  useOs,
-  useShallowEffect,
-} from "@mantine/hooks";
-import { notifications } from "@mantine/notifications";
+import { useDisclosure, useDocumentTitle, useHotkeys } from "@mantine/hooks";
 import {
   IconAdjustments,
   IconBrandTiktok,
@@ -51,15 +44,13 @@ import {
   IconRotate,
   IconShare,
 } from "@tabler/icons-react";
-import DownloadModal from "./DownloadModal";
-import CookiesModal from "./CookiesModal";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useQueryState } from "nuqs";
 import { useEffect, useRef, useState } from "react";
+import CookiesModal from "./CookiesModal";
+import DownloadModal from "./DownloadModal";
 import { IconPause } from "./IconPause";
-
-type PlaybackMode = "slowed" | "normal" | "speedup" | "custom";
 
 export function Player({
   song,
@@ -68,43 +59,63 @@ export function Player({
   song: Song;
   repeating: boolean;
 }) {
-  const router = useRouter();
-  const [isVideoReady, setIsVideoReady] = useState(false);
-  const [videoElement, setVideoElement] = useState<HTMLVideoElement | null>(
-    null,
-  );
+  const theme = useMantineTheme();
+  // Playback State
   const [playbackMode, setPlaybackMode] = useState<PlaybackMode>("normal");
   const [customPlaybackRate, setCustomPlaybackRate] = useState(1);
-  const [, forceUpdate] = useState(0);
-  const [isSeeking, setIsSeeking] = useState(false);
-  const [seekPosition, setSeekPosition] = useState(0);
 
-  const videoRef = useRef<HTMLVideoElement>(null);
+  // URL Query State
+  const [mode, setMode] = useQueryState("mode");
+  const [rate, setRate] = useQueryState("rate");
+  const [startAt] = useQueryState("startAt");
+
+  // Load initial settings
+  useEffect(() => {
+    if (mode && ["slowed", "normal", "speedup", "custom"].includes(mode)) {
+      setPlaybackMode(mode as PlaybackMode);
+    }
+    if (mode === "custom") {
+      const savedRate = localStorage.getItem("custom-playback-rate");
+      const parsedRate = savedRate
+        ? JSON.parse(savedRate)
+        : parseFloat(rate || "1") || 1;
+      setCustomPlaybackRate(parsedRate);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const {
+    videoRef,
+    videoElement,
+    isVideoReady,
+    isPlaying,
+    isFinished,
+    isRepeat,
+    currentPlayback,
+    displayPosition,
+    songLength,
+    isSeeking,
+    togglePlayer,
+    setPlaybackPosition,
+    handleSliderChange,
+    backward,
+    forward,
+    toggleLoop,
+    onTimeUpdate,
+    onError,
+  } = useVideoPlayer({
+    song,
+    repeating,
+    playbackMode,
+    customPlaybackRate,
+    startAt: startAt ? parseInt(startAt) : 0,
+  });
 
   const { setReverbAmount, reverbAmount, isSafari } =
     useAudioContext(videoElement);
 
   useDocumentTitle(`${song.metadata.title} - Moonlit`);
 
-  // Computed values instead of state
-  const currentPlayback = videoElement
-    ? Math.floor(videoElement.currentTime / videoElement.playbackRate)
-    : 0;
-
-  // Use seeking position when dragging, otherwise use actual video position
-  const displayPosition = isSeeking ? seekPosition : currentPlayback;
-
-  const isPlaying = videoElement ? !videoElement.paused : false;
-  const isFinished = videoElement ? videoElement.ended : false;
-  const isRepeat = videoElement ? videoElement.loop : repeating;
-
-  const songLength =
-    videoElement && videoElement.duration && !isNaN(videoElement.duration)
-      ? getSongLength(videoElement.duration, videoElement.playbackRate) // Adjust for playback rate
-      : 0;
-
-  const theme = useMantineTheme();
-  const [, setNoSleepEnabled] = useNoSleep();
   const [modalOpened, { open: openModal, close: closeModal }] =
     useDisclosure(false);
   const [shareModalOpened, { open: openShareModal, close: closeShareModal }] =
@@ -117,51 +128,30 @@ export function Player({
     downloadModalOpened,
     { open: openDownloadModal, close: closeDownloadModal },
   ] = useDisclosure(false);
+
   const [shareStartTime, setShareStartTime] = useState(0);
 
-  // Function to get the original platform URL
-  const getOriginalPlatformUrl = () => {
-    if (song.metadata.platform === "youtube" && song.metadata.id) {
-      return `https://www.youtube.com/watch?v=${song.metadata.id}`;
-    }
-    if (song.metadata.platform === "tiktok" && song.metadata.id) {
-      // For TikTok, we need to reconstruct the URL from the current browser URL
-      // since we have creator in the route params
-      const currentUrl = window.location.pathname;
-      const match = currentUrl.match(/\/(@[^/]+)\/video\/(\d+)/);
-      if (match) {
-        const [, creator, videoId] = match;
-        return `https://www.tiktok.com/${creator}/video/${videoId}`;
-      }
-    }
-    return null;
-  };
-
-  // Function to generate share URL with specified start time
-  const getShareUrl = (startTime: number) => {
-    const baseUrl = window.location.origin + window.location.pathname;
-    const params = new URLSearchParams(window.location.search);
-
-    // Add specified start time as startAt parameter
-    params.set("startAt", Math.floor(startTime).toString());
-
-    // Keep existing mode and rate parameters
-    if (playbackMode !== "normal") {
-      params.set("mode", playbackMode);
-    }
+  // Sync state to URL
+  useEffect(() => {
+    setMode(playbackMode === "normal" ? null : playbackMode);
     if (playbackMode === "custom") {
-      params.set("rate", customPlaybackRate.toString());
+      setRate(customPlaybackRate + "");
+    } else {
+      setRate(null);
     }
+  }, [playbackMode, customPlaybackRate, setMode, setRate]);
 
-    return `${baseUrl}?${params.toString()}`;
-  };
+  // Save custom rate
+  useEffect(() => {
+    if (playbackMode === "custom") {
+      localStorage.setItem(
+        "custom-playback-rate",
+        JSON.stringify(customPlaybackRate),
+      );
+    }
+  }, [customPlaybackRate, playbackMode]);
 
-  // Function to open share modal with current time
-  const handleOpenShareModal = () => {
-    setShareStartTime(Math.floor(currentPlayback));
-    openShareModal();
-  };
-
+  // Toast Logic
   const [toast, setToast] = useState<{ message: string; visible: boolean }>({
     message: "",
     visible: false,
@@ -183,20 +173,14 @@ export function Player({
       else if (playbackMode === "slowed") currentRate = 0.8;
       else if (playbackMode === "speedup") currentRate = 1.25;
     }
-
-    // Calculate new rate
-    let newRate = currentRate + delta;
-    // Round to 2 decimal places to avoid floating point artifacts
-    newRate = Math.round(newRate * 100) / 100;
-
-    // Clamp to reasonable bounds
+    let newRate = Math.round((currentRate + delta) * 100) / 100;
     if (newRate < 0.1) newRate = 0.1;
-
     setCustomPlaybackRate(newRate);
     setPlaybackMode("custom");
     showToast(`${newRate}x`);
   };
 
+  // Hotkeys
   useHotkeys([
     ["ArrowLeft", () => backward()],
     ["ArrowRight", () => forward()],
@@ -261,285 +245,35 @@ export function Player({
     ["shift+>", () => adjustCustomSpeed(0.05)],
   ]);
 
-  // Apply playback mode changes
-  useEffect(() => {
-    if (!videoElement) return;
-
-    let playbackRate: number = 1;
-
-    if (playbackMode === "normal") {
-      playbackRate = 1;
-    } else if (playbackMode === "slowed") {
-      playbackRate = 0.8;
-    } else if (playbackMode === "speedup") {
-      playbackRate = 1.25;
-    } else if (playbackMode === "custom") {
-      playbackRate = customPlaybackRate;
+  const getOriginalPlatformUrl = () => {
+    if (song.metadata.platform === "youtube" && song.metadata.id) {
+      return `https://www.youtube.com/watch?v=${song.metadata.id}`;
     }
-
-    // Skip if rate is already correct
-    if (Math.abs(videoElement.playbackRate - playbackRate) < 0.01) return;
-
-    // Apply the playback rate
-    videoElement.playbackRate = playbackRate;
-  }, [playbackMode, customPlaybackRate, videoElement]);
-
-  // Save custom playback rate to localStorage
-  useEffect(() => {
-    if (playbackMode === "custom") {
-      localStorage.setItem(
-        "custom-playback-rate",
-        JSON.stringify(customPlaybackRate),
-      );
-    }
-  }, [customPlaybackRate, playbackMode]);
-
-  const [mode, setMode] = useQueryState("mode");
-  const [rate, setRate] = useQueryState("rate");
-  const [startAt] = useQueryState("startAt");
-
-  useEffect(
-    function syncPlaybackSettingToQuery() {
-      setMode(playbackMode === "normal" ? null : playbackMode);
-
-      if (playbackMode === "custom") {
-        setRate(customPlaybackRate + "");
-      } else {
-        setRate(null);
+    if (song.metadata.platform === "tiktok" && song.metadata.id) {
+      const currentUrl = window.location.pathname;
+      const match = currentUrl.match(/\/(@[^/]+)\/video\/(\d+)/);
+      if (match) {
+        const [, creator, videoId] = match;
+        return `https://www.tiktok.com/${creator}/video/${videoId}`;
       }
-    },
-    [playbackMode, customPlaybackRate, setMode, setRate],
-  );
-
-  useShallowEffect(
-    function initial() {
-      let isMounted = true;
-
-      async function setupVideo() {
-        try {
-          const video = videoRef.current;
-          if (!video || !isMounted) return;
-
-          // Check if already initialized to prevent double setup in React Strict Mode
-          if (
-            videoElement &&
-            videoElement === video &&
-            video.src === song.fileUrl
-          ) {
-            console.log(
-              "Video already initialized for this song, skipping setup",
-            );
-            return;
-          }
-
-          console.log("Setting up new video:", song.fileUrl);
-          setVideoElement(video);
-
-          // Set preservesPitch property for TikTok-style speed effects
-          (video as any).preservesPitch = false;
-          (video as any).mozPreservesPitch = false; // Firefox
-          (video as any).webkitPreservesPitch = false; // Safari
-
-          // Set the video source
-          video.src = song.fileUrl;
-          video.load(); // Force reload
-
-          // Wait for video to load
-          await new Promise((resolve, reject) => {
-            const onCanPlay = () => {
-              video.removeEventListener("canplay", onCanPlay);
-              video.removeEventListener("error", onError);
-              resolve(undefined);
-            };
-
-            const onError = (e: Event) => {
-              video.removeEventListener("canplay", onCanPlay);
-              video.removeEventListener("error", onError);
-              reject(e);
-            };
-
-            if (video.readyState >= 3) {
-              resolve(undefined);
-            } else {
-              video.addEventListener("canplay", onCanPlay);
-              video.addEventListener("error", onError);
-            }
-          });
-
-          // Set playback mode from query parameters
-          if (
-            !["slowed", "normal", "speedup", "custom"].includes(mode as string)
-          ) {
-            setPlaybackMode("normal");
-          } else {
-            setPlaybackMode(mode as PlaybackMode);
-            if (mode === "custom") {
-              const savedRate = localStorage.getItem("custom-playback-rate");
-              const parsedRate = savedRate
-                ? JSON.parse(savedRate)
-                : parseFloat(rate as string) || 1;
-              setCustomPlaybackRate(parsedRate);
-            }
-          }
-
-          // Initialize video state
-          const startTime = startAt ? parseInt(startAt) : 0;
-          video.currentTime = startTime * (video.playbackRate || 1); // Adjust for playback rate
-          video.loop = repeating; // Set initial loop state
-          setIsVideoReady(true);
-
-          console.log("Video setup completed");
-        } catch (e) {
-          console.error("Video setup failed:", e);
-          notifications.show({
-            title: "Error",
-            message: "An error occurred while loading the video",
-          });
-          router.push("/");
-        }
-      }
-
-      setupVideo();
-
-      return () => {
-        isMounted = false;
-      };
-    },
-    [song.fileUrl],
-  ); // Add song.fileUrl as dependency to re-run when song changes
-
-  useShallowEffect(() => {
-    window.onbeforeunload = () => {
-      return "Are you sure?";
-    };
-
-    return () => {
-      console.log("Player cleanup started");
-      setPlaybackMode("normal");
-
-      if (videoElement) {
-        console.log("Cleaning up video element");
-        videoElement.pause();
-        videoElement.removeAttribute("src");
-        videoElement.load(); // Force cleanup of video resources
-      }
-
-      window.onbeforeunload = null;
-      setVideoElement(null);
-      setIsVideoReady(false);
-
-      console.log("Player cleanup completed");
-    };
-  }, []);
-
-  // Handle video ended event for non-looping videos
-  useEffect(() => {
-    if (!videoElement) return;
-
-    const handleEnded = () => {
-      if (!videoElement.loop) {
-        setNoSleepEnabled(false);
-      }
-    };
-
-    videoElement.addEventListener("ended", handleEnded);
-    return () => videoElement.removeEventListener("ended", handleEnded);
-  }, [videoElement, setNoSleepEnabled]);
-
-  // Note: Once Web Audio API creates a MediaElementSource, the video element's
-  // audio is permanently routed through the Web Audio graph automatically.
-  // No need to manage muted state - the browser handles this for us.
-
-  function togglePlayer() {
-    if (!videoElement) {
-      console.warn("No video element available");
-      return;
     }
+    return null;
+  };
 
-    console.log(
-      "Toggle player - current state:",
-      isPlaying ? "playing" : "paused",
-      "video paused:",
-      videoElement.paused,
-    );
+  const getShareUrl = (startTime: number) => {
+    const baseUrl = window.location.origin + window.location.pathname;
+    const params = new URLSearchParams(window.location.search);
+    params.set("startAt", Math.floor(startTime).toString());
+    if (playbackMode !== "normal") params.set("mode", playbackMode);
+    if (playbackMode === "custom")
+      params.set("rate", customPlaybackRate.toString());
+    return `${baseUrl}?${params.toString()}`;
+  };
 
-    if (isPlaying) {
-      console.log("Pausing video");
-      videoElement.pause();
-      setNoSleepEnabled(false);
-    } else {
-      console.log("Starting video playback");
-
-      // Set current time if needed
-      if (isFinished) {
-        videoElement.currentTime = 0;
-      }
-
-      videoElement
-        .play()
-        .then(() => {
-          console.log("Video play succeeded");
-          setNoSleepEnabled(true);
-        })
-        .catch((error) => {
-          console.error("Video play failed:", error);
-        });
-    }
-  }
-
-  function setPlaybackPosition(value: number) {
-    if (!videoElement) {
-      console.warn("No video element for seek");
-      return;
-    }
-
-    console.log("Setting playback position to adjusted time:", value);
-
-    // Update seek position for smooth UI
-    setSeekPosition(value);
-    setIsSeeking(false); // End seeking state
-
-    // Convert adjusted time back to video time
-    // If adjustedTime = videoTime/playbackRate, then videoTime = adjustedTime * playbackRate
-    const videoTime = value * videoElement.playbackRate;
-    videoElement.currentTime = videoTime;
-
-    // If we were playing, continue playing after seek
-    if (isPlaying) {
-      videoElement
-        .play()
-        .then(() => {
-          console.log("Video resumed after seek");
-        })
-        .catch((e) => {
-          console.error("Failed to resume video after seek:", e);
-        });
-    }
-  }
-
-  function handleSliderChange(value: number) {
-    // Update seek position immediately for smooth UI
-    setSeekPosition(value);
-    setIsSeeking(true);
-  }
-
-  function backward() {
-    const currentPos = isSeeking ? seekPosition : currentPlayback;
-    if (currentPos < 5) {
-      setPlaybackPosition(0);
-      return;
-    }
-    setPlaybackPosition(currentPos - 5);
-  }
-
-  function forward() {
-    const currentPos = isSeeking ? seekPosition : currentPlayback;
-    if (currentPos >= songLength - 5) {
-      setPlaybackPosition(songLength);
-      return;
-    }
-    setPlaybackPosition(currentPos + 5);
-  }
+  const handleOpenShareModal = () => {
+    setShareStartTime(Math.floor(currentPlayback));
+    openShareModal();
+  };
 
   return (
     <>
@@ -547,6 +281,8 @@ export function Player({
         visible={!isVideoReady || !videoElement}
         message="Loading video..."
       />
+
+      {/* Modals */}
       <Modal
         opened={modalOpened}
         onClose={closeModal}
@@ -567,10 +303,7 @@ export function Player({
                 { value: 1, label: "Normal" },
                 { value: 1.25, label: "Speed Up" },
               ]}
-              label={(v) => {
-                if (v < 0.7) return `who hurt u? 😭`;
-                return `${v}x`;
-              }}
+              label={(v) => (v < 0.7 ? `who hurt u? 😭` : `${v}x`)}
               value={customPlaybackRate}
               onChange={setCustomPlaybackRate}
             />
@@ -667,12 +400,8 @@ export function Player({
 
       <CookiesModal opened={cookiesModalOpened} onClose={closeCookiesModal} />
 
-      <Box
-        style={{
-          position: "relative",
-          height: "100dvh",
-        }}
-      >
+      <Box style={{ position: "relative", height: "100dvh" }}>
+        {/* Top Controls */}
         <Flex
           style={{
             position: "absolute",
@@ -696,9 +425,7 @@ export function Player({
               tabIndex={-1}
               bg={theme.colors.dark[6]}
               color="brand"
-              style={{
-                boxShadow: "0px 0px 0px 1px #383A3F",
-              }}
+              style={{ boxShadow: "0px 0px 0px 1px #383A3F" }}
               size="sm"
               onChange={(value) => setPlaybackMode(value as PlaybackMode)}
               value={playbackMode}
@@ -725,6 +452,7 @@ export function Player({
           </Flex>
         </Flex>
 
+        {/* Toast */}
         {toast.visible && (
           <Box
             style={{
@@ -756,43 +484,35 @@ export function Player({
             zIndex: 1,
             width: "90%",
             maxWidth: "600px",
-            height: "60vh", // Fixed height constraint
+            height: "60vh",
             maxHeight: "60vh",
-            backgroundColor: "rgba(0,0,0,0.1)", // Debug background to see if box is there
+            backgroundColor: "rgba(0,0,0,0.1)",
           }}
         >
           <video
             ref={videoRef}
-            key={song.fileUrl} // Force re-render when song changes
+            key={song.fileUrl}
             style={{
               width: "100%",
-              height: "100%", // Fill container height
+              height: "100%",
               borderRadius: "8px",
-              objectFit: "contain", // Maintain aspect ratio within bounds
+              objectFit: "contain",
               display: "block",
-              cursor: "pointer", // Show pointer cursor to indicate clickability
+              cursor: "pointer",
             }}
             playsInline
-            controls={false} // Make sure no native controls interfere
+            controls={false}
             preload="metadata"
-            autoPlay // Allow autoplay since user clicked Play button
-            muted={false} // Not muted - let video play audio directly for now
+            autoPlay
+            muted={false}
             crossOrigin="anonymous"
-            onClick={togglePlayer} // Toggle play/pause when video is clicked
-            onTimeUpdate={() => {
-              // Force re-render when video time updates
-              forceUpdate((prev) => prev + 1);
-            }}
-            onError={(e) => {
-              console.error("Video error:", e);
-              notifications.show({
-                title: "Video Error",
-                message: "Failed to load video",
-              });
-            }}
+            onClick={togglePlayer}
+            onTimeUpdate={onTimeUpdate}
+            onError={onError}
           />
         </Box>
 
+        {/* Bottom Controls */}
         <Box
           style={{
             position: "absolute",
@@ -813,9 +533,9 @@ export function Player({
                   backgroundColor: theme.colors.dark[6],
                   borderRadius: theme.radius.sm,
                 }}
-              >{`${getFormattedTime(displayPosition)} / ${getFormattedTime(
-                songLength,
-              )}`}</Text>
+              >
+                {`${getFormattedTime(displayPosition)} / ${getFormattedTime(songLength)}`}
+              </Text>
             </MediaQuery>
             <Menu shadow="md" width={200} position="top-end">
               <Menu.Target>
@@ -823,7 +543,6 @@ export function Player({
                   Menu
                 </Button>
               </Menu.Target>
-
               <Menu.Dropdown>
                 <Menu.Label>Navigation</Menu.Label>
                 <Menu.Item
@@ -896,6 +615,7 @@ export function Player({
               </Menu.Dropdown>
             </Menu>
           </Flex>
+
           <Slider
             value={displayPosition}
             onChange={handleSliderChange}
@@ -907,20 +627,14 @@ export function Player({
             showLabelOnHover={false}
             size="sm"
             pr={0.3}
-            styles={{
-              thumb: {
-                borderWidth: isSeeking ? 3 : 0,
-              },
-            }}
+            styles={{ thumb: { borderWidth: isSeeking ? 3 : 0 } }}
             thumbSize={isSeeking ? 25 : 15}
-            label={(v) => {
-              if (displayPosition >= songLength - 5) {
-                return null;
-              }
-              return getFormattedTime(v);
-            }}
+            label={(v) =>
+              displayPosition >= songLength - 5 ? null : getFormattedTime(v)
+            }
             max={songLength}
           />
+
           <Box style={{ backgroundColor: theme.colors.dark[6] }}>
             <Flex gap="sm" px="sm" py="md" justify="space-between">
               <Flex align="center">
@@ -945,12 +659,7 @@ export function Player({
                 </ActionIcon>
                 <ActionIcon
                   size="lg"
-                  onClick={() => {
-                    if (videoElement) {
-                      videoElement.loop = !videoElement.loop;
-                      forceUpdate((prev) => prev + 1); // Trigger re-render
-                    }
-                  }}
+                  onClick={toggleLoop}
                   title={isRepeat ? "Turn off Repeat" : "Repeat"}
                   style={{
                     backgroundColor: isRepeat
@@ -967,9 +676,7 @@ export function Player({
                     ml="xs"
                     miw={80}
                     color="dimmed"
-                  >{`${getFormattedTime(displayPosition)} / ${getFormattedTime(
-                    songLength,
-                  )}`}</Text>
+                  >{`${getFormattedTime(displayPosition)} / ${getFormattedTime(songLength)}`}</Text>
                 </MediaQuery>
               </Flex>
               <Flex gap="sm" align="center" style={{ flex: 1 }}>
