@@ -1,14 +1,22 @@
 "use client";
 
+import Icon from "@/components/Icon";
 import { Player } from "@/components/Player";
+import useNoSleep from "@/hooks/useNoSleep";
 import { songAtom } from "@/state";
+import {
+  Button,
+  Center,
+  Container,
+  Flex,
+  Image,
+  Text,
+  rem,
+} from "@mantine/core";
+import { IconMusic } from "@tabler/icons-react";
 import { useAtom } from "jotai";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { Button, Center, Container, Flex, Image, Loader, Text, rem } from "@mantine/core";
-import { IconMusic } from "@tabler/icons-react";
-import Icon from "@/components/Icon";
-import useNoSleep from "@/hooks/useNoSleep";
 
 export default function Page() {
   const [song, setSong] = useAtom(songAtom);
@@ -50,7 +58,7 @@ export default function Page() {
         gap="md"
         direction="column"
       >
-        <Flex gap={6} align="center" mb="sm">
+        <Flex gap={12} align="center" mb="sm">
           <Icon size={18} />
           <Text
             fz={rem(20)}

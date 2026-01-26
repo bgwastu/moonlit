@@ -1,5 +1,5 @@
 import InitialPlayer from "@/components/InitialPlayer";
-import { isYoutubeURL } from "@/utils";
+import { isYoutubeURL, parseISO8601Duration } from "@/utils";
 import { Metadata } from "next";
 import { notFound } from "next/navigation";
 
@@ -13,13 +13,13 @@ type Props = {
 
 async function fetchVideoDetails(id: string) {
   const response = await fetch(
-    `${YOUTUBE_API_URL}?id=${id}&part=snippet&key=${YOUTUBE_API_KEY}`,
+    `${YOUTUBE_API_URL}?id=${id}&part=snippet,contentDetails&key=${YOUTUBE_API_KEY}`,
   );
   const data = await response.json();
   if (!response.ok || !data.items || data.items.length === 0) {
     throw new Error("Video not found");
   }
-  return data.items[0].snippet;
+  return { ...data.items[0].snippet, ...data.items[0].contentDetails };
 }
 
 export async function generateMetadata({
@@ -101,6 +101,7 @@ export default async function Page({ searchParams }: Props) {
         author: metadata.channelTitle,
         coverUrl: metadata.thumbnails.default.url,
       }}
+      duration={parseISO8601Duration(metadata.duration)}
     />
   );
 }

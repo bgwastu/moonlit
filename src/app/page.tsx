@@ -284,10 +284,10 @@ export default function UploadPage() {
 
       <AppShell footer={<FooterSection />} mt={28}>
         <Container size="sm">
-          <Flex direction="column" gap="xl">
-            <Stack align="center">
+          <Flex direction="column" gap={28}>
+            <Stack align="center" my={12}>
               <Flex gap={6} align="center" justify="center" w="100%">
-                <Flex gap={6} align="center">
+                <Flex gap={12} align="center">
                   <Icon size={24} />
                   <Text
                     fz={rem(28)}
