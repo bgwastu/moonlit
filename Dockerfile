@@ -64,7 +64,7 @@ COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 USER nextjs
 
 # Install yt-dlp within the virtual environment
-RUN pip install "yt-dlp[default]"
+RUN pip install -U --pre "yt-dlp[default,curl-cffi]"
 
 EXPOSE 3000
 
