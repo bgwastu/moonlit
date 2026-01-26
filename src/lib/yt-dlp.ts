@@ -302,6 +302,11 @@ async function executeYtDlp(options: ExecuteOptions): Promise<ExecuteResult> {
       });
 
       proc.on("close", (code) => {
+        if (code !== 0) {
+          console.error("[Moonlit] yt-dlp failed with code", code);
+          console.error("[Moonlit] stdout:", stdout);
+          console.error("[Moonlit] stderr:", stderr);
+        }
         resolve({ code: code ?? 1, stdout, stderr });
       });
 
