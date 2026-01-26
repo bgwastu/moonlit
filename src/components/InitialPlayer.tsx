@@ -2,6 +2,7 @@
 
 import useNoSleep from "@/hooks/useNoSleep";
 import { Song } from "@/interfaces";
+import { getCookiesToUse } from "@/lib/cookies";
 import { songAtom } from "@/state";
 import { getYouTubeId, isSupportedURL } from "@/utils";
 import { getMedia, setMedia, setMeta, getMeta } from "@/utils/cache";
@@ -11,17 +12,16 @@ import {
   Container,
   Flex,
   Image,
-  Loader,
+  Progress,
   Text,
-  rem
+  rem,
 } from "@mantine/core";
-import { useShallowEffect } from "@mantine/hooks";
 import { notifications } from "@mantine/notifications";
 import { IconMusic } from "@tabler/icons-react";
 import { useAtom } from "jotai";
 import { useRouter } from "next/navigation";
 import { usePostHog } from "posthog-js/react";
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import Icon from "./Icon";
 import { Player } from "./Player";
 
@@ -31,11 +31,29 @@ interface InitialPlayerProps {
   metadata: Partial<Song["metadata"]>;
 }
 
-async function getSongFromYouTubeInternal(
+interface DownloadState {
+  status:
+    | "idle"
+    | "fetching"
+    | "downloading"
+    | "processing"
+    | "complete"
+    | "error";
+  percent: number;
+  speed?: string;
+  eta?: string;
+  message?: string;
+}
+
+async function downloadWithProgress(
   url: string,
-  preload?: Partial<Song["metadata"]>
+  preload: Partial<Song["metadata"]>,
+  onProgress: (state: DownloadState) => void,
+  abortSignal?: AbortSignal,
 ): Promise<Song> {
   const id = getYouTubeId(url);
+
+  // Check cache first
   if (id) {
     const videoKey = `yt:${id}:video`;
     const audioKey = `yt:${id}:audio`;
@@ -43,6 +61,7 @@ async function getSongFromYouTubeInternal(
     if (cachedVideo) {
       const storedMeta = await getMeta<Partial<Song["metadata"]>>(`yt:${id}`);
       const blobUrl = URL.createObjectURL(cachedVideo);
+      onProgress({ status: "complete", percent: 100 });
       return {
         fileUrl: blobUrl,
         videoUrl: blobUrl,
@@ -61,6 +80,7 @@ async function getSongFromYouTubeInternal(
     if (cachedAudio) {
       const storedMeta = await getMeta<Partial<Song["metadata"]>>(`yt:${id}`);
       const audioUrl = URL.createObjectURL(cachedAudio);
+      onProgress({ status: "complete", percent: 100 });
       return {
         fileUrl: audioUrl,
         metadata: {
@@ -75,63 +95,144 @@ async function getSongFromYouTubeInternal(
       };
     }
   }
-  const response = await fetch("/api/yt", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ url }),
+
+  onProgress({
+    status: "fetching",
+    percent: 0,
+    message: "Fetching video info...",
   });
 
-  if (!response.ok) {
-    const errorData = await response.json();
-    throw new Error(errorData.message || "Failed to load YouTube content");
-  }
+  // Get cookies based on user preference
+  const { cookies } = await getCookiesToUse();
 
-  const title = decodeURIComponent(response.headers.get("Title") || "Unknown Title");
-  const author = decodeURIComponent(response.headers.get("Author") || "Unknown Artist");
-  const thumbnail = decodeURIComponent(response.headers.get("Thumbnail") || "");
-  const videoMode = response.headers.get("VideoMode") === "true";
-  const videoUrl = response.headers.get("VideoUrl");
+  return new Promise((resolve, reject) => {
+    const controller = new AbortController();
 
-  const metadata = {
-    id: getYouTubeId(url),
-    title: title,
-    author: author,
-    coverUrl: thumbnail,
-    platform: "youtube" as const,
-  };
-  if (metadata.id) {
-    await setMeta(`yt:${metadata.id}`, metadata);
-  }
+    // Link external abort signal if provided
+    if (abortSignal) {
+      abortSignal.addEventListener("abort", () => controller.abort());
+    }
 
-  if (videoMode && videoUrl) {
-    const targetUrl = decodeURIComponent(videoUrl);
-    const fetched = await fetch(targetUrl);
-    const blob = await fetched.blob();
-    const blobUrl = URL.createObjectURL(blob);
-    if (metadata.id) await setMedia(`yt:${metadata.id}:video`, blob);
-    return {
-      fileUrl: blobUrl,
-      videoUrl: blobUrl,
-      metadata,
-    };
-  } else if (videoMode) {
-    const blob = await response.blob();
-    const blobUrl = URL.createObjectURL(blob);
-    if (metadata.id) await setMedia(`yt:${metadata.id}:video`, blob);
-    return {
-      fileUrl: blobUrl,
-      videoUrl: blobUrl,
-      metadata,
-    };
-  } else {
-    const blob = await response.blob();
-    const audioUrl = URL.createObjectURL(blob);
-    if (metadata.id) await setMedia(`yt:${metadata.id}:audio`, blob);
-    return {
-      fileUrl: audioUrl,
-      metadata,
-    };
-  }
+    fetch("/api/yt/stream", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url, cookies }),
+      signal: controller.signal,
+    })
+      .then((response) => {
+        if (!response.ok) {
+          throw new Error("Failed to start download");
+        }
+
+        const reader = response.body?.getReader();
+        if (!reader) {
+          throw new Error("No response body");
+        }
+
+        const decoder = new TextDecoder();
+        let buffer = "";
+
+        const processStream = async () => {
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+
+            // Process complete SSE messages
+            const lines = buffer.split("\n\n");
+            buffer = lines.pop() || "";
+
+            for (const line of lines) {
+              if (line.startsWith("data: ")) {
+                try {
+                  const data = JSON.parse(line.slice(6));
+
+                  switch (data.type) {
+                    case "status":
+                      onProgress({
+                        status: "fetching",
+                        percent: 0,
+                        message: data.message,
+                      });
+                      break;
+
+                    case "metadata":
+                      // Update metadata but keep downloading
+                      break;
+
+                    case "progress":
+                      onProgress({
+                        status:
+                          data.status === "processing"
+                            ? "processing"
+                            : "downloading",
+                        percent: data.percent || 0,
+                        speed: data.speed,
+                        eta: data.eta,
+                        message: data.message,
+                      });
+                      break;
+
+                    case "complete":
+                      onProgress({ status: "complete", percent: 100 });
+
+                      // Convert base64 back to blob
+                      const binaryString = atob(data.data);
+                      const bytes = new Uint8Array(binaryString.length);
+                      for (let i = 0; i < binaryString.length; i++) {
+                        bytes[i] = binaryString.charCodeAt(i);
+                      }
+                      const blob = new Blob([bytes], {
+                        type: data.contentType,
+                      });
+                      const blobUrl = URL.createObjectURL(blob);
+
+                      const metadata = {
+                        id: getYouTubeId(url),
+                        title: data.title,
+                        author: data.author,
+                        coverUrl: data.thumbnail,
+                        platform: "youtube" as const,
+                      };
+
+                      // Cache the media
+                      if (metadata.id) {
+                        const cacheKey = data.videoMode
+                          ? `yt:${metadata.id}:video`
+                          : `yt:${metadata.id}:audio`;
+                        setMedia(cacheKey, blob).catch(() => {});
+                        setMeta(`yt:${metadata.id}`, metadata).catch(() => {});
+                      }
+
+                      resolve({
+                        fileUrl: blobUrl,
+                        videoUrl: data.videoMode ? blobUrl : undefined,
+                        metadata,
+                      });
+                      return;
+
+                    case "error":
+                      reject(new Error(data.message));
+                      return;
+                  }
+                } catch (e) {
+                  console.error("Failed to parse SSE message:", e);
+                }
+              }
+            }
+          }
+        };
+
+        processStream().catch(reject);
+      })
+      .catch((err) => {
+        if (err.name === "AbortError") {
+          return; // Ignore abort errors
+        }
+        reject(err);
+      });
+  });
 }
 
 export default function InitialPlayer({
@@ -145,10 +246,22 @@ export default function InitialPlayer({
   const [song, setSong] = useAtom(songAtom);
   const [isPlayer, setIsPlayer] = useState(false);
   const [noSleepEnabled, setNoSleepEnabled] = useNoSleep();
+  const [downloadState, setDownloadState] = useState<DownloadState>({
+    status: "idle",
+    percent: 0,
+  });
+
+  // Ref to prevent double-call in React Strict Mode
+  const downloadStarted = useRef(false);
 
   const isLoading = !song;
 
-  useShallowEffect(() => {
+  useEffect(() => {
+    // Prevent double-call in dev mode (React Strict Mode)
+    if (downloadStarted.current) {
+      return;
+    }
+
     if (!youtubeId) {
       notifications.show({
         title: "Error",
@@ -157,6 +270,8 @@ export default function InitialPlayer({
       router.push("/");
       return;
     }
+
+    downloadStarted.current = true;
 
     const pageType = isShorts ? "shorts_page" : "watch_page";
     posthog.capture(pageType, { youtubeId });
@@ -176,20 +291,38 @@ export default function InitialPlayer({
 
     (setSong as (song: Song | null) => void)(null);
     setIsPlayer(false);
+    setDownloadState({ status: "idle", percent: 0 });
 
-    getSongFromYouTubeInternal(url, metadata)
+    const abortController = new AbortController();
+
+    downloadWithProgress(
+      url,
+      metadata,
+      setDownloadState,
+      abortController.signal,
+    )
       .then((downloadedSong: Song) => {
         (setSong as (song: Song | null) => void)(downloadedSong);
       })
       .catch((e) => {
+        if (e.name === "AbortError") return;
         console.error(`${pageType}: Download error:`, e);
+        setDownloadState({
+          status: "error",
+          percent: 0,
+          message: e.message,
+        });
         notifications.show({
           title: "Download error",
           message: e.message || "Could not process the video.",
         });
         router.push("/");
       });
-  }, [youtubeId, isShorts, router, posthog, setSong]);
+
+    return () => {
+      abortController.abort();
+    };
+  }, [youtubeId, isShorts, router, posthog, setSong, metadata]);
 
   const handleGoToPlayer = () => {
     setIsPlayer(true);
@@ -201,6 +334,40 @@ export default function InitialPlayer({
   if (isPlayer && song) {
     return <Player song={song} repeating={isShorts} />;
   }
+
+  const getStatusText = () => {
+    switch (downloadState.status) {
+      case "fetching":
+        return downloadState.message || "Fetching video info...";
+      case "downloading":
+        if (
+          downloadState.percent > 0 &&
+          downloadState.speed &&
+          downloadState.eta
+        ) {
+          return `Downloading: ${downloadState.percent.toFixed(1)}% • ${downloadState.speed} • ETA: ${downloadState.eta}`;
+        }
+        if (downloadState.percent > 0) {
+          return `Downloading: ${downloadState.percent.toFixed(1)}%`;
+        }
+        return "Starting download...";
+      case "processing":
+        return downloadState.message || "Processing media...";
+      case "complete":
+        return "Download complete!";
+      case "error":
+        return downloadState.message || "Download failed";
+      default:
+        return "Preparing...";
+    }
+  };
+
+  // Determine if progress bar should be indeterminate (striped + animated)
+  const isIndeterminate =
+    downloadState.status === "fetching" ||
+    downloadState.status === "processing" ||
+    downloadState.status === "idle" ||
+    (downloadState.status === "downloading" && downloadState.percent === 0);
 
   return (
     <Container size="xs">
@@ -246,10 +413,20 @@ export default function InitialPlayer({
             <Text>{metadata.author || "Loading..."}</Text>
           </Flex>
         </Flex>
+
         {isLoading ? (
-          <Flex gap="md" align="center">
-            <Loader size="sm" />
-            <Text>Downloading the video...</Text>
+          <Flex direction="column" gap="sm">
+            <Progress
+              value={isIndeterminate ? 100 : downloadState.percent}
+              size="lg"
+              radius="xl"
+              striped={isIndeterminate}
+              animate={isIndeterminate}
+              color={downloadState.status === "error" ? "red" : "violet"}
+            />
+            <Text size="sm" color="dimmed" align="center">
+              {getStatusText()}
+            </Text>
           </Flex>
         ) : (
           <Button onClick={handleGoToPlayer}>Play</Button>

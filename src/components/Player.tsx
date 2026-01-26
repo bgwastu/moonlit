@@ -36,6 +36,7 @@ import {
   IconBrandYoutube,
   IconBug,
   IconCheck,
+  IconCookie,
   IconCopy,
   IconExternalLink,
   IconHome,
@@ -49,6 +50,7 @@ import {
   IconRotate,
   IconShare,
 } from "@tabler/icons-react";
+import CookiesModal from "./CookiesModal";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useQueryState } from "nuqs";
@@ -67,7 +69,7 @@ export function Player({
   const router = useRouter();
   const [isVideoReady, setIsVideoReady] = useState(false);
   const [videoElement, setVideoElement] = useState<HTMLVideoElement | null>(
-    null
+    null,
   );
   const [playbackMode, setPlaybackMode] = useState<PlaybackMode>("normal");
   const [customPlaybackRate, setCustomPlaybackRate] = useState(1);
@@ -110,6 +112,10 @@ export function Player({
     useDisclosure(false);
   const [shareModalOpened, { open: openShareModal, close: closeShareModal }] =
     useDisclosure(false);
+  const [
+    cookiesModalOpened,
+    { open: openCookiesModal, close: closeCookiesModal },
+  ] = useDisclosure(false);
   const [shareStartTime, setShareStartTime] = useState(0);
 
   // Function to get the original platform URL
@@ -189,7 +195,7 @@ export function Player({
     if (playbackMode === "custom") {
       localStorage.setItem(
         "custom-playback-rate",
-        JSON.stringify(customPlaybackRate)
+        JSON.stringify(customPlaybackRate),
       );
     }
   }, [customPlaybackRate, playbackMode]);
@@ -208,7 +214,7 @@ export function Player({
         setRate(null);
       }
     },
-    [playbackMode, customPlaybackRate, setMode, setRate]
+    [playbackMode, customPlaybackRate, setMode, setRate],
   );
 
   useShallowEffect(
@@ -227,7 +233,7 @@ export function Player({
             video.src === song.fileUrl
           ) {
             console.log(
-              "Video already initialized for this song, skipping setup"
+              "Video already initialized for this song, skipping setup",
             );
             return;
           }
@@ -305,7 +311,7 @@ export function Player({
         isMounted = false;
       };
     },
-    [song.fileUrl]
+    [song.fileUrl],
   ); // Add song.fileUrl as dependency to re-run when song changes
 
   useShallowEffect(() => {
@@ -360,7 +366,7 @@ export function Player({
       "Toggle player - current state:",
       isPlaying ? "playing" : "paused",
       "video paused:",
-      videoElement.paused
+      videoElement.paused,
     );
 
     if (isPlaying) {
@@ -497,7 +503,8 @@ export function Player({
           )}
           {isSafari && (
             <Text size="xs" color="dimmed">
-              Note: Reverb is disabled on Safari for optimal playback performance
+              Note: Reverb is disabled on Safari for optimal playback
+              performance
             </Text>
           )}
         </Stack>
@@ -547,6 +554,8 @@ export function Player({
           </CopyButton>
         </Stack>
       </Modal>
+
+      <CookiesModal opened={cookiesModalOpened} onClose={closeCookiesModal} />
 
       <Box
         style={{
@@ -673,7 +682,7 @@ export function Player({
                   borderRadius: theme.radius.sm,
                 }}
               >{`${getFormattedTime(displayPosition)} / ${getFormattedTime(
-                songLength
+                songLength,
               )}`}</Text>
             </MediaQuery>
             <Menu shadow="md" width={200} position="top-end">
@@ -737,6 +746,14 @@ export function Player({
                   target="_blank"
                 >
                   Share on X
+                </Menu.Item>
+                <Menu.Divider />
+                <Menu.Label>Settings</Menu.Label>
+                <Menu.Item
+                  icon={<IconCookie size={14} />}
+                  onClick={openCookiesModal}
+                >
+                  YouTube Cookies
                 </Menu.Item>
               </Menu.Dropdown>
             </Menu>
@@ -813,7 +830,7 @@ export function Player({
                     miw={80}
                     color="dimmed"
                   >{`${getFormattedTime(displayPosition)} / ${getFormattedTime(
-                    songLength
+                    songLength,
                   )}`}</Text>
                 </MediaQuery>
               </Flex>

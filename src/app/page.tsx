@@ -1,5 +1,6 @@
 "use client";
 
+import CookiesModal from "@/components/CookiesModal";
 import LoadingOverlay from "@/components/LoadingOverlay";
 import useNoSleep from "@/hooks/useNoSleep";
 import type { Song } from "@/interfaces";
@@ -15,7 +16,8 @@ import {
   rem,
   Stack,
   Text,
-  TextInput
+  TextInput,
+  Tooltip,
 } from "@mantine/core";
 import { Dropzone } from "@mantine/dropzone";
 import { useForm } from "@mantine/form";
@@ -24,11 +26,11 @@ import {
   IconBrandGithub,
   IconBrandTiktok,
   IconBrandYoutube,
-  IconGlobe,
+  IconCookie,
   IconMusicCheck,
   IconMusicPlus,
   IconMusicX,
-  IconWorld
+  IconWorld,
 } from "@tabler/icons-react";
 import parse from "id3-parser";
 import { convertFileToBuffer } from "id3-parser/lib/util";
@@ -38,7 +40,13 @@ import { usePostHog } from "posthog-js/react";
 import { useState } from "react";
 import Icon from "../components/Icon";
 import { songAtom } from "../state";
-import { getTikTokCreatorAndVideoId, getYouTubeId, isSupportedURL, isTikTokURL } from "../utils";
+import {
+  getTikTokCreatorAndVideoId,
+  getYouTubeId,
+  isSupportedURL,
+  isTikTokURL,
+  isYoutubeURL,
+} from "../utils";
 
 const loadingAtom = atom<{
   status: boolean;
@@ -50,14 +58,12 @@ const loadingAtom = atom<{
 
 function LocalUpload() {
   const [loading, setLoading] = useAtom(loadingAtom);
-  const [song, setSong] = useAtom(songAtom);
+  const [, setSong] = useAtom(songAtom);
   const posthog = usePostHog();
   const router = useRouter();
   const [, setNoSleepEnabled] = useNoSleep();
 
-  // Direct call to avoid type issues
   const handleSetSong = (newSong: Song) => {
-    // Force the call by casting the function type
     (setSong as (song: Song | null) => void)(newSong);
   };
 
@@ -146,7 +152,7 @@ function LocalUpload() {
   );
 }
 
-function YoutubeUpload() {
+function YoutubeUpload({ onOpenCookies }: { onOpenCookies: () => void }) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const form = useForm({
@@ -161,15 +167,13 @@ function YoutubeUpload() {
 
   async function onSubmit(url: string) {
     setLoading(true);
-    
+
     if (isTikTokURL(url)) {
-      // For TikTok URLs, extract creator and video ID and redirect to new route structure
       const { creator, videoId } = getTikTokCreatorAndVideoId(url);
-      
+
       if (creator && videoId) {
         router.push(`/@${creator}/video/${videoId}`);
       } else {
-        // Fallback to old player method if extraction fails
         try {
           const response = await fetch("/api/tiktok", {
             method: "POST",
@@ -182,22 +186,19 @@ function YoutubeUpload() {
             throw new Error(error.message || "Failed to fetch TikTok metadata");
           }
 
-          // Since /player is now for local files only, we need to handle TikTok differently
-          // For now, just show an error if creator/videoId extraction fails
           throw new Error("Could not parse TikTok URL. Please try again.");
         } catch (error) {
           setLoading(false);
           notifications.show({
             title: "Error",
-            message: `${error.message || "Failed to load TikTok video"}. You can try downloading it manually and uploading it to Moonlit.`,
+            message: `${(error as Error).message || "Failed to load TikTok video"}. You can try downloading it manually and uploading it to Moonlit.`,
             color: "red",
             autoClose: 8000,
           });
           return;
         }
       }
-    } else {
-      // YouTube URL handling
+    } else if (isYoutubeURL(url)) {
       const id = getYouTubeId(url);
       if (!id) {
         setLoading(false);
@@ -208,33 +209,39 @@ function YoutubeUpload() {
         return;
       }
       router.push("/watch?v=" + id);
+    } else {
+      setLoading(false);
+      notifications.show({
+        title: "Error",
+        message: "Unsupported URL",
+      });
     }
   }
 
   return (
-			<form onSubmit={form.onSubmit((values) => onSubmit(values.url))}>
-				<Flex direction="column" gap="md">
-					<TextInput
-						icon={
-							form.values.url.includes("youtube") ? (
-								<IconBrandYoutube />
-							) : form.values.url.includes("tiktok") ? (
-								<IconBrandTiktok />
-							) : (
-								<IconWorld />
-							)
-						}
-						placeholder="YouTube or TikTok URL"
-						size="lg"
-						type="url"
-						{...form.getInputProps("url")}
-					/>
-					<Button size="lg" type="submit" loading={loading}>
-						Download & Play
-					</Button>
-				</Flex>
-			</form>
-		);
+    <form onSubmit={form.onSubmit((values) => onSubmit(values.url))}>
+      <Flex direction="column" gap="md">
+        <TextInput
+          icon={
+            form.values.url.includes("youtube") ? (
+              <IconBrandYoutube />
+            ) : form.values.url.includes("tiktok") ? (
+              <IconBrandTiktok />
+            ) : (
+              <IconWorld />
+            )
+          }
+          placeholder="YouTube or TikTok URL"
+          size="lg"
+          type="url"
+          {...form.getInputProps("url")}
+        />
+        <Button size="lg" type="submit" loading={loading}>
+          Download & Play
+        </Button>
+      </Flex>
+    </form>
+  );
 }
 
 function FooterSection() {
@@ -243,7 +250,7 @@ function FooterSection() {
       <Container size="lg">
         <Flex justify="space-between" align="center">
           <Text color="dimmed" size="sm">
-            Have any feedback? Email: {" "}
+            Have any feedback? Email:{" "}
             <Anchor href="mailto:bagas@wastu.net">bagas@wastu.net</Anchor>
           </Text>
           <ActionIcon
@@ -265,35 +272,53 @@ function FooterSection() {
 
 export default function UploadPage() {
   const [loading] = useAtom(loadingAtom);
+  const [cookiesOpened, setCookiesOpened] = useState(false);
 
   return (
-			<>
-				<LoadingOverlay visible={loading.status} message={loading.message} />
+    <>
+      <LoadingOverlay visible={loading.status} message={loading.message} />
+      <CookiesModal
+        opened={cookiesOpened}
+        onClose={() => setCookiesOpened(false)}
+      />
 
-				<AppShell footer={<FooterSection />} mt={28}>
-					<Container size="sm">
-						<Flex direction="column" gap="xl">
-							<Stack align="center">
-								<Flex gap={6} align="center">
-									<Icon size={24} />
-									<Text
-										fz={rem(28)}
-										fw="bold"
-										lts={rem(0.2)}
-										style={{
-											userSelect: "none",
-										}}
-									>
-										Moonlit
-									</Text>
-								</Flex>
-                 </Stack>
-							<YoutubeUpload />
-							<Divider label="OR" labelPosition="center" />
-							<LocalUpload />
-						</Flex>
-					</Container>
-				</AppShell>
-			</>
-		);
+      <AppShell footer={<FooterSection />} mt={28}>
+        <Container size="sm">
+          <Flex direction="column" gap="xl">
+            <Stack align="center">
+              <Flex gap={6} align="center" justify="center" w="100%">
+                <Flex gap={6} align="center">
+                  <Icon size={24} />
+                  <Text
+                    fz={rem(28)}
+                    fw="bold"
+                    lts={rem(0.2)}
+                    style={{
+                      userSelect: "none",
+                    }}
+                  >
+                    Moonlit
+                  </Text>
+                </Flex>
+                <Tooltip label="YouTube Cookies" position="bottom">
+                  <ActionIcon
+                    variant="subtle"
+                    color="violet"
+                    size="lg"
+                    onClick={() => setCookiesOpened(true)}
+                    ml="xs"
+                  >
+                    <IconCookie size={20} />
+                  </ActionIcon>
+                </Tooltip>
+              </Flex>
+            </Stack>
+            <YoutubeUpload onOpenCookies={() => setCookiesOpened(true)} />
+            <Divider label="OR" labelPosition="center" />
+            <LocalUpload />
+          </Flex>
+        </Container>
+      </AppShell>
+    </>
+  );
 }
