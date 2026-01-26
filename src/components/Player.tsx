@@ -119,7 +119,6 @@ export function Player({
     setStateLoaded(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
   const {
     videoRef,
     videoElement,
@@ -432,6 +431,114 @@ export function Player({
     } as MantineThemeOverride;
   }, [dominantColor, theme]);
 
+  // Media Session API Support
+  useEffect(() => {
+    if (!("mediaSession" in navigator)) return;
+
+    let highResCover = song.metadata.coverUrl;
+    if (song.metadata.platform === "youtube") {
+      highResCover =
+        song.metadata.coverUrl?.replace(
+          /(hq|mq|sd)?default/,
+          "maxresdefault",
+        ) || song.metadata.coverUrl;
+    }
+
+    navigator.mediaSession.metadata = new MediaMetadata({
+      title: song.metadata.title,
+      artist: song.metadata.author,
+      artwork: [
+        {
+          src: highResCover,
+          sizes: "512x512",
+          type: "image/jpeg",
+        },
+      ],
+    });
+
+    navigator.mediaSession.setActionHandler("play", () => {
+      if (!videoElement?.paused === false) {
+        handleTogglePlayer();
+      }
+    });
+    navigator.mediaSession.setActionHandler("pause", () => {
+      if (!videoElement?.paused === true) {
+        handleTogglePlayer();
+      }
+    });
+
+    navigator.mediaSession.setActionHandler("seekbackward", () => {
+      handleBackward();
+    });
+
+    navigator.mediaSession.setActionHandler("seekforward", () => {
+      handleForward();
+    });
+
+    navigator.mediaSession.setActionHandler("previoustrack", () => {
+      handleBackward();
+    });
+
+    navigator.mediaSession.setActionHandler("nexttrack", () => {
+      handleForward();
+    });
+
+    try {
+      navigator.mediaSession.setActionHandler("seekto", (details) => {
+        if (details.seekTime !== undefined) {
+          setPlaybackPosition(details.seekTime);
+        }
+      });
+    } catch (error) {
+      console.log("MediaSession seekto not supported");
+    }
+
+    return () => {
+      navigator.mediaSession.setActionHandler("play", null);
+      navigator.mediaSession.setActionHandler("pause", null);
+      navigator.mediaSession.setActionHandler("seekbackward", null);
+      navigator.mediaSession.setActionHandler("seekforward", null);
+      navigator.mediaSession.setActionHandler("previoustrack", null);
+      navigator.mediaSession.setActionHandler("nexttrack", null);
+      try {
+        navigator.mediaSession.setActionHandler("seekto", null);
+      } catch (e) {}
+    };
+  }, [
+    song,
+    videoElement,
+    handleTogglePlayer,
+    handleBackward,
+    handleForward,
+    setPlaybackPosition,
+  ]);
+
+  // Update Media Session Playback State
+  useEffect(() => {
+    if (!("mediaSession" in navigator)) return;
+    navigator.mediaSession.playbackState = isPlaying ? "playing" : "paused";
+  }, [isPlaying]);
+
+  // Update Media Session Position State
+  useEffect(() => {
+    if (
+      !("mediaSession" in navigator) ||
+      !("setPositionState" in navigator.mediaSession) ||
+      !videoElement
+    )
+      return;
+
+    try {
+      navigator.mediaSession.setPositionState({
+        duration: Math.max(0, songLength),
+        playbackRate: 1.0, // We treat the adjusted speed as the "normal" speed for the system player
+        position: Math.max(0, Math.min(displayPosition, songLength)),
+      });
+    } catch (e) {
+      console.error("Error setting position state:", e);
+    }
+  }, [displayPosition, songLength, videoElement]);
+
   return (
     <MantineProvider theme={dynamicTheme} inherit>
       <LoadingOverlay
@@ -675,6 +782,7 @@ export function Player({
               borderRadius: theme.radius.md,
               overflow: "hidden",
               zIndex: 1,
+              margin: "10px",
               display: isAudioOnly ? "none" : "block",
             }}
           >
