@@ -14,12 +14,13 @@ https://github.com/bgwastu/moonlit/assets/67826350/a60fa36b-528a-4216-a925-97105
 
 
 # Features
-- **Customizable playback settings**: Change the playback speed to create slowed or nightcore effects!
+- **Customizable playback settings**: Change the playback speed and reverb to create slowed or nightcore effects!
 - **Multi-platform support**: Works with YouTube and TikTok.
 - **Client-Side Cookie Management**: Use your own YouTube cookies to bypass restrictions (e.g., age-gated content). Cookies are stored securely in your browser and are only temporarily used during video fetching.
-- **Video Quality Selection**: Choose between high (HD) or low (480p) quality when downloading videos > 10 minutes.
-- **Change background**: Change the app's background to suit your mood.
+- **Video Quality Selection**: Choose between high (720p) or low (480p) quality when downloading videos > 10 minutes.
+- **Admin Dashboard**: A dedicated interface to manage system-wide cookies and update the yt-dlp binary to the latest version.
 - **Real-time audio processing**: Uses playback rate adjustment and Web Audio API (for reverb) for high-quality audio manipulation.
+- **Export Options**: Download the original media or export your processed remix as a WAV file.
 - **Self-Hostable**: Includes Docker and Docker Compose support for easy deployment.
 
 # Donating
