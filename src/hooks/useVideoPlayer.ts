@@ -47,6 +47,15 @@ export function useVideoPlayer({
       ? getSongLength(videoElement.duration, videoElement.playbackRate)
       : 0;
 
+  // Refs to track latest props for async cleanup/setup
+  const playbackModeRef = useRef(playbackMode);
+  const customPlaybackRateRef = useRef(customPlaybackRate);
+
+  useEffect(() => {
+    playbackModeRef.current = playbackMode;
+    customPlaybackRateRef.current = customPlaybackRate;
+  }, [playbackMode, customPlaybackRate]);
+
   // Setup Video
   useShallowEffect(() => {
     let isMounted = true;
@@ -101,9 +110,12 @@ export function useVideoPlayer({
 
         // Calculate rate
         let rate = 1;
-        if (playbackMode === "slowed") rate = 0.8;
-        else if (playbackMode === "speedup") rate = 1.25;
-        else if (playbackMode === "custom") rate = customPlaybackRate;
+        const currentMode = playbackModeRef.current;
+        const currentCustomRate = customPlaybackRateRef.current;
+
+        if (currentMode === "slowed") rate = 0.8;
+        else if (currentMode === "speedup") rate = 1.25;
+        else if (currentMode === "custom") rate = currentCustomRate;
         video.playbackRate = rate;
 
         // Start time
