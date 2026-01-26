@@ -32,9 +32,8 @@ RUN \
 FROM base AS runner
 WORKDIR /app
 
-# Install Python, ffmpeg and yt-dlp
+# Install Python, ffmpeg and yt-dlp dependencies
 RUN apk add --no-cache python3 py3-pip py3-setuptools ffmpeg curl bash
-RUN pip3 install --break-system-packages "yt-dlp[default]"
 
 # Configure yt-dlp to use Node.js runtime for EJS
 RUN echo "--js-runtimes node" > /etc/yt-dlp.conf
@@ -47,14 +46,25 @@ RUN adduser --system --uid 1001 nextjs
 COPY --from=builder /app/public ./public
 
 # Set up directories and permissions
-RUN mkdir .next && chown nextjs:nodejs .next
-RUN mkdir -p data && chown nextjs:nodejs data
+RUN mkdir .next
+RUN mkdir -p data
+
+# Set up Python Virtual Environment for writable yt-dlp
+ENV VIRTUAL_ENV=/app/venv
+ENV PATH="$VIRTUAL_ENV/bin:$PATH"
+RUN python3 -m venv $VIRTUAL_ENV
+
+# Grant ownership of all manageable directories to nextjs user
+RUN chown -R nextjs:nodejs .next data $VIRTUAL_ENV
 
 # Copy build output
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 
 USER nextjs
+
+# Install yt-dlp within the virtual environment
+RUN pip install "yt-dlp[default]"
 
 EXPOSE 3000
 
