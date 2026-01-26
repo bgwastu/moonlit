@@ -14,12 +14,13 @@ interface UseAudioContextReturn {
   setReverbAmount: (amount: number) => void;
   reverbAmount: number;
   isWebAudioActive: boolean;
+  isSafari: boolean;
 }
 
 function generateImpulseResponse(
   context: AudioContext,
   duration: number = 2,
-  decay: number = 2
+  decay: number = 2,
 ): AudioBuffer {
   const sampleRate = context.sampleRate;
   const length = sampleRate * duration;
@@ -29,15 +30,17 @@ function generateImpulseResponse(
 
   for (let i = 0; i < length; i++) {
     const n = i / sampleRate;
-    leftChannel[i] = (Math.random() * 2 - 1) * Math.pow(1 - n / duration, decay);
-    rightChannel[i] = (Math.random() * 2 - 1) * Math.pow(1 - n / duration, decay);
+    leftChannel[i] =
+      (Math.random() * 2 - 1) * Math.pow(1 - n / duration, decay);
+    rightChannel[i] =
+      (Math.random() * 2 - 1) * Math.pow(1 - n / duration, decay);
   }
 
   return impulse;
 }
 
 export function useAudioContext(
-  videoElement: HTMLVideoElement | null
+  videoElement: HTMLVideoElement | null,
 ): UseAudioContextReturn {
   const audioNodesRef = useRef<AudioNodes | null>(null);
   const videoElementRef = useRef<HTMLVideoElement | null>(null);
@@ -149,7 +152,10 @@ export function useAudioContext(
       }
 
       if (handlePlayRef.current && videoElementRef.current) {
-        videoElementRef.current.removeEventListener("play", handlePlayRef.current);
+        videoElementRef.current.removeEventListener(
+          "play",
+          handlePlayRef.current,
+        );
         handlePlayRef.current = null;
       }
 
@@ -177,7 +183,11 @@ export function useAudioContext(
     const clampedAmount = Math.max(0, Math.min(1, amount));
     setReverbAmountState(clampedAmount);
 
-    if (clampedAmount > 0 && !audioNodesRef.current && videoElementRef.current) {
+    if (
+      clampedAmount > 0 &&
+      !audioNodesRef.current &&
+      videoElementRef.current
+    ) {
       await initializeWebAudio(videoElementRef.current);
     }
 
@@ -185,7 +195,9 @@ export function useAudioContext(
       const { dryGain, wetGain } = audioNodesRef.current;
       dryGain.gain.value = 1 - clampedAmount * 0.5;
       wetGain.gain.value = clampedAmount;
-      console.log(`Reverb set: dry=${dryGain.gain.value.toFixed(2)}, wet=${wetGain.gain.value.toFixed(2)}`);
+      console.log(
+        `Reverb set: dry=${dryGain.gain.value.toFixed(2)}, wet=${wetGain.gain.value.toFixed(2)}`,
+      );
     }
   };
 
@@ -194,5 +206,6 @@ export function useAudioContext(
     setReverbAmount,
     reverbAmount,
     isWebAudioActive,
+    isSafari,
   };
 }

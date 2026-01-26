@@ -79,13 +79,8 @@ export function Player({
 
   const videoRef = useRef<HTMLVideoElement>(null);
 
-  const { setReverbAmount, reverbAmount, isWebAudioActive } =
+  const { setReverbAmount, reverbAmount, isSafari } =
     useAudioContext(videoElement);
-
-  const isSafari =
-    typeof window !== "undefined" &&
-    /Safari/.test(navigator.userAgent) &&
-    !/Chrome/.test(navigator.userAgent);
 
   useDocumentTitle(`${song.metadata.title} - Moonlit`);
 
