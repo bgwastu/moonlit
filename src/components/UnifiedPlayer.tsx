@@ -147,6 +147,7 @@ export default function UnifiedPlayer({
     const isShortForm = !isYouTube || url.includes("/shorts/");
     return (
       <Player
+        key={song.fileUrl}
         song={song}
         repeating={isShortForm}
         initialDominantColor={dominantColor}
