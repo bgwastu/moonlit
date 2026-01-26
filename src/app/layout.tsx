@@ -26,6 +26,9 @@ export const metadata: Metadata = {
   alternates: {
     canonical: "/",
   },
+  icons: {
+    icon: "/favicon.ico",
+  },
   openGraph: {
     title: "Moonlit - Slowed & Nightcore Music Player",
     description:

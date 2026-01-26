@@ -29,9 +29,11 @@ import { notifications } from "@mantine/notifications";
 import { IconMusic } from "@tabler/icons-react";
 import { useAtom } from "jotai";
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useMemo } from "react";
 import Icon from "@/components/Icon";
 import { Player } from "@/components/Player";
+
+import { getDominantColorFromImage } from "@/hooks/useDominantColor";
 
 interface UnifiedPlayerProps {
   url: string;
@@ -48,6 +50,7 @@ export default function UnifiedPlayer({
   const [song] = useAtom(songAtom);
   const [isPlayer, setIsPlayer] = useState(false);
   const [noSleepEnabled, setNoSleepEnabled] = useNoSleep();
+  const [dominantColor, setDominantColor] = useState<string>("rgba(0,0,0,0)");
 
   const { downloadState, startDownload } = useMediaDownloader(url, metadata);
 
@@ -112,6 +115,26 @@ export default function UnifiedPlayer({
     checkAndStart();
   }, [url, duration, router, startDownload, isYouTube]);
 
+  // Extract Dominant Color
+  useEffect(() => {
+    if (!metadata.coverUrl) return;
+    const img = document.createElement("img");
+    img.crossOrigin = "Anonymous";
+    // Use high res for better color extraction if available, though original is fine too.
+    // For preview, usage of original is okay if small, but let's try to extract from the one we will use?
+    // Actually, extraction from small image is faster. Let's keep using metadata.coverUrl for extraction
+    // unless we strictly want to match the Player's high-res one.
+    // But since the user complained about "shit on preview", we should update the Image component src below too.
+
+    img.src =
+      metadata.coverUrl?.replace(/(hq|mq|sd)?default/, "maxresdefault") ||
+      metadata.coverUrl;
+    img.onload = () => {
+      const color = getDominantColorFromImage(img);
+      setDominantColor(color);
+    };
+  }, [metadata.coverUrl]);
+
   const handleGoToPlayer = () => {
     setIsPlayer(true);
     if (!noSleepEnabled) {
@@ -122,7 +145,13 @@ export default function UnifiedPlayer({
   if (isPlayer && song) {
     // For Shorts/TikTok, we might want repeating=true by default
     const isShortForm = !isYouTube || url.includes("/shorts/");
-    return <Player song={song} repeating={isShortForm} />;
+    return (
+      <Player
+        song={song}
+        repeating={isShortForm}
+        initialDominantColor={dominantColor}
+      />
+    );
   }
 
   const getStatusText = () => {
@@ -154,110 +183,114 @@ export default function UnifiedPlayer({
     downloadState.status === "idle" ||
     (downloadState.status === "downloading" && downloadState.percent === 0);
 
+  downloadState.status === "downloading" && downloadState.percent === 0;
+
   return (
-    <Container size="xs">
-      <Modal
-        opened={confirmationOpened}
-        onClose={() => router.push("/")}
-        title="Big file detected"
-        centered
-      >
-        <Text size="sm" mb="md">
-          This video is longer than 10 minutes. Do you want to continue
-          downloading?
-        </Text>
-        <Switch
-          label="Include Video (Larger file size)"
-          checked={includeVideo}
-          onChange={(event) => setIncludeVideo(event.currentTarget.checked)}
-          mb="sm"
-        />
-        {includeVideo && (
-          <SegmentedControl
-            value={quality}
-            onChange={(value) => setQuality(value as "low" | "high")}
-            data={[
-              { label: "Low Quality (480p)", value: "low" },
-              { label: "High Quality (HD)", value: "high" },
-            ]}
-            mb="xl"
-            fullWidth
-          />
-        )}
-        <Group position="right">
-          <Button variant="default" onClick={() => router.push("/")}>
-            Cancel
-          </Button>
-          <Button
-            onClick={() => {
-              setConfirmationOpened(false);
-              startDownload(includeVideo, quality);
-            }}
-          >
-            Download
-          </Button>
-        </Group>
-      </Modal>
-
-      <Flex
-        h="100dvh"
-        align="stretch"
-        justify="center"
-        gap="md"
-        direction="column"
-      >
-        <Flex gap={12} align="center" mb="sm">
-          <Icon size={18} />
-          <Text
-            fz={rem(20)}
-            fw="bold"
-            lts={rem(0.2)}
-            style={{ userSelect: "none" }}
-          >
-            Moonlit
+    <>
+      <Container size="xs">
+        <Modal
+          opened={confirmationOpened}
+          onClose={() => router.push("/")}
+          title="Big file detected"
+          centered
+        >
+          <Text size="sm" mb="md">
+            This video is longer than 10 minutes. Do you want to continue
+            downloading?
           </Text>
-        </Flex>
-        <Text weight={600} color="dimmed">
-          Video Details
-        </Text>
-        <Flex gap="md" align="center">
-          <Image
-            src={metadata.coverUrl}
-            radius="sm"
-            height={48}
-            width={48}
-            withPlaceholder
-            placeholder={
-              <Center>
-                <IconMusic />
-              </Center>
-            }
-            alt="cover image"
+          <Switch
+            label="Include Video (Larger file size)"
+            checked={includeVideo}
+            onChange={(event) => setIncludeVideo(event.currentTarget.checked)}
+            mb="sm"
           />
-          <Flex direction="column">
-            <Text weight={600}>{metadata.title || "Loading..."}</Text>
-            <Text>{metadata.author || "Loading..."}</Text>
-          </Flex>
-        </Flex>
-
-        {isLoading ? (
-          <Flex direction="column" gap="sm">
-            <Progress
-              value={isIndeterminate ? 100 : downloadState.percent}
-              size="lg"
-              radius="xl"
-              striped={isIndeterminate}
-              animate={isIndeterminate}
-              color={downloadState.status === "error" ? "red" : "violet"}
+          {includeVideo && (
+            <SegmentedControl
+              value={quality}
+              onChange={(value) => setQuality(value as "low" | "high")}
+              data={[
+                { label: "Low Quality (480p)", value: "low" },
+                { label: "High Quality (HD)", value: "high" },
+              ]}
+              mb="xl"
+              fullWidth
             />
-            <Text size="sm" color="dimmed" align="center">
-              {getStatusText()}
+          )}
+          <Group position="right">
+            <Button variant="default" onClick={() => router.push("/")}>
+              Cancel
+            </Button>
+            <Button
+              onClick={() => {
+                setConfirmationOpened(false);
+                startDownload(includeVideo, quality);
+              }}
+            >
+              Download
+            </Button>
+          </Group>
+        </Modal>
+
+        <Flex
+          h="100dvh"
+          align="stretch"
+          justify="center"
+          gap="md"
+          direction="column"
+        >
+          <Flex gap={12} align="center" mb="sm">
+            <Icon size={18} />
+            <Text
+              fz={rem(20)}
+              fw="bold"
+              lts={rem(0.2)}
+              style={{ userSelect: "none" }}
+            >
+              Moonlit
             </Text>
           </Flex>
-        ) : (
-          <Button onClick={handleGoToPlayer}>Play</Button>
-        )}
-      </Flex>
-    </Container>
+          <Text weight={600} color="dimmed">
+            Video Details
+          </Text>
+          <Flex gap="md" align="center">
+            <Image
+              src={metadata.coverUrl}
+              radius="sm"
+              height={48}
+              width={48}
+              withPlaceholder
+              placeholder={
+                <Center>
+                  <IconMusic />
+                </Center>
+              }
+              alt="cover image"
+            />
+            <Flex direction="column">
+              <Text weight={600}>{metadata.title || "Loading..."}</Text>
+              <Text>{metadata.author || "Loading..."}</Text>
+            </Flex>
+          </Flex>
+
+          {isLoading ? (
+            <Flex direction="column" gap="sm">
+              <Progress
+                value={isIndeterminate ? 100 : downloadState.percent}
+                size="lg"
+                radius="xl"
+                striped={isIndeterminate}
+                animate={isIndeterminate}
+                color={downloadState.status === "error" ? "red" : "violet"}
+              />
+              <Text size="sm" color="dimmed" align="center">
+                {getStatusText()}
+              </Text>
+            </Flex>
+          ) : (
+            <Button onClick={handleGoToPlayer}>Play</Button>
+          )}
+        </Flex>
+      </Container>
+    </>
   );
 }
