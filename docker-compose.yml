@@ -32,6 +32,8 @@ services:
       - PROXY=${PROXY:-socks5://warp:1080}
       - YOUTUBE_API_KEY=${YOUTUBE_API_KEY}
       - ADMIN_PASSWORD=${ADMIN_PASSWORD:-}
+      # Use the mounted volume for temp files to bypass Docker overlay FS and improve performance
+      - TMPDIR=/app/data/tmp
     volumes:
       - moonlit-data:/app/data
     restart: unless-stopped

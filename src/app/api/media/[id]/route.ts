@@ -1,7 +1,7 @@
 import { promises as fs } from "fs";
 import { createReadStream, existsSync } from "fs";
 import path from "path";
-import os from "os";
+import { getTempDir } from "@/utils/server";
 
 export const dynamic = "force-dynamic";
 
@@ -15,7 +15,7 @@ export async function GET(
     return new Response("Invalid ID", { status: 400 });
   }
 
-  const tmpDir = path.join(os.tmpdir(), "moonlit-media");
+  const tmpDir = path.join(getTempDir(), "moonlit-media");
   const filePath = path.join(tmpDir, id);
 
   if (!existsSync(filePath)) {

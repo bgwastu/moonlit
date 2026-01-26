@@ -1,8 +1,8 @@
 import { spawn } from "child_process";
-import { existsSync } from "fs";
-import { promises as fs } from "fs";
+import { existsSync, promises as fs } from "fs";
 import os from "os";
 import path from "path";
+import { getTempDir } from "@/utils/server";
 
 // ============================================================================
 // Types
@@ -396,7 +396,7 @@ export async function downloadVideoToFile(
   url: string,
   options: DownloadOptions = {},
 ): Promise<{ filePath: string; folderPath: string }> {
-  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "moonlit-yt-"));
+  const tmpDir = await fs.mkdtemp(path.join(getTempDir(), "moonlit-yt-"));
   const outputTemplate = path.join(tmpDir, "%(id)s.%(ext)s");
 
   const quality = options.quality || "low";
@@ -496,7 +496,7 @@ export async function downloadAudioToFile(
   url: string,
   options: DownloadOptions = {},
 ): Promise<{ filePath: string; folderPath: string }> {
-  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "moonlit-yt-"));
+  const tmpDir = await fs.mkdtemp(path.join(getTempDir(), "moonlit-yt-"));
   const outputTemplate = path.join(tmpDir, "%(id)s.%(ext)s");
 
   try {

@@ -121,12 +121,9 @@ export async function POST(req: Request) {
         // Move file to a stable temp location
         const { promises: fs } = await import("fs");
         const path = await import("path");
-        const os = await import("os");
+        const { getTempDir } = await import("@/utils/server");
 
-        const mediaDir = path.default.join(
-          os.default.tmpdir(),
-          "moonlit-media",
-        );
+        const mediaDir = path.default.join(getTempDir(), "moonlit-media");
         await fs.mkdir(mediaDir, { recursive: true });
 
         const fileId = crypto.randomUUID();
