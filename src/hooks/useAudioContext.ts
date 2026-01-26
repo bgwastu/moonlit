@@ -47,6 +47,7 @@ export function useAudioContext(
   const [isReady, setIsReady] = useState(false);
   const [reverbAmount, setReverbAmountState] = useState(0);
   const [isWebAudioActive, setIsWebAudioActive] = useState(false);
+
   const resumeIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const handlePlayRef = useRef<(() => void) | null>(null);
 

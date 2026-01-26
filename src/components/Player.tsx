@@ -1,16 +1,26 @@
 import LoadingOverlay from "@/components/LoadingOverlay";
 import { useAudioContext } from "@/hooks/useAudioContext";
+import { useDominantColor } from "@/hooks/useDominantColor";
 import { useVideoPlayer } from "@/hooks/useVideoPlayer";
 import { PlaybackMode, Song } from "@/interfaces";
+import {
+  getStateFromUrlParams,
+  getVideoState,
+  saveVideoState,
+} from "@/lib/videoState";
 import { getFormattedTime } from "@/utils";
+import { generateColors } from "@mantine/colors-generator";
 import {
   ActionIcon,
   Box,
   Button,
   Center,
+  Container,
   CopyButton,
   Flex,
   Image,
+  MantineProvider,
+  MantineThemeOverride,
   MediaQuery,
   Menu,
   Modal,
@@ -21,7 +31,7 @@ import {
   TextInput,
   useMantineTheme,
 } from "@mantine/core";
-import { useDisclosure, useDocumentTitle, useHotkeys } from "@mantine/hooks";
+import { useDisclosure, useHotkeys, useMediaQuery } from "@mantine/hooks";
 import {
   IconAdjustments,
   IconBrandTiktok,
@@ -45,13 +55,7 @@ import {
   IconShare,
 } from "@tabler/icons-react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import {
-  getStateFromUrlParams,
-  getVideoState,
-  saveVideoState,
-} from "@/lib/videoState";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import CookiesModal from "./CookiesModal";
 import DownloadModal from "./DownloadModal";
 import { IconPause } from "./IconPause";
@@ -59,11 +63,14 @@ import { IconPause } from "./IconPause";
 export function Player({
   song,
   repeating,
+  initialDominantColor,
 }: {
   song: Song;
   repeating: boolean;
+  initialDominantColor?: string;
 }) {
   const theme = useMantineTheme();
+  const isMobile = useMediaQuery("(max-width: 768px)");
 
   // Get the video URL for state storage
   const videoUrl = song.metadata.id
@@ -77,6 +84,13 @@ export function Player({
   const [customPlaybackRate, setCustomPlaybackRate] = useState(1);
   const [initialStartAt, setInitialStartAt] = useState(0);
   const [stateLoaded, setStateLoaded] = useState(false);
+  const dominantColor = useDominantColor(
+    song.metadata.coverUrl,
+    initialDominantColor,
+  );
+
+  const [isAudioOnly, setIsAudioOnly] = useState(false);
+  const [videoAspectRatio, setVideoAspectRatio] = useState<number>(16 / 9);
 
   // Load initial settings from URL params (for sharing) or localStorage
   useEffect(() => {
@@ -133,8 +147,6 @@ export function Player({
 
   const { setReverbAmount, reverbAmount, isSafari } =
     useAudioContext(videoElement);
-
-  useDocumentTitle(`${song.metadata.title} - Moonlit`);
 
   const [modalOpened, { open: openModal, close: closeModal }] =
     useDisclosure(false);
@@ -214,7 +226,38 @@ export function Player({
     isRepeat,
     videoUrl,
     stateLoaded,
+    isVideoReady,
   ]);
+
+  // Extract Dominant Color
+  // Extract Dominant Color
+
+  // Check Audio Only
+  useEffect(() => {
+    if (!videoElement) return;
+
+    const checkAudioOnly = () => {
+      if (videoElement.videoWidth === 0 && videoElement.videoHeight === 0) {
+        setIsAudioOnly(true);
+      } else {
+        setIsAudioOnly(false);
+        if (videoElement.videoWidth && videoElement.videoHeight) {
+          setVideoAspectRatio(
+            videoElement.videoWidth / videoElement.videoHeight,
+          );
+        }
+      }
+    };
+
+    if (videoElement.readyState >= 1) {
+      checkAudioOnly();
+    }
+    videoElement.addEventListener("loadedmetadata", checkAudioOnly);
+
+    return () => {
+      videoElement.removeEventListener("loadedmetadata", checkAudioOnly);
+    };
+  }, [videoElement]);
 
   // Toast Logic
   const [toast, setToast] = useState<{ message: string; visible: boolean }>({
@@ -340,8 +383,21 @@ export function Player({
     openShareModal();
   };
 
+  const dynamicTheme = useMemo(() => {
+    if (dominantColor === "rgba(0,0,0,0)") return theme;
+
+    return {
+      ...theme,
+      primaryColor: "brand",
+      colors: {
+        ...theme.colors,
+        brand: generateColors(dominantColor) as any,
+      },
+    } as MantineThemeOverride;
+  }, [dominantColor, theme]);
+
   return (
-    <>
+    <MantineProvider theme={dynamicTheme} inherit>
       <LoadingOverlay
         visible={!isVideoReady || !videoElement}
         message="Loading video..."
@@ -526,55 +582,159 @@ export function Player({
               left: "50%",
               transform: "translate(-50%, -50%)",
               zIndex: 20,
-              background: "rgba(0, 0, 0, 0.6)",
-              color: "white",
-              padding: "8px 16px",
-              borderRadius: "8px",
-              fontWeight: 500,
-              pointerEvents: "none",
-              backdropFilter: "blur(4px)",
+              background: "rgba(255, 255, 255, 0.1)",
+              backdropFilter: "blur(10px)",
+              border: "1px solid rgba(255, 255, 255, 0.1)",
+              boxShadow: "0 4px 6px rgba(0, 0, 0, 0.1)",
             }}
           >
             {toast.message}
           </Box>
         )}
 
-        {/* Video Player */}
+        {/* Video Player Area */}
         <Box
           style={{
             position: "absolute",
-            top: "50%",
-            left: "50%",
-            transform: "translate(-50%, -50%)",
+            inset: 0,
             zIndex: 1,
-            width: "90%",
-            maxWidth: "600px",
-            height: "60vh",
-            maxHeight: "60vh",
-            backgroundColor: "rgba(0,0,0,0.1)",
+            backgroundColor: "transparent",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            overflow: "hidden",
           }}
         >
-          <video
-            ref={videoRef}
-            key={song.fileUrl}
+          {/* Video Container with Dynamic Aspect Ratio */}
+          <Box
             style={{
+              position: "relative",
+              width: "auto",
+              height: "auto",
+              maxWidth: isMobile ? "100vw" : "60vw",
+              maxHeight: isMobile ? "70vh" : "70vh",
+              aspectRatio: `${videoAspectRatio}`,
+              borderRadius: theme.radius.md,
+              overflow: "hidden",
+              zIndex: 1,
+              display: isAudioOnly ? "none" : "block",
+            }}
+          >
+            <video
+              ref={videoRef}
+              key={song.fileUrl}
+              style={{
+                width: "100%",
+                height: "100%",
+                objectFit: "cover",
+                display: "block",
+                userSelect: "none",
+                pointerEvents: "none",
+              }}
+              playsInline
+              controls={false}
+              preload="metadata"
+              autoPlay
+              muted={false}
+              crossOrigin="anonymous"
+              onTimeUpdate={onTimeUpdate}
+              onError={onError}
+            />
+          </Box>
+
+          {/* Audio Only / Music Mode Display */}
+          {isAudioOnly && (
+            <Box
+              style={{
+                zIndex: 1,
+                position: "relative",
+                width: "auto",
+                height: "auto",
+                maxWidth: isMobile ? "100vw" : "60vw",
+                maxHeight: isMobile ? "70vh" : "60vh",
+                aspectRatio: "1/1",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              {song.metadata.coverUrl ? (
+                <Image
+                  src={
+                    song.metadata.coverUrl?.replace(
+                      /(hq|mq|sd)?default/,
+                      "maxresdefault",
+                    ) || song.metadata.coverUrl
+                  }
+                  width="100%"
+                  height="100%"
+                  radius={theme.radius.md}
+                  fit="contain"
+                  style={{
+                    userSelect: "none",
+                    pointerEvents: "none",
+                  }}
+                  alt={song.metadata.title}
+                />
+              ) : (
+                <Box
+                  w="100%"
+                  h="100%"
+                  bg="rgba(255,255,255,0.1)"
+                  style={{
+                    borderRadius: theme.radius.md,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    flexDirection: "column",
+                    gap: 10,
+                    userSelect: "none",
+                  }}
+                >
+                  <IconMusic size={80} style={{ opacity: 0.5 }} />
+                  <Text size="xl" weight={600} align="center">
+                    {song.metadata.title}
+                  </Text>
+                  <Text size="md" color="dimmed" align="center">
+                    {song.metadata.author}
+                  </Text>
+                </Box>
+              )}
+            </Box>
+          )}
+
+          {/* Pause/Resume Overlay */}
+          <Box
+            onClick={togglePlayer}
+            style={{
+              position: "absolute",
+              top: "50%",
+              left: "50%",
+              transform: "translate(-50%, -50%)",
               width: "100%",
               height: "100%",
-              borderRadius: "8px",
-              objectFit: "contain",
-              display: "block",
+              zIndex: 10,
               cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
             }}
-            playsInline
-            controls={false}
-            preload="metadata"
-            autoPlay
-            muted={false}
-            crossOrigin="anonymous"
-            onClick={togglePlayer}
-            onTimeUpdate={onTimeUpdate}
-            onError={onError}
-          />
+          >
+            {!isPlaying && (
+              <Center
+                w={80}
+                h={80}
+                bg="rgba(0,0,0,0.3)"
+                style={{ borderRadius: "50%", backdropFilter: "blur(4px)" }}
+              >
+                {isFinished ? (
+                  <IconRotate size={40} />
+                ) : (
+                  <IconPlayerPlayFilled size={40} />
+                )}
+              </Center>
+            )}
+          </Box>
         </Box>
 
         {/* Bottom Controls */}
@@ -588,20 +748,19 @@ export function Player({
           }}
         >
           <Flex align="center" justify="space-between" m={10}>
-            <MediaQuery largerThan="md" styles={{ visibility: "hidden" }}>
-              <Text
-                fz="sm"
-                px={10}
-                py={6}
-                style={{
-                  boxShadow: "0px 0px 0px 1px #383A3F",
-                  backgroundColor: theme.colors.dark[6],
-                  borderRadius: theme.radius.sm,
-                }}
-              >
-                {`${getFormattedTime(displayPosition)} / ${getFormattedTime(songLength)}`}
-              </Text>
-            </MediaQuery>
+            <Text
+              fz="sm"
+              px={10}
+              py={6}
+              style={{
+                boxShadow: "0px 0px 0px 1px #383A3F",
+                backgroundColor: theme.colors.dark[6],
+                borderRadius: theme.radius.sm,
+                fontVariantNumeric: "tabular-nums",
+              }}
+            >
+              {`${getFormattedTime(displayPosition)} / ${getFormattedTime(songLength)}`}
+            </Text>
             <Menu shadow="md" width={200} position="top-end">
               <Menu.Target>
                 <Button variant="default" leftIcon={<IconMenu2 size={18} />}>
@@ -692,7 +851,11 @@ export function Player({
             showLabelOnHover={false}
             size="sm"
             pr={0.3}
-            styles={{ thumb: { borderWidth: isSeeking ? 3 : 0 } }}
+            styles={{
+              thumb: {
+                borderWidth: 0,
+              },
+            }}
             thumbSize={isSeeking ? 25 : 15}
             label={(v) =>
               displayPosition >= songLength - 5 ? null : getFormattedTime(v)
@@ -701,50 +864,52 @@ export function Player({
           />
 
           <Box style={{ backgroundColor: theme.colors.dark[6] }}>
-            <Flex gap="sm" px="sm" py="md" justify="space-between">
-              <Flex align="center">
-                <ActionIcon size="lg" onClick={backward} title="Backward 5 sec">
-                  <IconRewindBackward5 />
-                </ActionIcon>
+            <Flex gap="sm" px="xs" py="xs" align="center">
+              <Flex align="center" gap={4}>
                 <ActionIcon
                   size="xl"
                   onClick={togglePlayer}
                   title={isPlaying ? "Pause" : isFinished ? "Replay" : "Play"}
+                  variant="transparent"
+                  color="gray"
                 >
                   {isPlaying ? (
                     <IconPause />
                   ) : isFinished ? (
-                    <IconRotate size={32} />
+                    <IconPlayerPlayFilled size={30} />
                   ) : (
-                    <IconPlayerPlayFilled size={32} />
+                    <IconPlayerPlayFilled size={30} />
                   )}
                 </ActionIcon>
-                <ActionIcon size="lg" onClick={forward} title="Forward 5 sec">
+                <ActionIcon
+                  size="lg"
+                  onClick={backward}
+                  title="Backward 5 sec"
+                  variant="transparent"
+                  color="gray"
+                >
+                  <IconRewindBackward5 />
+                </ActionIcon>
+                <ActionIcon
+                  size="lg"
+                  onClick={forward}
+                  title="Forward 5 sec"
+                  variant="transparent"
+                  color="gray"
+                >
                   <IconRewindForward5 />
                 </ActionIcon>
                 <ActionIcon
                   size="lg"
                   onClick={toggleLoop}
                   title={isRepeat ? "Turn off Repeat" : "Repeat"}
-                  style={{
-                    backgroundColor: isRepeat
-                      ? theme.colors.violet[6]
-                      : undefined,
-                    color: isRepeat ? theme.white : undefined,
-                  }}
+                  variant={isRepeat ? "filled" : "transparent"}
+                  color="primary"
                 >
                   {isRepeat ? <IconRepeat /> : <IconRepeatOff />}
                 </ActionIcon>
-                <MediaQuery smallerThan="md" styles={{ display: "none" }}>
-                  <Text
-                    fz="sm"
-                    ml="xs"
-                    miw={80}
-                    color="dimmed"
-                  >{`${getFormattedTime(displayPosition)} / ${getFormattedTime(songLength)}`}</Text>
-                </MediaQuery>
               </Flex>
-              <Flex gap="sm" align="center" style={{ flex: 1 }}>
+              <Flex ml={{ base: 0, xs: "lg" }}>
                 <MediaQuery smallerThan="xs" styles={{ display: "none" }}>
                   <Image
                     src={song.metadata.coverUrl}
@@ -760,19 +925,19 @@ export function Player({
                     alt="cover image"
                   />
                 </MediaQuery>
-                <Flex direction="column">
-                  <Text weight="600" lineClamp={1} lh={1.2} fz="sm">
+                <Box ml="sm">
+                  <Text size="sm" weight={600} lineClamp={1}>
                     {song.metadata.title}
                   </Text>
-                  <Text lineClamp={1} color="dimmed" fz="sm" lh={1.2}>
+                  <Text size="xs" color="dimmed" lineClamp={1}>
                     {song.metadata.author}
                   </Text>
-                </Flex>
+                </Box>
               </Flex>
             </Flex>
           </Box>
         </Box>
       </Box>
-    </>
+    </MantineProvider>
   );
 }
