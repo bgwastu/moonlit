@@ -161,10 +161,103 @@ export function Player({
     openShareModal();
   };
 
+  const [toast, setToast] = useState<{ message: string; visible: boolean }>({
+    message: "",
+    visible: false,
+  });
+  const toastTimeoutRef = useRef<NodeJS.Timeout>();
+
+  const showToast = (message: string) => {
+    if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
+    setToast({ message, visible: true });
+    toastTimeoutRef.current = setTimeout(() => {
+      setToast((prev) => ({ ...prev, visible: false }));
+    }, 2000);
+  };
+
+  const adjustCustomSpeed = (delta: number) => {
+    let currentRate = customPlaybackRate;
+    if (playbackMode !== "custom") {
+      if (playbackMode === "normal") currentRate = 1;
+      else if (playbackMode === "slowed") currentRate = 0.8;
+      else if (playbackMode === "speedup") currentRate = 1.25;
+    }
+
+    // Calculate new rate
+    let newRate = currentRate + delta;
+    // Round to 2 decimal places to avoid floating point artifacts
+    newRate = Math.round(newRate * 100) / 100;
+
+    // Clamp to reasonable bounds
+    if (newRate < 0.1) newRate = 0.1;
+
+    setCustomPlaybackRate(newRate);
+    setPlaybackMode("custom");
+    showToast(`${newRate}x`);
+  };
+
   useHotkeys([
     ["ArrowLeft", () => backward()],
     ["ArrowRight", () => forward()],
     ["Space", () => togglePlayer()],
+    [
+      "alt+1",
+      () => {
+        setPlaybackMode("slowed");
+        showToast("Slowed (0.8x)");
+      },
+    ],
+    [
+      "alt+¡",
+      () => {
+        setPlaybackMode("slowed");
+        showToast("Slowed (0.8x)");
+      },
+    ],
+    [
+      "alt+2",
+      () => {
+        setPlaybackMode("normal");
+        showToast("Normal (1.0x)");
+      },
+    ],
+    [
+      "alt+™",
+      () => {
+        setPlaybackMode("normal");
+        showToast("Normal (1.0x)");
+      },
+    ],
+    [
+      "alt+3",
+      () => {
+        setPlaybackMode("speedup");
+        showToast("Speed Up (1.25x)");
+      },
+    ],
+    [
+      "alt+£",
+      () => {
+        setPlaybackMode("speedup");
+        showToast("Speed Up (1.25x)");
+      },
+    ],
+    [
+      "alt+4",
+      () => {
+        setPlaybackMode("custom");
+        showToast(`Custom (${customPlaybackRate}x)`);
+      },
+    ],
+    [
+      "alt+¢",
+      () => {
+        setPlaybackMode("custom");
+        showToast(`Custom (${customPlaybackRate}x)`);
+      },
+    ],
+    ["shift+<", () => adjustCustomSpeed(-0.05)],
+    ["shift+>", () => adjustCustomSpeed(0.05)],
   ]);
 
   // Apply playback mode changes
@@ -583,6 +676,7 @@ export function Player({
             gap="sm"
           >
             <SegmentedControl
+              tabIndex={-1}
               bg={theme.colors.dark[6]}
               color="brand"
               style={{
@@ -613,6 +707,27 @@ export function Player({
             )}
           </Flex>
         </Flex>
+
+        {toast.visible && (
+          <Box
+            style={{
+              position: "absolute",
+              top: "50%",
+              left: "50%",
+              transform: "translate(-50%, -50%)",
+              zIndex: 20,
+              background: "rgba(0, 0, 0, 0.6)",
+              color: "white",
+              padding: "8px 16px",
+              borderRadius: "8px",
+              fontWeight: 500,
+              pointerEvents: "none",
+              backdropFilter: "blur(4px)",
+            }}
+          >
+            {toast.message}
+          </Box>
+        )}
 
         {/* Video Player */}
         <Box
