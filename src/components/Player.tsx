@@ -15,7 +15,6 @@ import {
   Box,
   Button,
   Center,
-  Container,
   CopyButton,
   Flex,
   Image,
@@ -29,6 +28,7 @@ import {
   Stack,
   Text,
   TextInput,
+  Transition,
   useMantineTheme,
 } from "@mantine/core";
 import { useDisclosure, useHotkeys, useMediaQuery } from "@mantine/hooks";
@@ -37,6 +37,7 @@ import {
   IconBrandTiktok,
   IconBrandX,
   IconBrandYoutube,
+  IconBrandYoutubeFilled,
   IconBug,
   IconCheck,
   IconCookie,
@@ -47,6 +48,8 @@ import {
   IconMenu2,
   IconMusic,
   IconPlayerPlayFilled,
+  IconPlayerTrackNextFilled,
+  IconPlayerTrackPrevFilled,
   IconRepeat,
   IconRepeatOff,
   IconRewindBackward5,
@@ -112,7 +115,6 @@ export function Player({
       setCustomPlaybackRate(savedState.customRate);
       setInitialStartAt(savedState.position);
     }
-    // Default to "slowed" mode (already set in useState)
 
     setStateLoaded(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -229,9 +231,6 @@ export function Player({
     isVideoReady,
   ]);
 
-  // Extract Dominant Color
-  // Extract Dominant Color
-
   // Check Audio Only
   useEffect(() => {
     if (!videoElement) return;
@@ -260,18 +259,55 @@ export function Player({
   }, [videoElement]);
 
   // Toast Logic
-  const [toast, setToast] = useState<{ message: string; visible: boolean }>({
-    message: "",
+  const [toast, setToast] = useState<{
+    message: React.ReactNode;
+    visible: boolean;
+    isCircular?: boolean;
+  }>({
+    message: null,
     visible: false,
   });
   const toastTimeoutRef = useRef<NodeJS.Timeout>();
 
-  const showToast = (message: string) => {
+  const showToast = (message: React.ReactNode, isCircular?: boolean) => {
     if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
-    setToast({ message, visible: true });
+    setToast({ message, visible: true, isCircular });
     toastTimeoutRef.current = setTimeout(() => {
       setToast((prev) => ({ ...prev, visible: false }));
-    }, 2000);
+    }, 1200);
+  };
+
+  const handleBackward = () => {
+    backward();
+    showToast(
+      <Flex align="center" gap="xs">
+        <IconRewindBackward5 size={24} />
+        <Text weight={600}>-5s</Text>
+      </Flex>,
+    );
+  };
+
+  const handleForward = () => {
+    forward();
+    showToast(
+      <Flex align="center" gap="xs">
+        <IconRewindForward5 size={24} />
+        <Text weight={600}>+5s</Text>
+      </Flex>,
+    );
+  };
+
+  const handleTogglePlayer = () => {
+    const nextPlayingState = !isPlaying;
+    togglePlayer();
+
+    if (isFinished) {
+      showToast(<IconRotate size={40} />, true);
+    } else if (nextPlayingState) {
+      showToast(<IconPlayerPlayFilled size={40} />, true);
+    } else {
+      showToast(<IconPause width={40} height={40} />, true);
+    }
   };
 
   const adjustCustomSpeed = (delta: number) => {
@@ -285,68 +321,68 @@ export function Player({
     if (newRate < 0.1) newRate = 0.1;
     setCustomPlaybackRate(newRate);
     setPlaybackMode("custom");
-    showToast(`${newRate}x`);
+    showToast(
+      <Flex align="center" gap="xs">
+        {currentRate < newRate ? (
+          <IconPlayerTrackNextFilled size={24} />
+        ) : (
+          <IconPlayerTrackPrevFilled size={24} />
+        )}
+        <Text weight={600}>{newRate}x</Text>
+      </Flex>,
+    );
   };
 
   // Hotkeys
   useHotkeys([
-    ["ArrowLeft", () => backward()],
-    ["ArrowRight", () => forward()],
-    ["Space", () => togglePlayer()],
+    ["ArrowLeft", () => handleBackward()],
+    ["ArrowRight", () => handleForward()],
+    ["Space", () => handleTogglePlayer()],
     [
-      "alt+1",
+      "ctrl+1",
       () => {
         setPlaybackMode("slowed");
-        showToast("Slowed (0.8x)");
+        showToast(
+          <Flex align="center" gap="xs">
+            <IconPlayerTrackPrevFilled size={20} />
+            <Text weight={600}>Slowed (0.8x)</Text>
+          </Flex>,
+        );
       },
     ],
     [
-      "alt+¡",
-      () => {
-        setPlaybackMode("slowed");
-        showToast("Slowed (0.8x)");
-      },
-    ],
-    [
-      "alt+2",
+      "ctrl+2",
       () => {
         setPlaybackMode("normal");
-        showToast("Normal (1.0x)");
+        showToast(
+          <Flex align="center" gap="xs">
+            <Text weight={600}>Normal (1.0x)</Text>
+          </Flex>,
+        );
       },
     ],
     [
-      "alt+™",
-      () => {
-        setPlaybackMode("normal");
-        showToast("Normal (1.0x)");
-      },
-    ],
-    [
-      "alt+3",
+      "ctrl+3",
       () => {
         setPlaybackMode("speedup");
-        showToast("Speed Up (1.25x)");
+        showToast(
+          <Flex align="center" gap="xs">
+            <IconPlayerTrackNextFilled size={20} />
+            <Text weight={600}>Speed Up (1.25x)</Text>
+          </Flex>,
+        );
       },
     ],
     [
-      "alt+£",
-      () => {
-        setPlaybackMode("speedup");
-        showToast("Speed Up (1.25x)");
-      },
-    ],
-    [
-      "alt+4",
+      "ctrl+4",
       () => {
         setPlaybackMode("custom");
-        showToast(`Custom (${customPlaybackRate}x)`);
-      },
-    ],
-    [
-      "alt+¢",
-      () => {
-        setPlaybackMode("custom");
-        showToast(`Custom (${customPlaybackRate}x)`);
+        showToast(
+          <Flex align="center" gap="xs">
+            <IconAdjustments size={20} />
+            <Text weight={600}>Custom ({customPlaybackRate}x)</Text>
+          </Flex>,
+        );
       },
     ],
     ["shift+<", () => adjustCustomSpeed(-0.05)],
@@ -574,23 +610,45 @@ export function Player({
         </Flex>
 
         {/* Toast */}
-        {toast.visible && (
-          <Box
-            style={{
-              position: "absolute",
-              top: "50%",
-              left: "50%",
-              transform: "translate(-50%, -50%)",
-              zIndex: 20,
-              background: "rgba(255, 255, 255, 0.1)",
-              backdropFilter: "blur(10px)",
-              border: "1px solid rgba(255, 255, 255, 0.1)",
-              boxShadow: "0 4px 6px rgba(0, 0, 0, 0.1)",
-            }}
+        <Box
+          style={{
+            position: "absolute",
+            inset: 0,
+            zIndex: 20,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            pointerEvents: "none",
+          }}
+        >
+          <Transition
+            mounted={toast.visible}
+            transition="pop"
+            duration={200}
+            timingFunction="ease"
           >
-            {toast.message}
-          </Box>
-        )}
+            {(styles) => (
+              <Box
+                style={{
+                  ...styles,
+                  background: "rgba(0, 0, 0, 0.45)",
+                  backdropFilter: "blur(12px)",
+                  borderRadius: toast.isCircular ? "50%" : theme.radius.xl,
+                  padding: toast.isCircular ? "20px" : "12px 24px",
+                  boxShadow: "0 8px 32px rgba(0, 0, 0, 0.2)",
+                  color: "white",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  width: toast.isCircular ? "90px" : "auto",
+                  height: toast.isCircular ? "90px" : "auto",
+                }}
+              >
+                {toast.message}
+              </Box>
+            )}
+          </Transition>
+        </Box>
 
         {/* Video Player Area */}
         <Box
@@ -703,9 +761,9 @@ export function Player({
             </Box>
           )}
 
-          {/* Pause/Resume Overlay */}
+          {/* Player Click Area */}
           <Box
-            onClick={togglePlayer}
+            onClick={handleTogglePlayer}
             style={{
               position: "absolute",
               top: "50%",
@@ -715,26 +773,8 @@ export function Player({
               height: "100%",
               zIndex: 10,
               cursor: "pointer",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
             }}
-          >
-            {!isPlaying && (
-              <Center
-                w={80}
-                h={80}
-                bg="rgba(0,0,0,0.3)"
-                style={{ borderRadius: "50%", backdropFilter: "blur(4px)" }}
-              >
-                {isFinished ? (
-                  <IconRotate size={40} />
-                ) : (
-                  <IconPlayerPlayFilled size={40} />
-                )}
-              </Center>
-            )}
-          </Box>
+          />
         </Box>
 
         {/* Bottom Controls */}
@@ -868,7 +908,7 @@ export function Player({
               <Flex align="center" gap={4}>
                 <ActionIcon
                   size="xl"
-                  onClick={togglePlayer}
+                  onClick={handleTogglePlayer}
                   title={isPlaying ? "Pause" : isFinished ? "Replay" : "Play"}
                   variant="transparent"
                   color="gray"
@@ -883,7 +923,7 @@ export function Player({
                 </ActionIcon>
                 <ActionIcon
                   size="lg"
-                  onClick={backward}
+                  onClick={handleBackward}
                   title="Backward 5 sec"
                   variant="transparent"
                   color="gray"
@@ -892,7 +932,7 @@ export function Player({
                 </ActionIcon>
                 <ActionIcon
                   size="lg"
-                  onClick={forward}
+                  onClick={handleForward}
                   title="Forward 5 sec"
                   variant="transparent"
                   color="gray"
@@ -903,8 +943,8 @@ export function Player({
                   size="lg"
                   onClick={toggleLoop}
                   title={isRepeat ? "Turn off Repeat" : "Repeat"}
-                  variant={isRepeat ? "filled" : "transparent"}
-                  color="primary"
+                  variant="transparent"
+                  color={isRepeat ? "primary" : "gray"}
                 >
                   {isRepeat ? <IconRepeat /> : <IconRepeatOff />}
                 </ActionIcon>
@@ -926,9 +966,30 @@ export function Player({
                   />
                 </MediaQuery>
                 <Box ml="sm">
-                  <Text size="sm" weight={600} lineClamp={1}>
-                    {song.metadata.title}
-                  </Text>
+                  <Flex align="center" gap={6}>
+                    <Text size="sm" weight={600} lineClamp={1}>
+                      {song.metadata.title}
+                    </Text>
+                    {getOriginalPlatformUrl() && (
+                      <MediaQuery smallerThan="md" styles={{ display: "none" }}>
+                        <ActionIcon
+                          component="a"
+                          href={getOriginalPlatformUrl()!}
+                          target="_blank"
+                          variant="transparent"
+                          size="xs"
+                          color="primary"
+                          style={{ opacity: 0.7 }}
+                        >
+                          {song.metadata.platform === "youtube" ? (
+                            <IconBrandYoutubeFilled size={16} />
+                          ) : (
+                            <IconBrandTiktok size={14} />
+                          )}
+                        </ActionIcon>
+                      </MediaQuery>
+                    )}
+                  </Flex>
                   <Text size="xs" color="dimmed" lineClamp={1}>
                     {song.metadata.author}
                   </Text>
