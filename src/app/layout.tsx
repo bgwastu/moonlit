@@ -2,16 +2,34 @@ import { Metadata } from "next";
 import LayoutWrapper from "./LayoutWrapper";
 
 export const metadata: Metadata = {
-  title: "Moonlit - Slowed & Nightcore Music Player",
+  metadataBase: new URL("https://moonlit.wastu.net"),
+  title: {
+    default: "Moonlit - Slowed & Nightcore Music Player",
+    template: "%s | Moonlit",
+  },
   description:
     "Transform your music experience with customizable playback speed. Play YouTube and TikTok videos with slowed or nightcore effects in real-time.",
-  keywords: ["slowed music", "nightcore", "youtube player", "tiktok player", "music remix", "audio effects"],
-  authors: [{ name: "Moonlit" }],
+  applicationName: "Moonlit",
+  keywords: [
+    "slowed music",
+    "nightcore",
+    "youtube player",
+    "tiktok player",
+    "music remix",
+    "audio effects",
+    "speed control",
+    "pitch control",
+  ],
+  authors: [{ name: "Moonlit", url: "https://moonlit.wastu.net" }],
   creator: "Moonlit",
   publisher: "Moonlit",
+  alternates: {
+    canonical: "/",
+  },
   openGraph: {
     title: "Moonlit - Slowed & Nightcore Music Player",
-    description: "Transform your music experience with customizable playback speed. Play YouTube and TikTok videos with slowed or nightcore effects in real-time.",
+    description:
+      "Transform your music experience with customizable playback speed. Play YouTube and TikTok videos with slowed or nightcore effects in real-time.",
     url: "https://moonlit.wastu.net",
     siteName: "Moonlit",
     type: "website",
@@ -20,7 +38,8 @@ export const metadata: Metadata = {
   twitter: {
     card: "summary_large_image",
     title: "Moonlit - Slowed & Nightcore Music Player",
-    description: "Transform your music experience with customizable playback speed. Play YouTube and TikTok videos with slowed or nightcore effects."
+    description:
+      "Transform your music experience with customizable playback speed. Play YouTube and TikTok videos with slowed or nightcore effects.",
   },
   verification: {
     google: "pIhibbB-PxDaY9RoagyBKnOOxpT4YT3gV0uCETuKEUU",
@@ -31,6 +50,9 @@ export const metadata: Metadata = {
     googleBot: {
       index: true,
       follow: true,
+      "max-video-preview": -1,
+      "max-image-preview": "large",
+      "max-snippet": -1,
     },
   },
 };
