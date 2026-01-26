@@ -5,10 +5,9 @@ import {
   getVideoInfo,
 } from "@/lib/yt-dlp";
 import crypto from "crypto";
-import { isYoutubeURL } from "@/utils";
+import { isTikTokURL } from "@/utils";
 
 export const maxDuration = 10000;
-export const dynamic = "force-dynamic";
 
 export async function POST(req: Request) {
   const {
@@ -18,14 +17,8 @@ export async function POST(req: Request) {
     quality,
   } = await req.json();
 
-  if (!isYoutubeURL(url)) {
-    return new Response(
-      JSON.stringify({ type: "error", message: "Invalid YouTube URL" }),
-      { status: 400, headers: { "Content-Type": "application/json" } },
-    );
-  }
-
   const encoder = new TextEncoder();
+  const isTikTok = isTikTokURL(url);
 
   const stream = new ReadableStream({
     async start(controller) {
@@ -34,41 +27,9 @@ export async function POST(req: Request) {
       };
 
       try {
-        // Get video info first
-        send({ type: "status", message: "Fetching video info..." });
+        // Get video info for duration check and video mode decision
+        send({ type: "status", message: "Checking video info..." });
         const videoInfo = await getVideoInfo(url, cookies);
-
-        // Clean up metadata
-        const title = videoInfo.title
-          .replace(/ \(Official Music Video\)/gi, "")
-          .replace(/ \[Official Music Video\]/gi, "")
-          .replace(/ \(Lyric Video\)/gi, "")
-          .replace(/ \[Lyric Video\]/gi, "")
-          .replace(/ \(Official Audio\)/gi, "")
-          .replace(/ \[Official Audio\]/gi, "")
-          .trim();
-
-        const author = videoInfo.author
-          .replace(/ - Topic$/i, "")
-          .replace(/VEVO$/i, "")
-          .trim();
-
-        let videoMode: boolean;
-        if (typeof requestedVideoMode === "boolean") {
-          videoMode = requestedVideoMode;
-        } else {
-          videoMode = videoInfo.lengthSeconds < 600;
-        }
-
-        // Send metadata
-        send({
-          type: "metadata",
-          title,
-          author,
-          thumbnail: videoInfo.thumbnail,
-          lengthSeconds: videoInfo.lengthSeconds,
-          videoMode,
-        });
 
         // Check duration limit
         if (videoInfo.lengthSeconds > 1800) {
@@ -78,6 +39,15 @@ export async function POST(req: Request) {
           });
           controller.close();
           return;
+        }
+
+        // Determine video mode
+        let videoMode: boolean;
+        if (typeof requestedVideoMode === "boolean") {
+          videoMode = requestedVideoMode;
+        } else {
+          // Default: TikTok always video, YouTube video for short content
+          videoMode = isTikTok || videoInfo.lengthSeconds < 600;
         }
 
         // Download with progress
@@ -134,14 +104,11 @@ export async function POST(req: Request) {
         // Cleanup the original temp folder
         await fs.rmdir(folderPath).catch(() => {});
 
+        // Send only download info - metadata comes from server-side page render
         send({
           type: "complete",
           contentType,
           downloadUrl: `/api/media/${fileId}`,
-          title,
-          author,
-          thumbnail: videoInfo.thumbnail,
-          lengthSeconds: videoInfo.lengthSeconds,
           videoMode,
         });
 

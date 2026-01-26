@@ -3,8 +3,6 @@ import { createReadStream, existsSync } from "fs";
 import path from "path";
 import { getTempDir } from "@/utils/server";
 
-export const dynamic = "force-dynamic";
-
 export async function GET(
   req: Request,
   { params }: { params: Promise<{ id: string }> },
