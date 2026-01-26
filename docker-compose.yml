@@ -6,8 +6,6 @@ services:
       - "c 10:200 rwm"
     environment:
       - WARP_SLEEP=2
-      # - WARP_LICENSE_KEY= # optional
-      # - WARP_ENABLE_NAT=1 # enable nat
     cap_add:
       - MKNOD
       - AUDIT_WRITE
@@ -15,12 +13,8 @@ services:
     sysctls:
       - net.ipv6.conf.all.disable_ipv6=0
       - net.ipv4.conf.all.src_valid_mark=1
-      # uncomment for nat
-      # - net.ipv4.ip_forward=1
-      # - net.ipv6.conf.all.forwarding=1
-      # - net.ipv6.conf.all.accept_ra=2
     volumes:
-      - ./data:/var/lib/cloudflare-warp
+      - warp-data:/var/lib/cloudflare-warp
     healthcheck:
       test: ["CMD", "cat", "/proc/net/tcp"]
       interval: 10s
@@ -35,8 +29,15 @@ services:
         condition: service_healthy
     environment:
       - NODE_ENV=${NODE_ENV:-production}
-      - PROXY=${PROXY:-}
+      - PROXY=${PROXY:-socks5://warp:1080}
       - YOUTUBE_API_KEY=${YOUTUBE_API_KEY}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-}
     volumes:
-      - ./data:/app/data
+      - moonlit-data:/app/data
+    ports:
+      - "3000:3000"
     restart: unless-stopped
+
+volumes:
+  warp-data:
+  moonlit-data:
