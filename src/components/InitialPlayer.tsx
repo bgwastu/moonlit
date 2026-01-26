@@ -24,7 +24,7 @@ import { IconMusic } from "@tabler/icons-react";
 import { useAtom } from "jotai";
 import { useRouter } from "next/navigation";
 import { usePostHog } from "posthog-js/react";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import Icon from "./Icon";
 import { Player } from "./Player";
 import { metadata } from "@/app/layout";
@@ -275,58 +275,61 @@ export default function InitialPlayer({
 
   const isLoading = !song;
 
-  const startDownload = (withVideo?: boolean) => {
-    const pageType = isShorts ? "shorts_page" : "watch_page";
-    posthog.capture(pageType, { youtubeId });
+  const startDownload = useCallback(
+    (withVideo?: boolean) => {
+      const pageType = isShorts ? "shorts_page" : "watch_page";
+      posthog.capture(pageType, { youtubeId });
 
-    const url = isShorts
-      ? `https://youtube.com/shorts/${youtubeId}`
-      : `https://youtube.com/watch?v=${youtubeId}`;
+      const url = isShorts
+        ? `https://youtube.com/shorts/${youtubeId}`
+        : `https://youtube.com/watch?v=${youtubeId}`;
 
-    if (!isSupportedURL(url)) {
-      notifications.show({
-        title: "Error",
-        message: "Invalid URL generated.",
-      });
-      router.push("/");
-      return;
-    }
-
-    (setSong as (song: Song | null) => void)(null);
-    setIsPlayer(false);
-    setDownloadState({ status: "idle", percent: 0 });
-
-    const abortController = new AbortController();
-
-    downloadWithProgress(
-      url,
-      metadata,
-      setDownloadState,
-      abortController.signal,
-      withVideo,
-    )
-      .then((downloadedSong: Song) => {
-        (setSong as (song: Song | null) => void)(downloadedSong);
-      })
-      .catch((e) => {
-        if (e.name === "AbortError") return;
-        console.error(`${pageType}: Download error:`, e);
-        setDownloadState({
-          status: "error",
-          percent: 0,
-          message: e.message,
-        });
+      if (!isSupportedURL(url)) {
         notifications.show({
-          title: "Download error",
-          message: e.message || "Could not process the video.",
+          title: "Error",
+          message: "Invalid URL generated.",
         });
         router.push("/");
-      });
+        return;
+      }
 
-    return () => {
-      abortController.abort();
-    };
-  };
+      (setSong as (song: Song | null) => void)(null);
+      setIsPlayer(false);
+      setDownloadState({ status: "idle", percent: 0 });
+
+      const abortController = new AbortController();
+
+      downloadWithProgress(
+        url,
+        metadata,
+        setDownloadState,
+        abortController.signal,
+        withVideo,
+      )
+        .then((downloadedSong: Song) => {
+          (setSong as (song: Song | null) => void)(downloadedSong);
+        })
+        .catch((e) => {
+          if (e.name === "AbortError") return;
+          console.error(`${pageType}: Download error:`, e);
+          setDownloadState({
+            status: "error",
+            percent: 0,
+            message: e.message,
+          });
+          notifications.show({
+            title: "Download error",
+            message: e.message || "Could not process the video.",
+          });
+          router.push("/");
+        });
+
+      return () => {
+        abortController.abort();
+      };
+    },
+    [isShorts, youtubeId, router, posthog, setSong, metadata],
+  );
 
   useEffect(() => {
     // Prevent double-call in dev mode (React Strict Mode)
@@ -367,7 +370,16 @@ export default function InitialPlayer({
     }
 
     checkAndStart();
-  }, [youtubeId, isShorts, router, posthog, setSong, metadata, duration]);
+  }, [
+    youtubeId,
+    isShorts,
+    router,
+    posthog,
+    setSong,
+    metadata,
+    duration,
+    startDownload,
+  ]);
 
   const handleGoToPlayer = () => {
     setIsPlayer(true);
