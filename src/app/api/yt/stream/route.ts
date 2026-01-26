@@ -1,8 +1,8 @@
 import {
-  getVideoInfo,
-  downloadVideo,
   downloadAudio,
   DownloadProgress,
+  downloadVideo,
+  getVideoInfo,
 } from "@/lib/yt-dlp";
 import { isYoutubeURL } from "@/utils";
 
@@ -10,7 +10,12 @@ export const maxDuration = 10000;
 export const dynamic = "force-dynamic";
 
 export async function POST(req: Request) {
-  const { url, cookies, videoMode: requestedVideoMode } = await req.json();
+  const {
+    url,
+    cookies,
+    videoMode: requestedVideoMode,
+    quality,
+  } = await req.json();
 
   if (!isYoutubeURL(url)) {
     return new Response(
@@ -92,7 +97,12 @@ export async function POST(req: Request) {
         let contentType: string;
 
         if (videoMode) {
-          buffer = await downloadVideo(url, { cookies, onProgress });
+          buffer = await downloadVideo(url, {
+            cookies,
+            onProgress,
+            quality:
+              quality || (videoInfo.lengthSeconds < 600 ? "high" : "low"),
+          });
           contentType = "video/mp4";
         } else {
           buffer = await downloadAudio(url, { cookies, onProgress });
