@@ -408,12 +408,12 @@ export async function downloadVideoToFile(
 
   if (!format) {
     if (isTikTok) {
-      format = "best[ext=mp4]/best";
+      format = "best[ext=mp4][height<=720]/best[height<=720]";
     } else {
       // YouTube / Default
       format =
         quality === "high"
-          ? "bestvideo[height<=1080][vcodec^=avc]+bestaudio[acodec^=mp4a]/best[height<=1080][vcodec^=avc][acodec^=mp4a]"
+          ? "bestvideo[height<=720][vcodec^=avc]+bestaudio[acodec^=mp4a]/best[height<=720][vcodec^=avc][acodec^=mp4a]"
           : "bestvideo[height<=480][vcodec^=avc]+bestaudio[acodec^=mp4a]/best[height<=480][vcodec^=avc][acodec^=mp4a]";
     }
   }
