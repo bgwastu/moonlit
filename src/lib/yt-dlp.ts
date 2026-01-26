@@ -26,6 +26,7 @@ export interface DownloadProgress {
 export interface DownloadOptions {
   format?: string;
   cookies?: string; // User cookies content passed from client
+  quality?: "high" | "low";
   onProgress?: (progress: DownloadProgress) => void;
 }
 
@@ -397,9 +398,14 @@ export async function downloadVideo(
   const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "moonlit-yt-"));
   const outputTemplate = path.join(tmpDir, "%(id)s.%(ext)s");
 
-  const format =
-    options.format ||
-    "best[height<=480][vcodec^=avc][acodec^=mp4a]/bestvideo[height<=480][vcodec^=avc]+bestaudio[acodec^=mp4a]/best[height<=480]";
+  const quality = options.quality || "low";
+
+  const videoFormat =
+    quality === "high"
+      ? "bestvideo[height<=1080][vcodec^=avc]+bestaudio[acodec^=mp4a]/best[height<=1080][vcodec^=avc][acodec^=mp4a]"
+      : "bestvideo[height<=480][vcodec^=avc]+bestaudio[acodec^=mp4a]/best[height<=480][vcodec^=avc][acodec^=mp4a]";
+
+  const format = options.format || videoFormat;
 
   try {
     const result = await executeYtDlp({

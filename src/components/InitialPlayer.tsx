@@ -5,7 +5,7 @@ import { Song } from "@/interfaces";
 import { getCookiesToUse } from "@/lib/cookies";
 import { songAtom } from "@/state";
 import { getYouTubeId, isSupportedURL } from "@/utils";
-import { getMedia, setMedia, setMeta, getMeta } from "@/utils/cache";
+import { getMedia, getMeta, setMedia, setMeta } from "@/utils/cache";
 import {
   Button,
   Center,
@@ -15,6 +15,7 @@ import {
   Image,
   Modal,
   Progress,
+  SegmentedControl,
   Switch,
   Text,
   rem,
@@ -24,10 +25,9 @@ import { IconMusic } from "@tabler/icons-react";
 import { useAtom } from "jotai";
 import { useRouter } from "next/navigation";
 import { usePostHog } from "posthog-js/react";
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Icon from "./Icon";
 import { Player } from "./Player";
-import { metadata } from "@/app/layout";
 
 interface InitialPlayerProps {
   youtubeId: string;
@@ -56,6 +56,7 @@ async function downloadWithProgress(
   onProgress: (state: DownloadState) => void,
   abortSignal?: AbortSignal,
   videoMode?: boolean,
+  quality?: "high" | "low",
 ): Promise<Song> {
   const id = getYouTubeId(url);
 
@@ -122,7 +123,7 @@ async function downloadWithProgress(
     fetch("/api/yt/stream", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ url, cookies, videoMode }),
+      body: JSON.stringify({ url, cookies, videoMode, quality }),
       signal: controller.signal,
     })
       .then((response) => {
@@ -269,6 +270,7 @@ export default function InitialPlayer({
 
   const [confirmationOpened, setConfirmationOpened] = useState(false);
   const [includeVideo, setIncludeVideo] = useState(false);
+  const [quality, setQuality] = useState<"low" | "high">("low");
 
   // Ref to prevent double-call in React Strict Mode
   const downloadStarted = useRef(false);
@@ -276,7 +278,7 @@ export default function InitialPlayer({
   const isLoading = !song;
 
   const startDownload = useCallback(
-    (withVideo?: boolean) => {
+    (withVideo?: boolean, downloadQuality: "high" | "low" = "high") => {
       const pageType = isShorts ? "shorts_page" : "watch_page";
       posthog.capture(pageType, { youtubeId });
 
@@ -305,6 +307,7 @@ export default function InitialPlayer({
         setDownloadState,
         abortController.signal,
         withVideo,
+        downloadQuality,
       )
         .then((downloadedSong: Song) => {
           (setSong as (song: Song | null) => void)(downloadedSong);
@@ -357,7 +360,7 @@ export default function InitialPlayer({
 
       if (cachedVideo || cachedAudio) {
         // If cached, just proceed, downloadWithProgress will handle it fast
-        startDownload();
+        startDownload(undefined, "high");
         return;
       }
 
@@ -365,7 +368,7 @@ export default function InitialPlayer({
       if (duration && duration > 600) {
         setConfirmationOpened(true);
       } else {
-        startDownload();
+        startDownload(true, "high");
       }
     }
 
@@ -443,8 +446,21 @@ export default function InitialPlayer({
           label="Include Video (Larger file size)"
           checked={includeVideo}
           onChange={(event) => setIncludeVideo(event.currentTarget.checked)}
-          mb="xl"
+          mb="sm"
         />
+
+        {includeVideo && (
+          <SegmentedControl
+            value={quality}
+            onChange={(value) => setQuality(value as "low" | "high")}
+            data={[
+              { label: "Low Quality (480p)", value: "low" },
+              { label: "High Quality (HD)", value: "high" },
+            ]}
+            mb="xl"
+            fullWidth
+          />
+        )}
 
         <Group position="right">
           <Button variant="default" onClick={() => router.push("/")}>
@@ -453,7 +469,7 @@ export default function InitialPlayer({
           <Button
             onClick={() => {
               setConfirmationOpened(false);
-              startDownload(includeVideo);
+              startDownload(includeVideo, quality);
             }}
           >
             Download
