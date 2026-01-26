@@ -25,6 +25,12 @@ export async function GET(
   const stat = await fs.stat(filePath);
   const stream = createReadStream(filePath);
 
+  // Wait for the file to be opened before unlinking
+  await new Promise<void>((resolve, reject) => {
+    stream.on("open", () => resolve());
+    stream.on("error", (err) => reject(err));
+  });
+
   // POSIX (Mac/Linux) allow deleting a file while it has open file descriptors.
   // The file data remains available to the stream until it closes, but the directory entry is removed immediately.
   await fs.unlink(filePath).catch(() => {});
