@@ -70,7 +70,7 @@ function LocalUpload() {
 
   return (
     <Dropzone
-      accept={["audio/mpeg", "video/mp4"]}
+      accept={["audio/mpeg", "video/mp4", "audio/wav"]}
       maxFiles={1}
       disabled={loading.status}
       onDrop={async (files) => {

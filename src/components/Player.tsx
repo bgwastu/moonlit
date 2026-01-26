@@ -46,7 +46,11 @@ import {
 } from "@tabler/icons-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useQueryState } from "nuqs";
+import {
+  getStateFromUrlParams,
+  getVideoState,
+  saveVideoState,
+} from "@/lib/videoState";
 import { useEffect, useRef, useState } from "react";
 import CookiesModal from "./CookiesModal";
 import DownloadModal from "./DownloadModal";
@@ -60,27 +64,43 @@ export function Player({
   repeating: boolean;
 }) {
   const theme = useMantineTheme();
-  // Playback State
-  const [playbackMode, setPlaybackMode] = useState<PlaybackMode>("normal");
+
+  // Get the video URL for state storage
+  const videoUrl = song.metadata.id
+    ? song.metadata.platform === "youtube"
+      ? `https://www.youtube.com/watch?v=${song.metadata.id}`
+      : `https://www.tiktok.com/video/${song.metadata.id}`
+    : song.fileUrl;
+
+  // Playback State - default to "slowed"
+  const [playbackMode, setPlaybackMode] = useState<PlaybackMode>("slowed");
   const [customPlaybackRate, setCustomPlaybackRate] = useState(1);
+  const [initialStartAt, setInitialStartAt] = useState(0);
+  const [stateLoaded, setStateLoaded] = useState(false);
 
-  // URL Query State
-  const [mode, setMode] = useQueryState("mode");
-  const [rate, setRate] = useQueryState("rate");
-  const [startAt] = useQueryState("startAt");
-
-  // Load initial settings
+  // Load initial settings from URL params (for sharing) or localStorage
   useEffect(() => {
-    if (mode && ["slowed", "normal", "speedup", "custom"].includes(mode)) {
-      setPlaybackMode(mode as PlaybackMode);
+    // Priority: URL params > localStorage > defaults
+    const urlParams = getStateFromUrlParams();
+    const savedState = getVideoState(videoUrl);
+
+    // If URL has sharing params (startAt), use URL params
+    if (urlParams.startAt !== undefined) {
+      setPlaybackMode(urlParams.mode || "slowed");
+      if (urlParams.mode === "custom" && urlParams.rate) {
+        setCustomPlaybackRate(urlParams.rate);
+      }
+      setInitialStartAt(urlParams.startAt);
     }
-    if (mode === "custom") {
-      const savedRate = localStorage.getItem("custom-playback-rate");
-      const parsedRate = savedRate
-        ? JSON.parse(savedRate)
-        : parseFloat(rate || "1") || 1;
-      setCustomPlaybackRate(parsedRate);
+    // Otherwise, restore from localStorage
+    else if (savedState) {
+      setPlaybackMode(savedState.mode);
+      setCustomPlaybackRate(savedState.customRate);
+      setInitialStartAt(savedState.position);
     }
+    // Default to "slowed" mode (already set in useState)
+
+    setStateLoaded(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -108,7 +128,7 @@ export function Player({
     repeating,
     playbackMode,
     customPlaybackRate,
-    startAt: startAt ? parseInt(startAt) : 0,
+    startAt: stateLoaded ? initialStartAt : 0,
   });
 
   const { setReverbAmount, reverbAmount, isSafari } =
@@ -131,25 +151,70 @@ export function Player({
 
   const [shareStartTime, setShareStartTime] = useState(0);
 
-  // Sync state to URL
+  // Save state to localStorage periodically and on changes
+  const lastSaveRef = useRef<number>(0);
   useEffect(() => {
-    setMode(playbackMode === "normal" ? null : playbackMode);
-    if (playbackMode === "custom") {
-      setRate(customPlaybackRate + "");
-    } else {
-      setRate(null);
-    }
-  }, [playbackMode, customPlaybackRate, setMode, setRate]);
+    if (!stateLoaded || !isVideoReady) return;
 
-  // Save custom rate
+    // Throttle saves to every 5 seconds
+    const now = Date.now();
+    if (now - lastSaveRef.current < 5000) return;
+    lastSaveRef.current = now;
+
+    saveVideoState(videoUrl, {
+      position: currentPlayback,
+      mode: playbackMode,
+      customRate: customPlaybackRate,
+      reverbAmount,
+      isRepeat,
+    });
+  }, [
+    currentPlayback,
+    playbackMode,
+    customPlaybackRate,
+    reverbAmount,
+    isRepeat,
+    videoUrl,
+    stateLoaded,
+    isVideoReady,
+  ]);
+
+  // Save state on unmount or visibility change
   useEffect(() => {
-    if (playbackMode === "custom") {
-      localStorage.setItem(
-        "custom-playback-rate",
-        JSON.stringify(customPlaybackRate),
-      );
-    }
-  }, [customPlaybackRate, playbackMode]);
+    const saveState = () => {
+      if (!stateLoaded) return;
+      saveVideoState(videoUrl, {
+        position: currentPlayback,
+        mode: playbackMode,
+        customRate: customPlaybackRate,
+        reverbAmount,
+        isRepeat,
+      });
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        saveState();
+      }
+    };
+
+    window.addEventListener("beforeunload", saveState);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      saveState();
+      window.removeEventListener("beforeunload", saveState);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [
+    currentPlayback,
+    playbackMode,
+    customPlaybackRate,
+    reverbAmount,
+    isRepeat,
+    videoUrl,
+    stateLoaded,
+  ]);
 
   // Toast Logic
   const [toast, setToast] = useState<{ message: string; visible: boolean }>({
