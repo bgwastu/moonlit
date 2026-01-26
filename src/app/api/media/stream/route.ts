@@ -7,8 +7,6 @@ import {
 import crypto from "crypto";
 import { isTikTokURL } from "@/utils";
 
-export const maxDuration = 10000;
-
 export async function POST(req: Request) {
   const {
     url,
@@ -30,16 +28,6 @@ export async function POST(req: Request) {
         // Get video info for duration check and video mode decision
         send({ type: "status", message: "Checking video info..." });
         const videoInfo = await getVideoInfo(url, cookies);
-
-        // Check duration limit
-        if (videoInfo.lengthSeconds > 1800) {
-          send({
-            type: "error",
-            message: "The video is too long. The maximum length is 30 minutes",
-          });
-          controller.close();
-          return;
-        }
 
         // Determine video mode
         let videoMode: boolean;

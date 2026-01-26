@@ -109,7 +109,7 @@ export async function downloadWithProgress(
       abortSignal.addEventListener("abort", () => controller.abort());
     }
 
-    fetch("/api/stream", {
+    fetch("/api/media/stream", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ url, cookies, videoMode, quality }),
