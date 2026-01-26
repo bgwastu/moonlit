@@ -38,6 +38,7 @@ import {
   IconCheck,
   IconCookie,
   IconCopy,
+  IconDownload,
   IconExternalLink,
   IconHome,
   IconMenu2,
@@ -50,6 +51,7 @@ import {
   IconRotate,
   IconShare,
 } from "@tabler/icons-react";
+import DownloadModal from "./DownloadModal";
 import CookiesModal from "./CookiesModal";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -110,6 +112,10 @@ export function Player({
   const [
     cookiesModalOpened,
     { open: openCookiesModal, close: closeCookiesModal },
+  ] = useDisclosure(false);
+  const [
+    downloadModalOpened,
+    { open: openDownloadModal, close: closeDownloadModal },
   ] = useDisclosure(false);
   const [shareStartTime, setShareStartTime] = useState(0);
 
@@ -598,6 +604,22 @@ export function Player({
         </Stack>
       </Modal>
 
+      <DownloadModal
+        opened={downloadModalOpened}
+        onClose={closeDownloadModal}
+        song={song}
+        currentPlaybackRate={
+          playbackMode === "normal"
+            ? 1
+            : playbackMode === "slowed"
+              ? 0.8
+              : playbackMode === "speedup"
+                ? 1.25
+                : customPlaybackRate
+        }
+        currentReverb={reverbAmount}
+      />
+
       <Modal
         opened={shareModalOpened}
         onClose={closeShareModal}
@@ -838,6 +860,12 @@ export function Player({
                   onClick={handleOpenShareModal}
                 >
                   Share
+                </Menu.Item>
+                <Menu.Item
+                  icon={<IconDownload size={14} />}
+                  onClick={openDownloadModal}
+                >
+                  Download
                 </Menu.Item>
                 <Menu.Item
                   icon={<IconBug size={14} />}
