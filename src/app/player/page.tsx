@@ -31,19 +31,15 @@ export async function generateMetadata({
 
     try {
       const videoDetails = await fetchYoutubeDetails(id);
-      const isShorts = url.includes("/shorts/");
-      const title = `${videoDetails.title} - Moonlit${isShorts ? " Shorts" : ""}`;
+      const title = `${videoDetails.title} - Moonlit`;
       const description = `Watch "${videoDetails.title}" by ${videoDetails.channelTitle} with customizable slowed and nightcore effects on Moonlit.`;
-
-      const imageUrl = isShorts
-        ? `https://i.ytimg.com/vi/${id}/maxresdefault.jpg`
-        : `https://moonlit.wastu.net/api/og?title=${encodeURIComponent(
-            videoDetails.title,
-          )}&cover=${encodeURIComponent(
-            videoDetails.thumbnails.maxres?.url ||
-              videoDetails.thumbnails.high?.url ||
-              videoDetails.thumbnails.default.url,
-          )}`;
+      const imageUrl = `https://moonlit.wastu.net/api/og?title=${encodeURIComponent(
+        videoDetails.title,
+      )}&cover=${encodeURIComponent(
+        videoDetails.thumbnails.maxres?.url ||
+          videoDetails.thumbnails.high?.url ||
+          videoDetails.thumbnails.default.url,
+      )}`;
 
       return {
         title,
@@ -51,7 +47,7 @@ export async function generateMetadata({
         openGraph: {
           title,
           description,
-          type: isShorts ? "video.other" : "website",
+          type: "website",
           images: [{ url: imageUrl }],
         },
         twitter: {
