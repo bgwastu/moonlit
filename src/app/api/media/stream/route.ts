@@ -25,17 +25,28 @@ export async function POST(req: Request) {
       };
 
       try {
-        // Get video info for duration check and video mode decision
-        send({ type: "status", message: "Checking video info..." });
-        const videoInfo = await getVideoInfo(url, cookies);
-
-        // Determine video mode
+        // Determine video mode and quality
         let videoMode: boolean;
-        if (typeof requestedVideoMode === "boolean") {
+        let finalQuality: "high" | "low" = quality;
+
+        // If we have both videoMode and quality, we can skip the initial metadata fetch!
+        if (typeof requestedVideoMode === "boolean" && quality) {
           videoMode = requestedVideoMode;
         } else {
-          // Default: TikTok always video, YouTube video for short content
-          videoMode = isTikTok || videoInfo.lengthSeconds < 600;
+          // Fallback: We need metadata to make decisions
+          send({ type: "status", message: "Checking video info..." });
+          const videoInfo = await getVideoInfo(url, cookies);
+
+          if (typeof requestedVideoMode === "boolean") {
+            videoMode = requestedVideoMode;
+          } else {
+            // Default: TikTok always video, YouTube video for short content
+            videoMode = isTikTok || videoInfo.lengthSeconds < 600;
+          }
+
+          if (!finalQuality) {
+            finalQuality = videoInfo.lengthSeconds < 600 ? "high" : "low";
+          }
         }
 
         // Download with progress
@@ -60,8 +71,7 @@ export async function POST(req: Request) {
           const result = await downloadVideoToFile(url, {
             cookies,
             onProgress,
-            quality:
-              quality || (videoInfo.lengthSeconds < 600 ? "high" : "low"),
+            quality: finalQuality,
           });
           filePath = result.filePath;
           folderPath = result.folderPath;
