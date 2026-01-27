@@ -2,6 +2,7 @@ import { spawn } from "child_process";
 import { existsSync, readFileSync, promises as fs } from "fs";
 import os from "os";
 import path from "path";
+import { isYoutubeURL } from "@/utils";
 import { getTempDir } from "@/utils/server";
 
 // ============================================================================
@@ -412,30 +413,36 @@ export async function downloadVideoToFile(
   let format = options.format;
 
   if (!format) {
-    if (isTikTok) {
-      format = "best[ext=mp4][height<=720]/best[height<=720]";
-    } else {
-      // YouTube / Default
+    if (isYoutubeURL(url)) {
+      // YouTube: Use specific format strings based on quality
       format =
         quality === "high"
           ? "bestvideo[height<=720][vcodec^=avc]+bestaudio[acodec^=mp4a]/best[height<=720][vcodec^=avc][acodec^=mp4a]"
           : "bestvideo[height<=480][vcodec^=avc]+bestaudio[acodec^=mp4a]/best[height<=480][vcodec^=avc][acodec^=mp4a]";
+    } else {
+      // TikTok and others: Rely on best/default
+      format = undefined;
     }
   }
 
   try {
+    const args = [
+      "--merge-output-format",
+      "mp4",
+      "--output",
+      outputTemplate,
+      "--no-playlist",
+      "--newline",
+      url,
+    ];
+
+    if (format) {
+      args.unshift(format);
+      args.unshift("--format");
+    }
+
     const result = await executeYtDlp({
-      args: [
-        "--format",
-        format,
-        "--merge-output-format",
-        "mp4",
-        "--output",
-        outputTemplate,
-        "--no-playlist",
-        "--newline",
-        url,
-      ],
+      args,
       cookies: options.cookies,
       onStdout: (data) => {
         const lines = data.split("\n");
@@ -598,14 +605,17 @@ export async function getVideoUrl(
   url: string,
   cookies?: string,
 ): Promise<string> {
-  const result = await executeYtDlp({
-    args: [
-      "--format",
+  const args = ["--get-url", "--no-playlist", url];
+
+  if (isYoutubeURL(url)) {
+    args.unshift(
       "best[height<=480][vcodec^=avc][acodec^=mp4a]/bestvideo[height<=480][vcodec^=avc]+bestaudio[acodec^=mp4a]/best[height<=480]",
-      "--get-url",
-      "--no-playlist",
-      url,
-    ],
+    );
+    args.unshift("--format");
+  }
+
+  const result = await executeYtDlp({
+    args,
     cookies,
   });
 
