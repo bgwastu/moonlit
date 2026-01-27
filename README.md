@@ -9,6 +9,15 @@ You can listen to your favorite tracks from multiple platforms on Moonlit:
 - **YouTube**: Replace `youtube.com` with `moonlit.wastu.net` to the URL (example: [moonlit.wastu.net/watch?v=dQw4w9WgXcQ](https://moonlit.wastu.net/watch?v=dQw4w9WgXcQ))
 - **TikTok**: Replace `tiktok.com` with `moonlit.wastu.net` to the URL (example: [moonlit.wastu.net/@etherealbia/video/7482838437075094790](https://moonlit.wastu.net/@etherealbia/video/7482838437075094790)
 
+### Browser Extension / Userscript 🧩
+Want a smoother experience? Install our **Userscript** to add an "Open in Moonlit" button directly to YouTube and TikTok!
+
+[![Install Userscript](https://img.shields.io/badge/Install-Userscript-5F3DC4?style=for-the-badge&logo=tampermonkey&logoColor=white)](https://moonlit.wastu.net/moonlit-opener.user.js)
+
+1. Install [Tampermonkey](https://www.tampermonkey.net/) extension.
+2. Click the button above to install the script.
+
+
 # Demo 🔊
 https://github.com/bgwastu/moonlit/assets/67826350/a60fa36b-528a-4216-a925-971055a9ff42
 
