@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Open in Moonlit
 // @namespace    http://tampermonkey.net/
-// @version      1.4
+// @version      1.5
 // @description  Adds a draggable floating button to open the current video in Moonlit
 // @author       Moonlit
 // @match        *://www.youtube.com/*
@@ -20,11 +20,20 @@
   const ICON_COLOR = "#F3F0FF";
 
   function openInMoonlit() {
-    const url = window.location.href;
-    window.open(
-      `${MOONLIT_BASE}/player?url=${encodeURIComponent(url)}`,
-      "_blank",
-    );
+    const url = new URL(window.location.href);
+    url.hostname = "moonlit.wastu.net";
+
+    // Allow only essential parameters (v=video, t=timestamp, list=playlist, index=playlist_index)
+    // This strips tracking params like 'si', 'pp', 'feature', etc.
+    const allowedParams = ["v", "t", "list", "index"];
+    const keys = Array.from(url.searchParams.keys());
+    for (const key of keys) {
+      if (!allowedParams.includes(key)) {
+        url.searchParams.delete(key);
+      }
+    }
+
+    window.open(url.href, "_blank");
   }
 
   // Create SVG element without innerHTML (Trusted Types compatible)
