@@ -1,32 +1,24 @@
 "use client";
 
-import { historyAtom } from "@/state";
+import { useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   ActionIcon,
   Avatar,
   Box,
   Button,
-  Center,
   Flex,
   Group,
   Modal,
-  ScrollArea,
   Stack,
   Text,
   Tooltip,
   UnstyledButton,
-  rem,
   useMantineTheme,
 } from "@mantine/core";
-import {
-  IconHistory,
-  IconPlayerPlay,
-  IconTrash,
-  IconX,
-} from "@tabler/icons-react";
+import { IconHistory, IconPlayerPlay, IconTrash, IconX } from "@tabler/icons-react";
 import { useAtom } from "jotai";
-import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { historyAtom } from "@/state";
 
 interface HistoryModalProps {
   opened: boolean;
@@ -92,11 +84,7 @@ export default function HistoryModal({ opened, onClose }: HistoryModalProps) {
       centered
       padding="lg"
     >
-      <Stack
-        spacing="md"
-        h={500}
-        style={{ display: "flex", flexDirection: "column" }}
-      >
+      <Stack spacing="md" h={500} style={{ display: "flex", flexDirection: "column" }}>
         {history.length === 0 ? (
           <Flex
             h="100%"
@@ -195,11 +183,7 @@ export default function HistoryModal({ opened, onClose }: HistoryModalProps) {
                             >
                               {item.metadata.author}
                             </Text>
-                            <Text
-                              size="xs"
-                              color="dimmed"
-                              style={{ flexShrink: 0 }}
-                            >
+                            <Text size="xs" color="dimmed" style={{ flexShrink: 0 }}>
                               •
                             </Text>
                             <Text
@@ -213,16 +197,8 @@ export default function HistoryModal({ opened, onClose }: HistoryModalProps) {
                           </Group>
                         </Box>
 
-                        <Stack
-                          align="flex-end"
-                          spacing={4}
-                          style={{ flexShrink: 0 }}
-                        >
-                          <Text
-                            size="xs"
-                            color="dimmed"
-                            style={{ whiteSpace: "nowrap" }}
-                          >
+                        <Stack align="flex-end" spacing={4} style={{ flexShrink: 0 }}>
+                          <Text size="xs" color="dimmed" style={{ whiteSpace: "nowrap" }}>
                             {timeAgo(item.playedAt)}
                           </Text>
 
