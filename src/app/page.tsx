@@ -1,10 +1,7 @@
 "use client";
 
-import CookiesModal from "@/components/CookiesModal";
-import LoadingOverlay from "@/components/LoadingOverlay";
-import useNoSleep from "@/hooks/useNoSleep";
-import type { Song } from "@/interfaces";
-import { getCookiesToUse } from "@/lib/cookies";
+import { useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   ActionIcon,
   Anchor,
@@ -14,16 +11,15 @@ import {
   Divider,
   Flex,
   Footer,
-  rem,
   Stack,
   Text,
   TextInput,
   Tooltip,
+  rem,
 } from "@mantine/core";
 import { Dropzone } from "@mantine/dropzone";
 import { useForm } from "@mantine/form";
 import { notifications } from "@mantine/notifications";
-import HistoryModal from "@/components/HistoryModal";
 import {
   IconBrandGithub,
   IconBrandTiktok,
@@ -38,9 +34,13 @@ import {
 import parse from "id3-parser";
 import { convertFileToBuffer } from "id3-parser/lib/util";
 import { atom, useAtom } from "jotai";
-import { useRouter } from "next/navigation";
 import { usePostHog } from "posthog-js/react";
-import { useState } from "react";
+import CookiesModal from "@/components/CookiesModal";
+import HistoryModal from "@/components/HistoryModal";
+import LoadingOverlay from "@/components/LoadingOverlay";
+import useNoSleep from "@/hooks/useNoSleep";
+import type { Song } from "@/interfaces";
+import { getCookiesToUse } from "@/lib/cookies";
 import Icon from "../components/Icon";
 import { songAtom } from "../state";
 import {
@@ -64,7 +64,7 @@ function LocalUpload() {
   const [, setSong] = useAtom(songAtom);
   const posthog = usePostHog();
   const router = useRouter();
-  const [, setNoSleepEnabled] = useNoSleep();
+  const [, noSleep] = useNoSleep();
 
   const handleSetSong = (newSong: Song) => {
     (setSong as (song: Song | null) => void)(newSong);
@@ -110,7 +110,7 @@ function LocalUpload() {
             message: null,
           });
 
-          setNoSleepEnabled(true);
+          noSleep.enable();
         } else {
           const newSong: Song = {
             fileUrl: URL.createObjectURL(files[0]),
@@ -163,8 +163,7 @@ function YoutubeUpload({ onOpenCookies }: { onOpenCookies: () => void }) {
       url: "",
     },
     validate: {
-      url: (value) =>
-        !isSupportedURL(value) ? "Must be YouTube or TikTok URL" : null,
+      url: (value) => (!isSupportedURL(value) ? "Must be YouTube or TikTok URL" : null),
     },
   });
 
@@ -284,14 +283,8 @@ export default function UploadPage() {
   return (
     <>
       <LoadingOverlay visible={loading.status} message={loading.message} />
-      <CookiesModal
-        opened={cookiesOpened}
-        onClose={() => setCookiesOpened(false)}
-      />
-      <HistoryModal
-        opened={historyOpened}
-        onClose={() => setHistoryOpened(false)}
-      />
+      <CookiesModal opened={cookiesOpened} onClose={() => setCookiesOpened(false)} />
+      <HistoryModal opened={historyOpened} onClose={() => setHistoryOpened(false)} />
 
       <AppShell footer={<FooterSection />} mt={28}>
         <Container size="sm">
