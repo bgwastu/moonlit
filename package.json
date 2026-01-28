@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "prepare": "husky"
   },
   "dependencies": {
     "@mantine/colors-generator": "^7.17.8",
@@ -33,6 +34,10 @@
     "worker-timers": "^7.1.8"
   },
   "devDependencies": {
-    "@types/node": "20.6.0"
+    "@trivago/prettier-plugin-sort-imports": "^6.0.2",
+    "@types/node": "20.6.0",
+    "husky": "^9.1.7",
+    "lint-staged": "^16.2.7",
+    "prettier": "^3.8.1"
   }
 }

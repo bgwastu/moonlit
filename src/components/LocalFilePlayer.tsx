@@ -1,22 +1,14 @@
 "use client";
 
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { Button, Center, Container, Flex, Image, Text, rem } from "@mantine/core";
+import { IconMusic } from "@tabler/icons-react";
+import { useAtom } from "jotai";
 import Icon from "@/components/Icon";
 import { Player } from "@/components/Player";
 import useNoSleep from "@/hooks/useNoSleep";
 import { songAtom } from "@/state";
-import {
-  Button,
-  Center,
-  Container,
-  Flex,
-  Image,
-  Text,
-  rem,
-} from "@mantine/core";
-import { IconMusic } from "@tabler/icons-react";
-import { useAtom } from "jotai";
-import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
 
 export function LocalFilePlayer() {
   const [song, setSong] = useAtom(songAtom);
@@ -36,7 +28,7 @@ export function LocalFilePlayer() {
   const handleGoToPlayer = () => {
     setIsPlayer(true);
     if (!noSleepEnabled) {
-      setNoSleepEnabled(true);
+      setNoSleepEnabled.enable();
     }
   };
 
@@ -51,13 +43,7 @@ export function LocalFilePlayer() {
 
   return (
     <Container size="xs">
-      <Flex
-        h="100dvh"
-        align="stretch"
-        justify="center"
-        gap="md"
-        direction="column"
-      >
+      <Flex h="100dvh" align="stretch" justify="center" gap="md" direction="column">
         <Flex gap={12} align="center" mb="sm">
           <Icon size={18} />
           <Text

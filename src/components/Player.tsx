@@ -1,14 +1,5 @@
-import LoadingOverlay from "@/components/LoadingOverlay";
-import { useAudioContext } from "@/hooks/useAudioContext";
-import { useDominantColor } from "@/hooks/useDominantColor";
-import { useVideoPlayer } from "@/hooks/useVideoPlayer";
-import { PlaybackMode, Song } from "@/interfaces";
-import {
-  getStateFromUrlParams,
-  getVideoState,
-  saveVideoState,
-} from "@/lib/videoState";
-import { getFormattedTime } from "@/utils";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { generateColors } from "@mantine/colors-generator";
 import {
   ActionIcon,
@@ -57,8 +48,13 @@ import {
   IconRotate,
   IconShare,
 } from "@tabler/icons-react";
-import Link from "next/link";
-import { useEffect, useMemo, useRef, useState } from "react";
+import LoadingOverlay from "@/components/LoadingOverlay";
+import { useAudioContext } from "@/hooks/useAudioContext";
+import { useDominantColor } from "@/hooks/useDominantColor";
+import { useVideoPlayer } from "@/hooks/useVideoPlayer";
+import { PlaybackMode, Song } from "@/interfaces";
+import { getStateFromUrlParams, getVideoState, saveVideoState } from "@/lib/videoState";
+import { getFormattedTime } from "@/utils";
 import CookiesModal from "./CookiesModal";
 import DownloadModal from "./DownloadModal";
 import { IconPause } from "./IconPause";
@@ -87,10 +83,7 @@ export function Player({
   const [customPlaybackRate, setCustomPlaybackRate] = useState(1);
   const [initialStartAt, setInitialStartAt] = useState(0);
   const [stateLoaded, setStateLoaded] = useState(false);
-  const dominantColor = useDominantColor(
-    song.metadata.coverUrl,
-    initialDominantColor,
-  );
+  const dominantColor = useDominantColor(song.metadata.coverUrl, initialDominantColor);
 
   const [isAudioOnly, setIsAudioOnly] = useState(false);
   const [videoAspectRatio, setVideoAspectRatio] = useState<number>(16 / 9);
@@ -169,26 +162,19 @@ export function Player({
     draw();
 
     return () => {
-      if (animationFrameRef.current)
-        cancelAnimationFrame(animationFrameRef.current);
+      if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
     };
   }, [videoElement, isAudioOnly, isPlaying]); // Re-run if playing state changes to ensure loop is active
 
-  const { setReverbAmount, reverbAmount, isSafari } =
-    useAudioContext(videoElement);
+  const { setReverbAmount, reverbAmount, isSafari } = useAudioContext(videoElement);
 
-  const [modalOpened, { open: openModal, close: closeModal }] =
-    useDisclosure(false);
+  const [modalOpened, { open: openModal, close: closeModal }] = useDisclosure(false);
   const [shareModalOpened, { open: openShareModal, close: closeShareModal }] =
     useDisclosure(false);
-  const [
-    cookiesModalOpened,
-    { open: openCookiesModal, close: closeCookiesModal },
-  ] = useDisclosure(false);
-  const [
-    downloadModalOpened,
-    { open: openDownloadModal, close: closeDownloadModal },
-  ] = useDisclosure(false);
+  const [cookiesModalOpened, { open: openCookiesModal, close: closeCookiesModal }] =
+    useDisclosure(false);
+  const [downloadModalOpened, { open: openDownloadModal, close: closeDownloadModal }] =
+    useDisclosure(false);
 
   const [shareStartTime, setShareStartTime] = useState(0);
 
@@ -268,9 +254,7 @@ export function Player({
       } else {
         setIsAudioOnly(false);
         if (videoElement.videoWidth && videoElement.videoHeight) {
-          setVideoAspectRatio(
-            videoElement.videoWidth / videoElement.videoHeight,
-          );
+          setVideoAspectRatio(videoElement.videoWidth / videoElement.videoHeight);
         }
       }
     };
@@ -296,15 +280,15 @@ export function Player({
   });
   const toastTimeoutRef = useRef<NodeJS.Timeout>();
 
-  const showToast = (message: React.ReactNode, isCircular?: boolean) => {
+  const showToast = useCallback((message: React.ReactNode, isCircular?: boolean) => {
     if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
     setToast({ message, visible: true, isCircular });
     toastTimeoutRef.current = setTimeout(() => {
       setToast((prev) => ({ ...prev, visible: false }));
     }, 1200);
-  };
+  }, []);
 
-  const handleBackward = () => {
+  const handleBackward = useCallback(() => {
     backward();
     showToast(
       <Flex align="center" gap="xs">
@@ -312,9 +296,9 @@ export function Player({
         <Text weight={600}>-5s</Text>
       </Flex>,
     );
-  };
+  }, [backward, showToast]);
 
-  const handleForward = () => {
+  const handleForward = useCallback(() => {
     forward();
     showToast(
       <Flex align="center" gap="xs">
@@ -322,9 +306,9 @@ export function Player({
         <Text weight={600}>+5s</Text>
       </Flex>,
     );
-  };
+  }, [forward, showToast]);
 
-  const handleTogglePlayer = () => {
+  const handleTogglePlayer = useCallback(() => {
     const nextPlayingState = !isPlaying;
     togglePlayer();
 
@@ -335,7 +319,7 @@ export function Player({
     } else {
       showToast(<IconPause width={40} height={40} />, true);
     }
-  };
+  }, [isPlaying, togglePlayer, isFinished, showToast]);
 
   const adjustCustomSpeed = (delta: number) => {
     let currentRate = customPlaybackRate;
@@ -436,8 +420,7 @@ export function Player({
     const params = new URLSearchParams(window.location.search);
     params.set("startAt", Math.floor(startTime).toString());
     if (playbackMode !== "normal") params.set("mode", playbackMode);
-    if (playbackMode === "custom")
-      params.set("rate", customPlaybackRate.toString());
+    if (playbackMode === "custom") params.set("rate", customPlaybackRate.toString());
     return `${baseUrl}?${params.toString()}`;
   };
 
@@ -466,10 +449,8 @@ export function Player({
     let highResCover = song.metadata.coverUrl;
     if (song.metadata.platform === "youtube") {
       highResCover =
-        song.metadata.coverUrl?.replace(
-          /(hq|mq|sd)?default/,
-          "maxresdefault",
-        ) || song.metadata.coverUrl;
+        song.metadata.coverUrl?.replace(/(hq|mq|sd)?default/, "maxresdefault") ||
+        song.metadata.coverUrl;
     }
 
     navigator.mediaSession.metadata = new MediaMetadata({
@@ -632,8 +613,7 @@ export function Player({
           )}
           {isSafari && (
             <Text size="xs" color="dimmed">
-              Note: Reverb is disabled on Safari for optimal playback
-              performance
+              Note: Reverb is disabled on Safari for optimal playback performance
             </Text>
           )}
         </Stack>
@@ -678,17 +658,11 @@ export function Player({
               </Text>
             }
           />
-          <TextInput
-            label="Share URL"
-            value={getShareUrl(shareStartTime)}
-            readOnly
-          />
+          <TextInput label="Share URL" value={getShareUrl(shareStartTime)} readOnly />
           <CopyButton value={getShareUrl(shareStartTime)}>
             {({ copied, copy }) => (
               <Button
-                leftIcon={
-                  copied ? <IconCheck size={18} /> : <IconCopy size={18} />
-                }
+                leftIcon={copied ? <IconCheck size={18} /> : <IconCopy size={18} />}
                 color={copied ? "teal" : ""}
                 onClick={copy}
                 fullWidth
@@ -974,11 +948,7 @@ export function Player({
               </Menu.Target>
               <Menu.Dropdown>
                 <Menu.Label>Navigation</Menu.Label>
-                <Menu.Item
-                  icon={<IconHome size={14} />}
-                  component={Link}
-                  href="/"
-                >
+                <Menu.Item icon={<IconHome size={14} />} component={Link} href="/">
                   Home
                 </Menu.Item>
                 {getOriginalPlatformUrl() && (
@@ -995,24 +965,15 @@ export function Player({
                     rightSection={<IconExternalLink size={12} />}
                     target="_blank"
                   >
-                    Go to{" "}
-                    {song.metadata.platform === "youtube"
-                      ? "YouTube"
-                      : "TikTok"}
+                    Go to {song.metadata.platform === "youtube" ? "YouTube" : "TikTok"}
                   </Menu.Item>
                 )}
                 <Menu.Divider />
                 <Menu.Label>Actions</Menu.Label>
-                <Menu.Item
-                  icon={<IconShare size={14} />}
-                  onClick={handleOpenShareModal}
-                >
+                <Menu.Item icon={<IconShare size={14} />} onClick={handleOpenShareModal}>
                   Share
                 </Menu.Item>
-                <Menu.Item
-                  icon={<IconDownload size={14} />}
-                  onClick={openDownloadModal}
-                >
+                <Menu.Item icon={<IconDownload size={14} />} onClick={openDownloadModal}>
                   Download
                 </Menu.Item>
                 <Menu.Item
@@ -1035,10 +996,7 @@ export function Player({
                 </Menu.Item>
                 <Menu.Divider />
                 <Menu.Label>Settings</Menu.Label>
-                <Menu.Item
-                  icon={<IconCookie size={14} />}
-                  onClick={openCookiesModal}
-                >
+                <Menu.Item icon={<IconCookie size={14} />} onClick={openCookiesModal}>
                   Cookies Settings
                 </Menu.Item>
               </Menu.Dropdown>
