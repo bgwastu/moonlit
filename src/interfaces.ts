@@ -10,6 +10,11 @@ export interface Song {
   };
 }
 
+export interface HistoryItem extends Song {
+  playedAt: number;
+  originalUrl: string;
+}
+
 export interface PlaybackSettings {
   playbackRate: number;
   reverbWet: number;
