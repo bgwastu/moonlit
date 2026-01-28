@@ -116,12 +116,7 @@ export default function HistoryModal({ opened, onClose }: HistoryModalProps) {
           </Flex>
         ) : (
           <>
-            <ScrollArea
-              h="100%"
-              offsetScrollbars
-              type="auto"
-              style={{ flex: 1 }}
-            >
+            <Box h="100%" style={{ flex: 1, overflowY: "auto" }}>
               <Stack spacing="xs" pr="xs">
                 {history.map((item) => {
                   const isHovered = hoveredItem === item.originalUrl;
@@ -153,8 +148,13 @@ export default function HistoryModal({ opened, onClose }: HistoryModalProps) {
                         },
                       })}
                     >
-                      <Group noWrap align="center">
-                        <Box style={{ position: "relative" }}>
+                      <Flex
+                        align="center"
+                        gap="sm"
+                        w="100%"
+                        style={{ overflow: "hidden" }}
+                      >
+                        <Box style={{ position: "relative", flexShrink: 0 }}>
                           <Avatar
                             src={item.metadata.coverUrl}
                             size={60}
@@ -186,7 +186,7 @@ export default function HistoryModal({ opened, onClose }: HistoryModalProps) {
                           <Text size="sm" weight={600} truncate mb={2}>
                             {item.metadata.title}
                           </Text>
-                          <Group spacing={6}>
+                          <Group spacing={6} noWrap>
                             <Text
                               size="xs"
                               color="dimmed"
@@ -195,20 +195,29 @@ export default function HistoryModal({ opened, onClose }: HistoryModalProps) {
                             >
                               {item.metadata.author}
                             </Text>
-                            <Text size="xs" color="dimmed">
+                            <Text
+                              size="xs"
+                              color="dimmed"
+                              style={{ flexShrink: 0 }}
+                            >
                               •
                             </Text>
                             <Text
                               size="xs"
                               color="dimmed"
                               transform="capitalize"
+                              truncate
                             >
                               {item.metadata.platform}
                             </Text>
                           </Group>
                         </Box>
 
-                        <Stack align="flex-end" spacing={4}>
+                        <Stack
+                          align="flex-end"
+                          spacing={4}
+                          style={{ flexShrink: 0 }}
+                        >
                           <Text
                             size="xs"
                             color="dimmed"
@@ -233,12 +242,12 @@ export default function HistoryModal({ opened, onClose }: HistoryModalProps) {
                             </ActionIcon>
                           </Tooltip>
                         </Stack>
-                      </Group>
+                      </Flex>
                     </UnstyledButton>
                   );
                 })}
               </Stack>
-            </ScrollArea>
+            </Box>
 
             <Flex
               justify="center"
