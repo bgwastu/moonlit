@@ -2,7 +2,7 @@
 
 import useNoSleep from "@/hooks/useNoSleep";
 import { useMediaDownloader } from "@/hooks/useMediaDownloader";
-import { Song } from "@/interfaces";
+import { HistoryItem, Song } from "@/interfaces";
 import {
   getSongLength,
   getTikTokId,
@@ -10,7 +10,7 @@ import {
   isYoutubeURL,
 } from "@/utils";
 import { getMedia } from "@/utils/cache";
-import { songAtom } from "@/state";
+import { historyAtom, songAtom } from "@/state";
 import {
   Button,
   Center,
@@ -135,10 +135,25 @@ export default function UnifiedPlayer({
     };
   }, [metadata.coverUrl]);
 
+  const [history, setHistory] = useAtom(historyAtom);
+
   const handleGoToPlayer = () => {
     setIsPlayer(true);
     if (!noSleepEnabled) {
       setNoSleepEnabled(true);
+    }
+
+    if (song) {
+      setHistory((prev) => {
+        // Remove existing entry for this URL to avoid duplicates and move to top
+        const filtered = prev.filter((item) => item.originalUrl !== url);
+        const newItem: any = {
+          ...song,
+          playedAt: Date.now(),
+          originalUrl: url,
+        };
+        return [newItem, ...filtered].slice(0, 50);
+      });
     }
   };
 

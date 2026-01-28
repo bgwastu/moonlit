@@ -23,11 +23,13 @@ import {
 import { Dropzone } from "@mantine/dropzone";
 import { useForm } from "@mantine/form";
 import { notifications } from "@mantine/notifications";
+import HistoryModal from "@/components/HistoryModal";
 import {
   IconBrandGithub,
   IconBrandTiktok,
   IconBrandYoutube,
   IconCookie,
+  IconHistory,
   IconMusicCheck,
   IconMusicPlus,
   IconMusicX,
@@ -272,9 +274,12 @@ function FooterSection() {
   );
 }
 
+// ... (existing imports are fine, I will just add History logic)
+
 export default function UploadPage() {
   const [loading] = useAtom(loadingAtom);
   const [cookiesOpened, setCookiesOpened] = useState(false);
+  const [historyOpened, setHistoryOpened] = useState(false);
 
   return (
     <>
@@ -282,6 +287,10 @@ export default function UploadPage() {
       <CookiesModal
         opened={cookiesOpened}
         onClose={() => setCookiesOpened(false)}
+      />
+      <HistoryModal
+        opened={historyOpened}
+        onClose={() => setHistoryOpened(false)}
       />
 
       <AppShell footer={<FooterSection />} mt={28}>
@@ -311,6 +320,16 @@ export default function UploadPage() {
                     ml="xs"
                   >
                     <IconCookie size={20} />
+                  </ActionIcon>
+                </Tooltip>
+                <Tooltip label="History" position="bottom">
+                  <ActionIcon
+                    variant="subtle"
+                    color="violet"
+                    size="lg"
+                    onClick={() => setHistoryOpened(true)}
+                  >
+                    <IconHistory size={20} />
                   </ActionIcon>
                 </Tooltip>
               </Flex>

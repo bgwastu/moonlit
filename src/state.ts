@@ -1,8 +1,13 @@
-import { Song } from "./interfaces";
+import { atomWithStorage } from "jotai/utils";
+import { HistoryItem, Song } from "./interfaces";
 import { MantineThemeOverride } from "@mantine/core";
 import { atom } from "jotai";
 
 export const songAtom = atom<Song | null>(null);
+export const historyAtom = atomWithStorage<HistoryItem[]>(
+  "moonlit-history",
+  [],
+);
 
 export const themeAtom = atom<MantineThemeOverride>({
   colorScheme: "dark",
