@@ -49,7 +49,7 @@ export default function UnifiedPlayer({
   const router = useRouter();
   const [song] = useAtom(songAtom);
   const [isPlayer, setIsPlayer] = useState(false);
-  const [noSleepEnabled, setNoSleepEnabled] = useNoSleep();
+  const [noSleepEnabled, noSleepControls] = useNoSleep();
   const [dominantColor, setDominantColor] = useState<string>("rgba(0,0,0,0)");
 
   const { downloadState, startDownload } = useMediaDownloader(url, metadata);
@@ -140,7 +140,7 @@ export default function UnifiedPlayer({
   const handleGoToPlayer = () => {
     setIsPlayer(true);
     if (!noSleepEnabled) {
-      setNoSleepEnabled(true);
+      noSleepControls.enable();
     }
 
     if (song) {
