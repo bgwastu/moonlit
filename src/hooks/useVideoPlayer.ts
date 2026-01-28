@@ -30,7 +30,7 @@ export function useVideoPlayer({
   const [, forceUpdate] = useState(0);
   const [isSeeking, setIsSeeking] = useState(false);
   const [seekPosition, setSeekPosition] = useState(0);
-  const [, setNoSleepEnabled] = useNoSleep();
+  const [, noSleepControls] = useNoSleep();
 
   // Computed values
   const currentPlayback = videoElement
@@ -162,13 +162,13 @@ export function useVideoPlayer({
 
     const handleEnded = () => {
       if (!videoElement.loop) {
-        setNoSleepEnabled(false);
+        noSleepControls.disable();
       }
     };
 
     videoElement.addEventListener("ended", handleEnded);
     return () => videoElement.removeEventListener("ended", handleEnded);
-  }, [videoElement, setNoSleepEnabled]);
+  }, [videoElement, noSleepControls]);
 
   // Apply playback rate changes
   useEffect(() => {
@@ -193,7 +193,7 @@ export function useVideoPlayer({
 
     if (isPlaying) {
       videoElement.pause();
-      setNoSleepEnabled(false);
+      noSleepControls.disable();
     } else {
       if (isFinished) {
         videoElement.currentTime = 0;
@@ -202,7 +202,7 @@ export function useVideoPlayer({
       videoElement
         .play()
         .then(() => {
-          setNoSleepEnabled(true);
+          noSleepControls.enable();
         })
         .catch((error) => {
           console.error("Video play failed:", error);

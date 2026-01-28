@@ -146,6 +146,34 @@ export function Player({
     startAt: stateLoaded ? initialStartAt : 0,
   });
 
+  // Ambient Mode (Canvas Extraction)
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const animationFrameRef = useRef<number>();
+
+  useEffect(() => {
+    if (!videoElement || !canvasRef.current || isAudioOnly) return;
+
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext("2d", { alpha: false }); // Optimize for no transparency if possible
+
+    if (!ctx) return;
+
+    const draw = () => {
+      if (videoElement && !videoElement.paused && !videoElement.ended) {
+        // Draw to small canvas for performance and natural blur
+        ctx.drawImage(videoElement, 0, 0, canvas.width, canvas.height);
+      }
+      animationFrameRef.current = requestAnimationFrame(draw);
+    };
+
+    draw();
+
+    return () => {
+      if (animationFrameRef.current)
+        cancelAnimationFrame(animationFrameRef.current);
+    };
+  }, [videoElement, isAudioOnly, isPlaying]); // Re-run if playing state changes to ensure loop is active
+
   const { setReverbAmount, reverbAmount, isSafari } =
     useAudioContext(videoElement);
 
@@ -567,6 +595,11 @@ export function Player({
                 { value: 1, label: "Normal" },
                 { value: 1.25, label: "Speed Up" },
               ]}
+              styles={{
+                thumb: {
+                  borderWidth: 0,
+                },
+              }}
               label={(v) => (v < 0.7 ? `who hurt u? 😭` : `${v}x`)}
               value={customPlaybackRate}
               onChange={setCustomPlaybackRate}
@@ -580,6 +613,11 @@ export function Player({
                 thumbSize={20}
                 max={1}
                 step={0.01}
+                styles={{
+                  thumb: {
+                    borderWidth: 0,
+                  },
+                }}
                 style={{ zIndex: 1000 }}
                 marks={[
                   { value: 0, label: "Off" },
@@ -780,12 +818,30 @@ export function Player({
               maxHeight: isMobile ? "70vh" : "70vh",
               aspectRatio: `${videoAspectRatio}`,
               borderRadius: theme.radius.md,
-              overflow: "hidden",
               zIndex: 1,
               margin: "10px",
               display: isAudioOnly ? "none" : "block",
             }}
           >
+            {/* Ambient Canvas */}
+            <canvas
+              ref={canvasRef}
+              width={30} // Small width for performance & soft blur
+              height={15} // Small height
+              style={{
+                position: "absolute",
+                top: "0",
+                left: "0",
+                width: "100%",
+                height: "100%",
+                filter: "blur(60px) contrast(1.5) saturate(1.5)",
+                transform: "scale(1.5)", // Scale up to hide edges
+                opacity: 0.6,
+                zIndex: -1,
+                pointerEvents: "none",
+              }}
+            />
+
             <video
               ref={videoRef}
               key={song.fileUrl}
@@ -796,6 +852,7 @@ export function Player({
                 display: "block",
                 userSelect: "none",
                 pointerEvents: "none",
+                borderRadius: theme.radius.md, // Moved from container
               }}
               playsInline
               controls={false}
@@ -1004,7 +1061,7 @@ export function Player({
                 borderWidth: 0,
               },
             }}
-            thumbSize={isSeeking ? 25 : 15}
+            thumbSize={isSeeking ? 20 : 15}
             label={(v) =>
               displayPosition >= songLength - 5 ? null : getFormattedTime(v)
             }
