@@ -402,7 +402,8 @@ export function Player({
 
   const getOriginalPlatformUrl = () => {
     if (song.metadata.platform === "youtube" && song.metadata.id) {
-      return `https://www.youtube.com/watch?v=${song.metadata.id}`;
+      const realSeconds = videoElement ? Math.floor(videoElement.currentTime) : 0;
+      return `https://www.youtube.com/watch?v=${song.metadata.id}&t=${realSeconds}s`;
     }
     if (song.metadata.platform === "tiktok" && song.metadata.id) {
       const currentUrl = window.location.pathname;
