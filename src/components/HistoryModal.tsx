@@ -18,7 +18,9 @@ import {
 } from "@mantine/core";
 import { IconHistory, IconPlayerPlay, IconTrash, IconX } from "@tabler/icons-react";
 import { useAtom } from "jotai";
+import { HistoryItem } from "@/interfaces";
 import { historyAtom } from "@/state";
+import { getTikTokCreatorAndVideoId, getYouTubeId } from "@/utils";
 
 interface HistoryModalProps {
   opened: boolean;
@@ -46,8 +48,24 @@ export default function HistoryModal({ opened, onClose }: HistoryModalProps) {
   const theme = useMantineTheme();
   const [hoveredItem, setHoveredItem] = useState<string | null>(null);
 
-  const handlePlay = (url: string) => {
+  const handlePlay = (item: HistoryItem) => {
     onClose();
+    const url = item.originalUrl;
+
+    if (item.metadata.platform === "tiktok") {
+      const { creator, videoId } = getTikTokCreatorAndVideoId(url);
+      if (creator && videoId) {
+        router.push(`/@${creator}/video/${videoId}`);
+        return;
+      }
+    } else if (item.metadata.platform === "youtube") {
+      const id = getYouTubeId(url);
+      if (id) {
+        router.push(`/watch?v=${id}`);
+        return;
+      }
+    }
+
     router.push(`/player?url=${encodeURIComponent(url)}`);
   };
 
@@ -111,7 +129,7 @@ export default function HistoryModal({ opened, onClose }: HistoryModalProps) {
                   return (
                     <UnstyledButton
                       key={item.originalUrl + item.playedAt}
-                      onClick={() => handlePlay(item.originalUrl)}
+                      onClick={() => handlePlay(item)}
                       onMouseEnter={() => setHoveredItem(item.originalUrl)}
                       onMouseLeave={() => setHoveredItem(null)}
                       sx={(theme) => ({
