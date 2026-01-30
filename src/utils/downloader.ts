@@ -215,7 +215,7 @@ export async function downloadWithProgress(
 
                       resolve({
                         fileUrl: blobUrl,
-                        sourceUrl: data.videoMode ? blobUrl : undefined,
+                        sourceUrl: url,
                         metadata: {
                           id: id || "unknown",
                           title: preload.title || "",
