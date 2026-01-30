@@ -6,20 +6,15 @@ import {
   Box,
   Button,
   Center,
-  CopyButton,
   Flex,
   Image,
   MantineProvider,
   MantineThemeOverride,
   MediaQuery,
   Menu,
-  Modal,
   SegmentedControl,
   Slider,
-  Stack,
-  Switch,
   Text,
-  TextInput,
   Transition,
   useMantineTheme,
 } from "@mantine/core";
@@ -27,13 +22,10 @@ import { useDisclosure, useHotkeys, useMediaQuery } from "@mantine/hooks";
 import {
   IconAdjustments,
   IconBrandTiktok,
-  IconBrandX,
   IconBrandYoutube,
   IconBrandYoutubeFilled,
   IconBug,
-  IconCheck,
   IconCookie,
-  IconCopy,
   IconDownload,
   IconExternalLink,
   IconHome,
@@ -46,14 +38,13 @@ import {
   IconRepeatOff,
   IconRewindBackward5,
   IconRewindForward5,
-  IconShare,
 } from "@tabler/icons-react";
 import LoadingOverlay from "@/components/LoadingOverlay";
 import { useDominantColor } from "@/hooks/useDominantColor";
 import { useStretchPlayer } from "@/hooks/useStretchPlayer";
 import { useVideoPlayer } from "@/hooks/useVideoPlayer";
 import { PlaybackMode, Song } from "@/interfaces";
-import { getStateFromUrlParams, getVideoState, saveVideoState } from "@/lib/videoState";
+import { getVideoState, saveVideoState } from "@/lib/videoState";
 import { getFormattedTime } from "@/utils";
 import CookiesModal from "./CookiesModal";
 import CustomizePlaybackModal from "./CustomizePlaybackModal";
@@ -101,11 +92,6 @@ export function Player({
   // Initial rate based on mode
   const getInitialRate = () => {
     if (savedState?.rate) return savedState.rate;
-    const urlParams = getStateFromUrlParams();
-    if (urlParams.rate) return urlParams.rate;
-    if (urlParams.mode === "slowed") return 0.8;
-    if (urlParams.mode === "speedup") return 1.25;
-    if (urlParams.mode === "normal") return 1;
     if (savedState?.mode === "slowed") return 0.8;
     if (savedState?.mode === "speedup") return 1.25;
     if (savedState?.mode === "normal") return 1;
@@ -113,12 +99,7 @@ export function Player({
   };
 
   useEffect(() => {
-    const urlParams = getStateFromUrlParams();
-
-    if (urlParams.startAt !== undefined) {
-      setPlaybackMode(urlParams.mode || "slowed");
-      setInitialStartAt(urlParams.startAt);
-    } else if (savedState) {
+    if (savedState) {
       setPlaybackMode(savedState.mode);
       setInitialStartAt(savedState.position);
     }
@@ -159,6 +140,13 @@ export function Player({
     initialSemitones: savedState?.semitones ?? 0,
     initialReverbAmount: savedState?.reverbAmount ?? 0,
     initialPosition: stateLoaded ? initialStartAt : 0,
+    onEnded: () => {
+      // Handle repeat when playback ends
+      if (isRepeat) {
+        seek(0);
+        play();
+      }
+    },
   });
 
   const isLoading = stretchState === "loading";
@@ -214,14 +202,10 @@ export function Player({
   }, [isSafari, videoElement, isAudioOnly, isPlaying]);
 
   const [modalOpened, { open: openModal, close: closeModal }] = useDisclosure(false);
-  const [shareModalOpened, { open: openShareModal, close: closeShareModal }] =
-    useDisclosure(false);
   const [cookiesModalOpened, { open: openCookiesModal, close: closeCookiesModal }] =
     useDisclosure(false);
   const [downloadModalOpened, { open: openDownloadModal, close: closeDownloadModal }] =
     useDisclosure(false);
-
-  const [shareStartTime, setShareStartTime] = useState(0);
 
   // Save state periodically
   const lastSaveRef = useRef<number>(0);
@@ -480,14 +464,6 @@ export function Player({
     );
   }, [isRepeat, showToast]);
 
-  // Handle looping
-  useEffect(() => {
-    if (isRepeat && currentTime >= duration - 0.5 && duration > 0) {
-      seek(0);
-      play();
-    }
-  }, [isRepeat, currentTime, duration, seek, play]);
-
   // Hotkeys
   useHotkeys([
     ["ArrowLeft", () => handleBackward()],
@@ -535,19 +511,6 @@ export function Player({
       }
     }
     return null;
-  };
-
-  const getShareUrl = (startTime: number) => {
-    const baseUrl = window.location.origin + window.location.pathname;
-    const params = new URLSearchParams(window.location.search);
-    params.set("startAt", Math.floor(startTime).toString());
-    params.set("rate", rate.toString());
-    return `${baseUrl}?${params.toString()}`;
-  };
-
-  const handleOpenShareModal = () => {
-    setShareStartTime(Math.floor(currentTime));
-    openShareModal();
   };
 
   const dynamicTheme = useMemo(() => {
@@ -672,45 +635,6 @@ export function Player({
         currentPlaybackRate={rate}
         currentReverbAmount={reverbAmount}
       />
-
-      <Modal
-        opened={shareModalOpened}
-        onClose={closeShareModal}
-        overlayProps={{ opacity: 0.5, blur: 4 }}
-        title="Share"
-      >
-        <Stack>
-          <Text size="sm" color="dimmed">
-            Share this remix starting at a specific time
-          </Text>
-          <TextInput
-            label="Start time (seconds)"
-            type="number"
-            value={shareStartTime}
-            onChange={(e) => setShareStartTime(parseInt(e.target.value) || 0)}
-            min={0}
-            max={songLength}
-            rightSection={
-              <Text size="xs" color="dimmed" pr="sm">
-                {getFormattedTime(shareStartTime)}
-              </Text>
-            }
-          />
-          <TextInput label="Share URL" value={getShareUrl(shareStartTime)} readOnly />
-          <CopyButton value={getShareUrl(shareStartTime)}>
-            {({ copied, copy }) => (
-              <Button
-                leftIcon={copied ? <IconCheck size={18} /> : <IconCopy size={18} />}
-                color={copied ? "teal" : ""}
-                onClick={copy}
-                fullWidth
-              >
-                {copied ? "Copied!" : "Copy link to share"}
-              </Button>
-            )}
-          </CopyButton>
-        </Stack>
-      </Modal>
 
       <CookiesModal opened={cookiesModalOpened} onClose={closeCookiesModal} />
 
@@ -1010,12 +934,6 @@ export function Player({
                   <Menu.Divider />
                   <Menu.Label>Actions</Menu.Label>
                   <Menu.Item
-                    icon={<IconShare size={14} />}
-                    onClick={handleOpenShareModal}
-                  >
-                    Share
-                  </Menu.Item>
-                  <Menu.Item
                     icon={<IconDownload size={14} />}
                     onClick={openDownloadModal}
                   >
@@ -1029,15 +947,6 @@ export function Player({
                     target="_blank"
                   >
                     Report Bug
-                  </Menu.Item>
-                  <Menu.Item
-                    icon={<IconBrandX size={14} />}
-                    component="a"
-                    href={`https://x.com/intent/tweet?text=I'm listening to ${song.metadata.title} by ${song.metadata.author} on Moonlit!&url=${window.location.href}`}
-                    rightSection={<IconExternalLink size={12} />}
-                    target="_blank"
-                  >
-                    Share on X
                   </Menu.Item>
                   <Menu.Divider />
                   <Menu.Label>Settings</Menu.Label>
