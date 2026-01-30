@@ -8,6 +8,8 @@ export interface VideoState {
   mode: "slowed" | "normal" | "speedup" | "custom";
   rate: number; // playback speed ratio (0.5-2.0)
   semitones: number; // pitch shift in semitones (-12 to +12)
+  reverbAmount: number; // reverb mix level (0-1)
+  pitchLockedToSpeed: boolean; // whether pitch is locked to speed
   isRepeat: boolean;
   lastUpdated: number; // Timestamp
 }
@@ -54,6 +56,9 @@ export function saveVideoState(url: string, state: Partial<VideoState>): void {
       mode: state.mode ?? existing?.mode ?? "slowed",
       rate: state.rate ?? existing?.rate ?? 0.8,
       semitones: state.semitones ?? existing?.semitones ?? 0,
+      reverbAmount: state.reverbAmount ?? existing?.reverbAmount ?? 0,
+      pitchLockedToSpeed:
+        state.pitchLockedToSpeed ?? existing?.pitchLockedToSpeed ?? true,
       isRepeat: state.isRepeat ?? existing?.isRepeat ?? false,
       lastUpdated: Date.now(),
     };

@@ -15,6 +15,8 @@ export interface CustomizePlaybackModalProps {
   pitchSliderValue: number;
   onPitchChange: (value: number) => void;
   onPitchChangeEnd: (value: number) => void;
+  reverbAmount: number;
+  onReverbChange: (value: number) => void;
   isNativeFallback?: boolean;
   onReset: () => void;
 }
@@ -31,6 +33,8 @@ export default function CustomizePlaybackModal({
   pitchSliderValue,
   onPitchChange,
   onPitchChangeEnd,
+  reverbAmount,
+  onReverbChange,
   isNativeFallback = false,
   onReset,
 }: CustomizePlaybackModalProps) {
@@ -46,7 +50,7 @@ export default function CustomizePlaybackModal({
       <Stack>
         {isNativeFallback && (
           <Alert icon={<IconInfoCircle size={16} />} color="blue" mb="md">
-            On Safari, pitch is always synced to speed for best compatibility.
+            On Safari/iOS, pitch and reverb controls are limited for compatibility.
           </Alert>
         )}
         <Flex align="center" justify="space-between" mb="sm" gap="md" wrap="wrap">
@@ -124,6 +128,37 @@ export default function CustomizePlaybackModal({
             value={effectiveLocked ? semitones : pitchSliderValue}
             onChange={effectiveLocked ? () => {} : onPitchChange}
             onChangeEnd={onPitchChangeEnd}
+          />
+        </Flex>
+
+        <Flex direction="column" mb={22} gap={2}>
+          <Text size="sm">
+            Reverb: {Math.round(reverbAmount * 100)}%
+            {isNativeFallback && (
+              <Text component="span" size="xs" c="dimmed" ml={6}>
+                (not available)
+              </Text>
+            )}
+          </Text>
+          <Slider
+            min={0}
+            max={1}
+            step={0.01}
+            thumbSize={20}
+            disabled={isNativeFallback}
+            styles={{
+              thumb: { borderWidth: 0 },
+            }}
+            marks={[
+              { value: 0, label: "0" },
+              { value: 0.25, label: "25" },
+              { value: 0.5, label: "50" },
+              { value: 0.75, label: "75" },
+              { value: 1, label: "100" },
+            ]}
+            label={(v) => `${Math.round(v * 100)}%`}
+            value={reverbAmount}
+            onChange={onReverbChange}
           />
         </Flex>
 
