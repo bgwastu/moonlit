@@ -12,6 +12,7 @@ import {
   Divider,
   Flex,
   Footer,
+  Modal,
   Stack,
   Text,
   TextInput,
@@ -28,6 +29,7 @@ import {
   IconMusicCheck,
   IconMusicPlus,
   IconMusicX,
+  IconTrash,
   IconWorld,
 } from "@tabler/icons-react";
 import parse from "id3-parser";
@@ -36,6 +38,7 @@ import { usePostHog } from "posthog-js/react";
 import CookiesModal from "@/components/CookiesModal";
 import HistoryModal from "@/components/HistoryModal";
 import LoadingOverlay from "@/components/LoadingOverlay";
+import ResetModal from "@/components/ResetModal";
 import { useAppContext } from "@/context/AppContext";
 import useNoSleep from "@/hooks/useNoSleep";
 import type { Media } from "@/interfaces";
@@ -273,11 +276,13 @@ function FooterSection() {
 export default function UploadPage() {
   const [cookiesOpened, setCookiesOpened] = useState(false);
   const [historyOpened, setHistoryOpened] = useState(false);
+  const [resetOpened, setResetOpened] = useState(false);
 
   return (
     <>
       <CookiesModal opened={cookiesOpened} onClose={() => setCookiesOpened(false)} />
       <HistoryModal opened={historyOpened} onClose={() => setHistoryOpened(false)} />
+      <ResetModal opened={resetOpened} onClose={() => setResetOpened(false)} />
 
       <AppShell footer={<FooterSection />} mt={28}>
         <Container size="sm">
@@ -314,6 +319,16 @@ export default function UploadPage() {
                     onClick={() => setHistoryOpened(true)}
                   >
                     <IconHistory size={20} />
+                  </ActionIcon>
+                </Tooltip>
+                <Tooltip label="Reset Data" position="bottom">
+                  <ActionIcon
+                    variant="subtle"
+                    color="red"
+                    size="lg"
+                    onClick={() => setResetOpened(true)}
+                  >
+                    <IconTrash size={20} />
                   </ActionIcon>
                 </Tooltip>
               </Flex>
