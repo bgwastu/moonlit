@@ -21,14 +21,15 @@ Want a smoother experience? Install **Userscript** to add an "Open in Moonlit" b
 2. Click the button above to install the script.
 
 # Demo (with audio 🔊)
-https://github.com/user-attachments/assets/a54716fb-35cb-4158-b789-74a74fc359dc
 
+https://github.com/user-attachments/assets/a54716fb-35cb-4158-b789-74a74fc359dc
 
 # Features
 
 - **Customizable Playback**: Change playback speed, enabling "slowed & reverb" or "nightcore" effects.
 - **Pitch Lock & Shifting**: Change the speed without affecting pitch, or shift pitch independently (semitones).
 - **Reverb Effect**: Add ambiance to your tracks with adjustable reverb.
+- **Lyrics Support**: View synchronized lyrics while listening to your tracks.
 - **Multi-platform support**: Works with YouTube and TikTok.
 - **Client-Side Cookie Management**: Use your own YouTube cookies to bypass restrictions (e.g., age-gated content).
 - **Video Quality Selection**: Choose between high (720p) or low (480p) quality when downloading videos > 10 minutes.
@@ -47,6 +48,7 @@ Moonlit leverages the **Web Audio API** to process audio real-time in the browse
 # Credits
 
 - **Signalsmith Stretch**: A massive shoutout to [Signalsmith Audio](https://signalsmith-audio.co.uk/) for their open-source time-stretching library. Honestly, I'm too dumb to implement complex DSP algorithms like this by myself, so this library is doing all the heavy lifting! 😅
+- **LRCLIB**: Thanks to [lrclib.net](https://lrclib.net/) for providing the lyrics API data.
 
 # Donating
 
