@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { SiTiktok, SiYoutube } from "@icons-pack/react-simple-icons";
@@ -22,6 +23,8 @@ import { useDisclosure, useHotkeys, useMediaQuery } from "@mantine/hooks";
 import {
   IconAdjustments,
   IconBug,
+  IconChevronsLeft,
+  IconChevronsRight,
   IconCookie,
   IconDownload,
   IconExternalLink,
@@ -29,6 +32,7 @@ import {
   IconHome,
   IconMenu2,
   IconMusic,
+  IconPlayerPlay,
   IconPlayerPlayFilled,
   IconPlayerTrackNextFilled,
   IconPlayerTrackPrevFilled,
@@ -67,11 +71,23 @@ import LyricsPanel from "./LyricsPanel";
 
 type PlaybackMode = "slowed" | "normal" | "speedup" | "custom";
 
-const LYRICS_STORAGE_KEY = "moonlit-lyrics-enabled";
+const PLAYBACK_MODE_LABELS: Record<PlaybackMode, string> = {
+  slowed: "Slowed",
+  normal: "Normal",
+  speedup: "Speed Up",
+  custom: "Custom",
+};
+
+const PLAYBACK_MODE_ICONS: Record<PlaybackMode, ReactNode> = {
+  slowed: <IconChevronsLeft size={24} />,
+  normal: <IconPlayerPlay size={24} />,
+  speedup: <IconChevronsRight size={24} />,
+  custom: <IconAdjustments size={24} />,
+};
 
 export function Player({ media, repeating }: { media: Media; repeating: boolean }) {
   const theme = useMantineTheme();
-  const isMobile = useMediaQuery("(max-width: 768px)");
+  const isMobile = useMediaQuery("(max-width: 1024px)");
 
   // Use sourceUrl from media state
   const sourceUrl = media.sourceUrl;
@@ -99,23 +115,7 @@ export function Player({ media, repeating }: { media: Media; repeating: boolean 
   const previousVolumeRef = useRef(savedState?.volume ?? 1);
   const pitchLockedToSpeedRef = useRef(pitchLockedToSpeed);
 
-  // Lyrics panel (persisted)
   const [showLyrics, setShowLyrics] = useState(false);
-  useEffect(() => {
-    try {
-      const stored = localStorage.getItem(LYRICS_STORAGE_KEY);
-      if (stored !== null) setShowLyrics(JSON.parse(stored));
-    } catch {
-      // ignore
-    }
-  }, []);
-  useEffect(() => {
-    try {
-      localStorage.setItem(LYRICS_STORAGE_KEY, JSON.stringify(showLyrics));
-    } catch {
-      // ignore
-    }
-  }, [showLyrics]);
 
   const dominantColor = useDominantColor(media.metadata.coverUrl);
   const { toast, showToast } = useToast();
@@ -177,14 +177,13 @@ export function Player({ media, repeating }: { media: Media; repeating: boolean 
     trackName: media.metadata.title,
     artistName: media.metadata.artist ?? media.metadata.author,
     durationSeconds: duration,
-    enabled: true, // Always prefetch to determine availability
+    enabled: showLyrics && duration > 0,
   });
 
-  // Auto-hide lyrics if not found, but allow loading state to persist for a bit
   useEffect(() => {
-    if (lyricsState === "not_found" && showLyrics) {
-      setShowLyrics(false);
-    }
+    if (lyricsState !== "not_found" || !showLyrics) return;
+    const t = setTimeout(() => setShowLyrics(false), 2000);
+    return () => clearTimeout(t);
   }, [lyricsState, showLyrics]);
 
   const isLoading = stretchState === "loading";
@@ -220,7 +219,7 @@ export function Player({ media, repeating }: { media: Media; repeating: boolean 
   }, [currentTime, duration, seek, showToast]);
 
   useMediaSession({
-    media: media, // Same here, will update hook next
+    media,
     isPlaying,
     currentTime,
     duration,
@@ -373,22 +372,21 @@ export function Player({ media, repeating }: { media: Media; repeating: boolean 
       if (mode !== "custom") {
         setRate(newRate);
         setSemitones(newSemitones);
-        const modeLabels: Record<string, string> = {
-          slowed: "Slowed",
-          normal: "Normal",
-          speedup: "Speed Up",
-        };
         showToast(
           <Flex align="center" gap="xs">
+            {PLAYBACK_MODE_ICONS[mode]}
             <Text weight={600}>
-              {modeLabels[mode]} ({newRate.toFixed(2)}x)
+              {PLAYBACK_MODE_LABELS[mode]} ({newRate.toFixed(2)}x)
             </Text>
           </Flex>,
         );
       } else {
         showToast(
           <Flex align="center" gap="xs">
-            <Text weight={600}>Custom ({rate.toFixed(2)}x)</Text>
+            {PLAYBACK_MODE_ICONS.custom}
+            <Text weight={600}>
+              {PLAYBACK_MODE_LABELS.custom} ({rate.toFixed(2)}x)
+            </Text>
           </Flex>,
         );
       }
@@ -445,23 +443,30 @@ export function Player({ media, repeating }: { media: Media; repeating: boolean 
     return <IconVolume size={24} />;
   }, [isMuted, volume]);
 
+  const showRateToast = useCallback(
+    (newRate: number, icon: React.ReactNode) => {
+      showToast(
+        <Flex align="center" gap="xs">
+          {icon}
+          <Text weight={600}>{newRate.toFixed(2)}x</Text>
+        </Flex>,
+      );
+    },
+    [showToast],
+  );
+
   useHotkeys([
-    ["ArrowLeft", () => handleBackward()],
-    ["ArrowRight", () => handleForward()],
-    ["Space", () => handleTogglePlayer()],
-    ["k", () => handleTogglePlayer()],
-    ["m", () => handleMuteToggle()],
+    ["ArrowLeft", handleBackward],
+    ["ArrowRight", handleForward],
+    ["Space", handleTogglePlayer],
+    ["k", handleTogglePlayer],
+    ["m", handleMuteToggle],
     [
       "shift+<",
       () => {
         const newRate = Math.max(0.5, rate - 0.05);
         handleRateChange(Math.round(newRate * 100) / 100);
-        showToast(
-          <Flex align="center" gap="xs">
-            <IconPlayerTrackPrevFilled size={24} />
-            <Text weight={600}>{newRate.toFixed(2)}x</Text>
-          </Flex>,
-        );
+        showRateToast(newRate, <IconPlayerTrackPrevFilled size={24} />);
       },
     ],
     [
@@ -469,12 +474,7 @@ export function Player({ media, repeating }: { media: Media; repeating: boolean 
       () => {
         const newRate = Math.min(1.5, rate + 0.05);
         handleRateChange(Math.round(newRate * 100) / 100);
-        showToast(
-          <Flex align="center" gap="xs">
-            <IconPlayerTrackNextFilled size={24} />
-            <Text weight={600}>{newRate.toFixed(2)}x</Text>
-          </Flex>,
-        );
+        showRateToast(newRate, <IconPlayerTrackNextFilled size={24} />);
       },
     ],
   ]);
@@ -582,21 +582,20 @@ export function Player({ media, repeating }: { media: Media; repeating: boolean 
           </Flex>
         </Flex>
 
-        {/* Main content: video left, lyrics right (better-lyrics layout when lyrics on) */}
+        {/* Main content: video + lyrics panel */}
         <Flex
           style={{
             position: "absolute",
             inset: 0,
             zIndex: 1,
-            flexDirection: "row", // Always row on desktop, mobile handled via overlay/media query if needed (but logic below handles mobile layout)
+            flexDirection: "row",
             overflow: "hidden",
           }}
         >
-          {/* Video Player Area - left side, ~1/3 width when lyrics on (better-lyrics) */}
           <Box
             ref={playerAreaRef}
             style={{
-              flex: 1, // Always take available space (flex logic handles the sibling)
+              flex: 1,
               minWidth: 0,
               minHeight: 0,
               backgroundColor: "transparent",
@@ -605,18 +604,24 @@ export function Player({ media, repeating }: { media: Media; repeating: boolean 
               justifyContent: "center",
               overflow: "hidden",
               position: "relative",
+              // When lyrics panel is open (desktop), reserve right space so video stays centered in visible area
+              paddingRight: !isMobile && showLyrics ? "30%" : 0,
+              transition: "padding-right 0.35s cubic-bezier(0.32, 0.72, 0, 1)",
             }}
           >
-            {/* Toast - Moved inside player area to center relative to video */}
             <Box
               style={{
                 position: "absolute",
-                inset: 0,
+                top: 0,
+                left: 0,
+                right: !isMobile && showLyrics ? "30%" : 0,
+                bottom: 0,
                 zIndex: 20,
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
                 pointerEvents: "none",
+                transition: "right 0.35s cubic-bezier(0.32, 0.72, 0, 1)",
               }}
             >
               <Transition
@@ -653,7 +658,7 @@ export function Player({ media, repeating }: { media: Media; repeating: boolean 
                 position: "relative",
                 width: "auto",
                 height: "auto",
-                maxWidth: isMobile ? "100vw" : showLyrics ? "100%" : "60vw",
+                maxWidth: isMobile ? "100vw" : showLyrics ? "100%" : "70vw",
                 maxHeight: isMobile ? "60vh" : "60vh",
                 aspectRatio: `${videoAspectRatio}`,
                 borderRadius: theme.radius.md,
@@ -751,49 +756,59 @@ export function Player({ media, repeating }: { media: Media; repeating: boolean 
             )}
           </Box>
 
-          {/* Lyrics panel: desktop = right side; mobile = overlay on video */}
-          {/* Lyrics panel: desktop = right side; mobile = overlay on video */}
-          {/* We always render this block for desktop transition, but conditionally display for mobile */}
+          {/* Lyrics: desktop = sliding side panel, mobile = overlay with transition */}
           {isMobile ? (
-            showLyrics && (
-              <Box
-                style={{
-                  position: "absolute",
-                  inset: 0,
-                  zIndex: 2,
-                  backgroundColor: "transparent",
-                  display: "flex",
-                  flexDirection: "column",
-                  overflow: "hidden",
-                }}
-              >
-                <LyricsPanel
-                  lyrics={lyrics}
-                  state={lyricsState}
-                  error={lyricsError}
-                  currentTimeSeconds={currentTime}
-                  isPlaying={isPlaying}
-                  onSeek={seek}
-                  style={{ flex: 1, minHeight: 0 }}
-                />
-              </Box>
-            )
+            <Transition
+              mounted={showLyrics}
+              transition="slide-left"
+              duration={280}
+              exitDuration={220}
+              timingFunction="ease-out"
+            >
+              {(styles) => (
+                <Box
+                  style={{
+                    ...styles,
+                    position: "absolute",
+                    inset: 0,
+                    zIndex: 2,
+                    background:
+                      "linear-gradient(to bottom, transparent 0%, transparent 15%, rgba(0,0,0,0.75) 40%, rgba(0,0,0,0.75) 60%, transparent 85%, transparent 100%)",
+                    backdropFilter: "blur(8px)",
+                    WebkitBackdropFilter: "blur(8px)",
+                    display: "flex",
+                    flexDirection: "column",
+                    overflow: "hidden",
+                  }}
+                >
+                  <LyricsPanel
+                    lyrics={lyrics}
+                    state={lyricsState}
+                    error={lyricsError}
+                    currentTimeSeconds={currentTime}
+                    onSeek={seek}
+                    style={{ flex: 1, minHeight: 0 }}
+                    isMobile
+                  />
+                </Box>
+              )}
+            </Transition>
           ) : (
             <Box
               style={{
-                width: showLyrics ? "35%" : "0px", // Animate width
-                maxWidth: "500px",
-                minWidth: showLyrics ? "300px" : "0px",
-                flex: "none",
-                height: "100%",
+                position: "absolute",
+                right: 0,
+                top: 0,
+                bottom: 0,
+                width: "30%",
+                minWidth: 360,
                 display: "flex",
                 flexDirection: "column",
                 overflow: "hidden",
-                backgroundColor: "transparent",
-                transition:
-                  "width 0.4s cubic-bezier(0.4, 0, 0.2, 1), min-width 0.4s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s ease",
-                opacity: showLyrics ? 1 : 0,
+                transform: showLyrics ? "translateX(0)" : "translateX(100%)",
+                transition: "transform 0.35s cubic-bezier(0.32, 0.72, 0, 1)",
                 pointerEvents: showLyrics ? "auto" : "none",
+                backgroundColor: "transparent",
               }}
             >
               <LyricsPanel
@@ -801,7 +816,6 @@ export function Player({ media, repeating }: { media: Media; repeating: boolean 
                 state={lyricsState}
                 error={lyricsError}
                 currentTimeSeconds={currentTime}
-                isPlaying={isPlaying}
                 onSeek={seek}
                 style={{ flex: 1, minHeight: 0 }}
               />
@@ -890,17 +904,11 @@ export function Player({ media, repeating }: { media: Media; repeating: boolean 
                         <IconFileMusic size={14} />
                       )
                     }
-                    onClick={() => {
-                      setShowLyrics((prev) => !prev);
-                    }}
-                    disabled={
-                      lyricsState === "loading" ||
-                      lyricsState === "not_found" ||
-                      lyricsState === "error"
-                    }
+                    onClick={() => setShowLyrics((prev) => !prev)}
+                    disabled={lyricsState === "loading"}
                     rightSection={
                       <Text size="xs" color="dimmed">
-                        {lyricsState === "loading" ? "..." : showLyrics ? "On" : "Off"}
+                        {showLyrics ? "On" : "Off"}
                       </Text>
                     }
                   >
