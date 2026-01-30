@@ -17,6 +17,7 @@ import {
   SegmentedControl,
   Slider,
   Stack,
+  Switch,
   Text,
   TextInput,
   Transition,
@@ -45,17 +46,17 @@ import {
   IconRepeatOff,
   IconRewindBackward5,
   IconRewindForward5,
-  IconRotate,
   IconShare,
 } from "@tabler/icons-react";
 import LoadingOverlay from "@/components/LoadingOverlay";
-import { useAudioContext } from "@/hooks/useAudioContext";
 import { useDominantColor } from "@/hooks/useDominantColor";
+import { useStretchPlayer } from "@/hooks/useStretchPlayer";
 import { useVideoPlayer } from "@/hooks/useVideoPlayer";
 import { PlaybackMode, Song } from "@/interfaces";
 import { getStateFromUrlParams, getVideoState, saveVideoState } from "@/lib/videoState";
 import { getFormattedTime } from "@/utils";
 import CookiesModal from "./CookiesModal";
+import CustomizePlaybackModal from "./CustomizePlaybackModal";
 import DownloadModal from "./DownloadModal";
 import { IconPause } from "./IconPause";
 
@@ -71,89 +72,128 @@ export function Player({
   const theme = useMantineTheme();
   const isMobile = useMediaQuery("(max-width: 768px)");
 
-  // Get the video URL for state storage
   const videoUrl = song.metadata.id
     ? song.metadata.platform === "youtube"
       ? `https://www.youtube.com/watch?v=${song.metadata.id}`
       : `https://www.tiktok.com/video/${song.metadata.id}`
     : song.fileUrl;
 
-  // Playback State - default to "slowed"
   const [playbackMode, setPlaybackMode] = useState<PlaybackMode>("slowed");
-  const [customPlaybackRate, setCustomPlaybackRate] = useState(1);
   const [initialStartAt, setInitialStartAt] = useState(0);
   const [stateLoaded, setStateLoaded] = useState(false);
   const dominantColor = useDominantColor(song.metadata.coverUrl, initialDominantColor);
 
   const [isAudioOnly, setIsAudioOnly] = useState(false);
   const [videoAspectRatio, setVideoAspectRatio] = useState<number>(16 / 9);
+  const [isRepeat, setIsRepeat] = useState(repeating);
+  const [pitchLockedToSpeed, setPitchLockedToSpeed] = useState(true);
+  // Local slider values during drag; only commit on onChangeEnd
+  const [speedSliderValue, setSpeedSliderValue] = useState(0.8);
+  const [pitchSliderValue, setPitchSliderValue] = useState(0);
 
-  // Load initial settings from URL params (for sharing) or localStorage
-  useEffect(() => {
-    // Priority: URL params > localStorage > defaults
+  // Load saved state
+  const savedState = useMemo(() => getVideoState(videoUrl), [videoUrl]);
+
+  // Initial rate based on mode
+  const getInitialRate = () => {
+    if (savedState?.rate) return savedState.rate;
     const urlParams = getStateFromUrlParams();
-    const savedState = getVideoState(videoUrl);
+    if (urlParams.rate) return urlParams.rate;
+    if (urlParams.mode === "slowed") return 0.8;
+    if (urlParams.mode === "speedup") return 1.25;
+    if (urlParams.mode === "normal") return 1;
+    if (savedState?.mode === "slowed") return 0.8;
+    if (savedState?.mode === "speedup") return 1.25;
+    if (savedState?.mode === "normal") return 1;
+    return 0.8; // Default to slowed
+  };
 
-    // If URL has sharing params (startAt), use URL params
+  useEffect(() => {
+    const urlParams = getStateFromUrlParams();
+
     if (urlParams.startAt !== undefined) {
       setPlaybackMode(urlParams.mode || "slowed");
-      if (urlParams.mode === "custom" && urlParams.rate) {
-        setCustomPlaybackRate(urlParams.rate);
-      }
       setInitialStartAt(urlParams.startAt);
-    }
-    // Otherwise, restore from localStorage
-    else if (savedState) {
+    } else if (savedState) {
       setPlaybackMode(savedState.mode);
-      setCustomPlaybackRate(savedState.customRate);
       setInitialStartAt(savedState.position);
     }
 
     setStateLoaded(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-  const {
-    videoRef,
-    videoElement,
-    isVideoReady,
-    isPlaying,
-    isFinished,
-    isRepeat,
-    currentPlayback,
-    displayPosition,
-    songLength,
-    isSeeking,
-    togglePlayer,
-    setPlaybackPosition,
-    handleSliderChange,
-    backward,
-    forward,
-    toggleLoop,
-    onTimeUpdate,
-    onError,
-  } = useVideoPlayer({
+
+  const { videoRef, videoElement, isVideoReady, onError } = useVideoPlayer({
     song,
     repeating,
     playbackMode,
-    customPlaybackRate,
+    customPlaybackRate: 1,
     startAt: stateLoaded ? initialStartAt : 0,
   });
 
-  // Ambient Mode (Canvas Extraction)
+  const {
+    state: stretchState,
+    isPlaying,
+    currentTime,
+    duration,
+    rate,
+    semitones,
+    isNativeFallback,
+    play,
+    pause,
+    togglePlayback,
+    setRate,
+    setSemitones,
+    seek,
+  } = useStretchPlayer({
+    videoElement,
+    fileUrl: song.fileUrl,
+    isVideoReady,
+    initialRate: getInitialRate(),
+    initialSemitones: savedState?.semitones ?? 0,
+    initialPosition: stateLoaded ? initialStartAt : 0,
+  });
+
+  const isLoading = stretchState === "loading";
+  const isReady = stretchState === "ready";
+  const isEnded =
+    stretchState === "ready" &&
+    currentTime >= duration - 0.05 &&
+    duration > 0 &&
+    !isPlaying &&
+    !isRepeat;
+  const songLength = duration;
+  const displayPosition = currentTime;
+
+  // Sync slider local state when rate/semitones change from elsewhere (e.g. mode change)
+  useEffect(() => {
+    setSpeedSliderValue(rate);
+    setPitchSliderValue(semitones);
+  }, [rate, semitones]);
+
+  // Disable ambient blur on Safari (renders rough/sharp edges there)
+  const [isSafari, setIsSafari] = useState(false);
+  useEffect(() => {
+    if (typeof navigator === "undefined") return;
+    const ua = navigator.userAgent;
+    // Safari (desktop and iOS) has "Safari" and no "Chrome"/"CriOS"
+    setIsSafari(ua.includes("Safari") && !ua.includes("Chrome") && !ua.includes("CriOS"));
+  }, []);
+
+  // Ambient Mode (Canvas Extraction) - skipped on Safari
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const animationFrameRef = useRef<number>();
 
   useEffect(() => {
-    if (!videoElement || !canvasRef.current || isAudioOnly) return;
+    if (isSafari || !videoElement || !canvasRef.current || isAudioOnly) return;
 
     const canvas = canvasRef.current;
-    const ctx = canvas.getContext("2d", { alpha: false }); // Optimize for no transparency if possible
+    const ctx = canvas.getContext("2d", { alpha: false });
 
     if (!ctx) return;
 
     const draw = () => {
       if (videoElement && !videoElement.paused && !videoElement.ended) {
-        // Draw to small canvas for performance and natural blur
         ctx.drawImage(videoElement, 0, 0, canvas.width, canvas.height);
       }
       animationFrameRef.current = requestAnimationFrame(draw);
@@ -164,9 +204,7 @@ export function Player({
     return () => {
       if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
     };
-  }, [videoElement, isAudioOnly, isPlaying]); // Re-run if playing state changes to ensure loop is active
-
-  const { setReverbAmount, reverbAmount, isSafari } = useAudioContext(videoElement);
+  }, [isSafari, videoElement, isAudioOnly, isPlaying]);
 
   const [modalOpened, { open: openModal, close: closeModal }] = useDisclosure(false);
   const [shareModalOpened, { open: openShareModal, close: closeShareModal }] =
@@ -178,43 +216,42 @@ export function Player({
 
   const [shareStartTime, setShareStartTime] = useState(0);
 
-  // Save state to localStorage periodically and on changes
+  // Save state periodically
   const lastSaveRef = useRef<number>(0);
   useEffect(() => {
-    if (!stateLoaded || !isVideoReady) return;
+    if (!stateLoaded || !isReady) return;
 
-    // Throttle saves to every 5 seconds
     const now = Date.now();
     if (now - lastSaveRef.current < 5000) return;
     lastSaveRef.current = now;
 
     saveVideoState(videoUrl, {
-      position: currentPlayback,
+      position: currentTime,
       mode: playbackMode,
-      customRate: customPlaybackRate,
-      reverbAmount,
+      rate,
+      semitones,
       isRepeat,
     });
   }, [
-    currentPlayback,
+    currentTime,
     playbackMode,
-    customPlaybackRate,
-    reverbAmount,
+    rate,
+    semitones,
     isRepeat,
     videoUrl,
     stateLoaded,
-    isVideoReady,
+    isReady,
   ]);
 
-  // Save state on unmount or visibility change
+  // Save state on unmount
   useEffect(() => {
     const saveState = () => {
       if (!stateLoaded) return;
       saveVideoState(videoUrl, {
-        position: currentPlayback,
+        position: currentTime,
         mode: playbackMode,
-        customRate: customPlaybackRate,
-        reverbAmount,
+        rate,
+        semitones,
         isRepeat,
       });
     };
@@ -233,16 +270,7 @@ export function Player({
       window.removeEventListener("beforeunload", saveState);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
-  }, [
-    currentPlayback,
-    playbackMode,
-    customPlaybackRate,
-    reverbAmount,
-    isRepeat,
-    videoUrl,
-    stateLoaded,
-    isVideoReady,
-  ]);
+  }, [currentTime, playbackMode, rate, semitones, isRepeat, videoUrl, stateLoaded]);
 
   // Check Audio Only
   useEffect(() => {
@@ -288,61 +316,141 @@ export function Player({
     }, 1200);
   }, []);
 
+  const [isSeeking, setIsSeeking] = useState(false);
+  const [seekPosition, setSeekPosition] = useState(0);
+
+  const handleSliderChange = useCallback((value: number) => {
+    setSeekPosition(value);
+    setIsSeeking(true);
+  }, []);
+
+  const handleSeekChange = useCallback(
+    (value: number) => {
+      setIsSeeking(false);
+      seek(value);
+    },
+    [seek],
+  );
+
   const handleBackward = useCallback(() => {
-    backward();
+    const newTime = Math.max(0, currentTime - 5);
+    seek(newTime);
     showToast(
       <Flex align="center" gap="xs">
         <IconRewindBackward5 size={24} />
         <Text weight={600}>-5s</Text>
       </Flex>,
     );
-  }, [backward, showToast]);
+  }, [currentTime, seek, showToast]);
 
   const handleForward = useCallback(() => {
-    forward();
+    const newTime = Math.min(songLength, currentTime + 5);
+    seek(newTime);
     showToast(
       <Flex align="center" gap="xs">
         <IconRewindForward5 size={24} />
         <Text weight={600}>+5s</Text>
       </Flex>,
     );
-  }, [forward, showToast]);
+  }, [currentTime, songLength, seek, showToast]);
 
   const handleTogglePlayer = useCallback(() => {
-    const nextPlayingState = !isPlaying;
-    togglePlayer();
-
-    if (isFinished) {
-      showToast(<IconRotate size={40} />, true);
-    } else if (nextPlayingState) {
+    if (isEnded) {
+      seek(0);
+      play();
       showToast(<IconPlayerPlayFilled size={40} />, true);
     } else {
-      showToast(<IconPause width={40} height={40} />, true);
+      togglePlayback();
+      if (isPlaying) {
+        showToast(<IconPause width={40} height={40} />, true);
+      } else {
+        showToast(<IconPlayerPlayFilled size={40} />, true);
+      }
     }
-  }, [isPlaying, togglePlayer, isFinished, showToast]);
+  }, [isEnded, isPlaying, togglePlayback, seek, play, showToast]);
 
-  const adjustCustomSpeed = (delta: number) => {
-    let currentRate = customPlaybackRate;
-    if (playbackMode !== "custom") {
-      if (playbackMode === "normal") currentRate = 1;
-      else if (playbackMode === "slowed") currentRate = 0.8;
-      else if (playbackMode === "speedup") currentRate = 1.25;
-    }
-    let newRate = Math.round((currentRate + delta) * 100) / 100;
-    if (newRate < 0.1) newRate = 0.1;
-    setCustomPlaybackRate(newRate);
-    setPlaybackMode("custom");
+  const handleRateChange = useCallback(
+    (newRate: number) => {
+      setRate(newRate);
+      // Only update pitch when lock is ON; when lock is OFF, leave semitones unchanged
+      if (pitchLockedToSpeed) {
+        const syncedSemitones = 12 * Math.log2(newRate);
+        setSemitones(syncedSemitones);
+        setPitchSliderValue(syncedSemitones);
+      }
+      // Update playback mode based on rate
+      if (Math.abs(newRate - 0.8) < 0.01) {
+        setPlaybackMode("slowed");
+      } else if (Math.abs(newRate - 1) < 0.01) {
+        setPlaybackMode("normal");
+      } else if (Math.abs(newRate - 1.25) < 0.01) {
+        setPlaybackMode("speedup");
+      } else {
+        setPlaybackMode("custom");
+      }
+    },
+    [setRate, setSemitones, pitchLockedToSpeed],
+  );
+
+  const handleSemitonesChange = useCallback(
+    (newSemitones: number) => {
+      if (!pitchLockedToSpeed) setSemitones(newSemitones);
+    },
+    [pitchLockedToSpeed, setSemitones],
+  );
+
+  const handleLockToggle = useCallback(
+    (locked: boolean) => {
+      setPitchLockedToSpeed(locked);
+      if (locked) {
+        setSemitones(12 * Math.log2(rate));
+        setPitchSliderValue(12 * Math.log2(rate));
+      }
+    },
+    [rate, setSemitones],
+  );
+
+  const handlePlaybackModeChange = useCallback(
+    (mode: PlaybackMode) => {
+      setPlaybackMode(mode);
+      let newRate = rate;
+      let newSemitones = semitones;
+
+      if (mode === "slowed") {
+        newRate = 0.8;
+        newSemitones = 12 * Math.log2(0.8);
+      } else if (mode === "normal") {
+        newRate = 1;
+        newSemitones = 0;
+      } else if (mode === "speedup") {
+        newRate = 1.25;
+        newSemitones = 12 * Math.log2(1.25);
+      }
+      if (mode !== "custom") {
+        setRate(newRate);
+        setSemitones(newSemitones);
+      }
+    },
+    [rate, semitones, setRate, setSemitones],
+  );
+
+  const toggleLoop = useCallback(() => {
+    setIsRepeat(!isRepeat);
     showToast(
       <Flex align="center" gap="xs">
-        {currentRate < newRate ? (
-          <IconPlayerTrackNextFilled size={24} />
-        ) : (
-          <IconPlayerTrackPrevFilled size={24} />
-        )}
-        <Text weight={600}>{newRate}x</Text>
+        {!isRepeat ? <IconRepeat size={24} /> : <IconRepeatOff size={24} />}
+        <Text weight={600}>{!isRepeat ? "Repeat On" : "Repeat Off"}</Text>
       </Flex>,
     );
-  };
+  }, [isRepeat, showToast]);
+
+  // Handle looping
+  useEffect(() => {
+    if (isRepeat && currentTime >= duration - 0.5 && duration > 0) {
+      seek(0);
+      play();
+    }
+  }, [isRepeat, currentTime, duration, seek, play]);
 
   // Hotkeys
   useHotkeys([
@@ -350,59 +458,36 @@ export function Player({
     ["ArrowRight", () => handleForward()],
     ["Space", () => handleTogglePlayer()],
     [
-      "ctrl+1",
+      "shift+<",
       () => {
-        setPlaybackMode("slowed");
+        const newRate = Math.max(0.5, rate - 0.05);
+        handleRateChange(Math.round(newRate * 100) / 100);
         showToast(
           <Flex align="center" gap="xs">
-            <IconPlayerTrackPrevFilled size={20} />
-            <Text weight={600}>Slowed (0.8x)</Text>
+            <IconPlayerTrackPrevFilled size={24} />
+            <Text weight={600}>{newRate.toFixed(2)}x</Text>
           </Flex>,
         );
       },
     ],
     [
-      "ctrl+2",
+      "shift+>",
       () => {
-        setPlaybackMode("normal");
+        const newRate = Math.min(1.5, rate + 0.05);
+        handleRateChange(Math.round(newRate * 100) / 100);
         showToast(
           <Flex align="center" gap="xs">
-            <Text weight={600}>Normal (1.0x)</Text>
+            <IconPlayerTrackNextFilled size={24} />
+            <Text weight={600}>{newRate.toFixed(2)}x</Text>
           </Flex>,
         );
       },
     ],
-    [
-      "ctrl+3",
-      () => {
-        setPlaybackMode("speedup");
-        showToast(
-          <Flex align="center" gap="xs">
-            <IconPlayerTrackNextFilled size={20} />
-            <Text weight={600}>Speed Up (1.25x)</Text>
-          </Flex>,
-        );
-      },
-    ],
-    [
-      "ctrl+4",
-      () => {
-        setPlaybackMode("custom");
-        showToast(
-          <Flex align="center" gap="xs">
-            <IconAdjustments size={20} />
-            <Text weight={600}>Custom ({customPlaybackRate}x)</Text>
-          </Flex>,
-        );
-      },
-    ],
-    ["shift+<", () => adjustCustomSpeed(-0.05)],
-    ["shift+>", () => adjustCustomSpeed(0.05)],
   ]);
 
   const getOriginalPlatformUrl = () => {
     if (song.metadata.platform === "youtube" && song.metadata.id) {
-      const realSeconds = videoElement ? Math.floor(videoElement.currentTime) : 0;
+      const realSeconds = Math.floor(currentTime);
       return `https://www.youtube.com/watch?v=${song.metadata.id}&t=${realSeconds}s`;
     }
     if (song.metadata.platform === "tiktok" && song.metadata.id) {
@@ -420,13 +505,12 @@ export function Player({
     const baseUrl = window.location.origin + window.location.pathname;
     const params = new URLSearchParams(window.location.search);
     params.set("startAt", Math.floor(startTime).toString());
-    if (playbackMode !== "normal") params.set("mode", playbackMode);
-    if (playbackMode === "custom") params.set("rate", customPlaybackRate.toString());
+    params.set("rate", rate.toString());
     return `${baseUrl}?${params.toString()}`;
   };
 
   const handleOpenShareModal = () => {
-    setShareStartTime(Math.floor(currentPlayback));
+    setShareStartTime(Math.floor(currentTime));
     openShareModal();
   };
 
@@ -443,7 +527,7 @@ export function Player({
     } as MantineThemeOverride;
   }, [dominantColor, theme]);
 
-  // Media Session API Support
+  // Media Session API
   useEffect(() => {
     if (!("mediaSession" in navigator)) return;
 
@@ -466,37 +550,17 @@ export function Player({
       ],
     });
 
-    navigator.mediaSession.setActionHandler("play", () => {
-      if (!videoElement?.paused === false) {
-        handleTogglePlayer();
-      }
-    });
-    navigator.mediaSession.setActionHandler("pause", () => {
-      if (!videoElement?.paused === true) {
-        handleTogglePlayer();
-      }
-    });
-
-    navigator.mediaSession.setActionHandler("seekbackward", () => {
-      handleBackward();
-    });
-
-    navigator.mediaSession.setActionHandler("seekforward", () => {
-      handleForward();
-    });
-
-    navigator.mediaSession.setActionHandler("previoustrack", () => {
-      handleBackward();
-    });
-
-    navigator.mediaSession.setActionHandler("nexttrack", () => {
-      handleForward();
-    });
+    navigator.mediaSession.setActionHandler("play", () => play());
+    navigator.mediaSession.setActionHandler("pause", () => pause());
+    navigator.mediaSession.setActionHandler("seekbackward", () => handleBackward());
+    navigator.mediaSession.setActionHandler("seekforward", () => handleForward());
+    navigator.mediaSession.setActionHandler("previoustrack", () => handleBackward());
+    navigator.mediaSession.setActionHandler("nexttrack", () => handleForward());
 
     try {
       navigator.mediaSession.setActionHandler("seekto", (details) => {
         if (details.seekTime !== undefined) {
-          setPlaybackPosition(details.seekTime);
+          seek(details.seekTime);
         }
       });
     } catch (error) {
@@ -514,126 +578,59 @@ export function Player({
         navigator.mediaSession.setActionHandler("seekto", null);
       } catch (e) {}
     };
-  }, [
-    song,
-    videoElement,
-    handleTogglePlayer,
-    handleBackward,
-    handleForward,
-    setPlaybackPosition,
-  ]);
+  }, [song, play, pause, handleBackward, handleForward, seek]);
 
-  // Update Media Session Playback State
   useEffect(() => {
     if (!("mediaSession" in navigator)) return;
     navigator.mediaSession.playbackState = isPlaying ? "playing" : "paused";
   }, [isPlaying]);
 
-  // Update Media Session Position State
   useEffect(() => {
-    if (
-      !("mediaSession" in navigator) ||
-      !("setPositionState" in navigator.mediaSession) ||
-      !videoElement
-    )
+    if (!("mediaSession" in navigator) || !("setPositionState" in navigator.mediaSession))
       return;
 
     try {
       navigator.mediaSession.setPositionState({
         duration: Math.max(0, songLength),
-        playbackRate: 1.0, // We treat the adjusted speed as the "normal" speed for the system player
+        playbackRate: 1.0,
         position: Math.max(0, Math.min(displayPosition, songLength)),
       });
     } catch (e) {
       console.error("Error setting position state:", e);
     }
-  }, [displayPosition, songLength, videoElement]);
+  }, [displayPosition, songLength]);
 
   return (
     <MantineProvider theme={dynamicTheme} inherit>
       <LoadingOverlay
-        visible={!isVideoReady || !videoElement}
-        message="Loading video..."
+        visible={isLoading || !isVideoReady || !videoElement}
+        message={isLoading ? "Processing audio..." : "Loading video..."}
       />
 
-      {/* Modals */}
-      <Modal
+      <CustomizePlaybackModal
         opened={modalOpened}
         onClose={closeModal}
-        overlayProps={{ opacity: 0.5, blur: 4 }}
-        title="Customize Playback"
-      >
-        <Stack>
-          <Flex direction="column" mb={22} gap={2}>
-            <Text>Playback Rate</Text>
-            <Slider
-              min={0.5}
-              thumbSize={20}
-              max={1.5}
-              step={0.01}
-              style={{ zIndex: 1000 }}
-              marks={[
-                { value: 0.8, label: "Slowed" },
-                { value: 1, label: "Normal" },
-                { value: 1.25, label: "Speed Up" },
-              ]}
-              styles={{
-                thumb: {
-                  borderWidth: 0,
-                },
-              }}
-              label={(v) => (v < 0.7 ? `who hurt u? 😭` : `${v}x`)}
-              value={customPlaybackRate}
-              onChange={setCustomPlaybackRate}
-            />
-          </Flex>
-          {!isSafari && (
-            <Flex direction="column" mb={22} gap={2}>
-              <Text>Reverb Amount</Text>
-              <Slider
-                min={0}
-                thumbSize={20}
-                max={1}
-                step={0.01}
-                styles={{
-                  thumb: {
-                    borderWidth: 0,
-                  },
-                }}
-                style={{ zIndex: 1000 }}
-                marks={[
-                  { value: 0, label: "Off" },
-                  { value: 0.5, label: "Medium" },
-                  { value: 1, label: "Full" },
-                ]}
-                label={(v) => `${Math.round(v * 100)}%`}
-                value={reverbAmount}
-                onChange={setReverbAmount}
-              />
-            </Flex>
-          )}
-          {isSafari && (
-            <Text size="xs" color="dimmed">
-              Note: Reverb is disabled on Safari for optimal playback performance
-            </Text>
-          )}
-        </Stack>
-      </Modal>
+        pitchLockedToSpeed={pitchLockedToSpeed}
+        onLockToggle={handleLockToggle}
+        speedSliderValue={speedSliderValue}
+        onSpeedChange={setSpeedSliderValue}
+        onSpeedChangeEnd={handleRateChange}
+        semitones={semitones}
+        pitchSliderValue={pitchSliderValue}
+        onPitchChange={setPitchSliderValue}
+        onPitchChangeEnd={handleSemitonesChange}
+        isNativeFallback={isNativeFallback}
+        onReset={() => {
+          handleRateChange(1);
+          setSemitones(0);
+        }}
+      />
 
       <DownloadModal
         opened={downloadModalOpened}
         onClose={closeDownloadModal}
         song={song}
-        currentPlaybackRate={
-          playbackMode === "normal"
-            ? 1
-            : playbackMode === "slowed"
-              ? 0.8
-              : playbackMode === "speedup"
-                ? 1.25
-                : customPlaybackRate
-        }
-        currentReverb={reverbAmount}
+        currentPlaybackRate={rate}
       />
 
       <Modal
@@ -704,7 +701,7 @@ export function Player({
               color="brand"
               style={{ boxShadow: "0px 0px 0px 1px #383A3F" }}
               size="sm"
-              onChange={(value) => setPlaybackMode(value as PlaybackMode)}
+              onChange={(value) => handlePlaybackModeChange(value as PlaybackMode)}
               value={playbackMode}
               data={[
                 { label: "Slowed", value: "slowed" },
@@ -783,7 +780,7 @@ export function Player({
             overflow: "hidden",
           }}
         >
-          {/* Video Container with Dynamic Aspect Ratio */}
+          {/* Video Container */}
           <Box
             style={{
               position: "relative",
@@ -798,24 +795,26 @@ export function Player({
               display: isAudioOnly ? "none" : "block",
             }}
           >
-            {/* Ambient Canvas */}
-            <canvas
-              ref={canvasRef}
-              width={30} // Small width for performance & soft blur
-              height={15} // Small height
-              style={{
-                position: "absolute",
-                top: "0",
-                left: "0",
-                width: "100%",
-                height: "100%",
-                filter: "blur(60px) contrast(1.5) saturate(1.5)",
-                transform: "scale(1.5)", // Scale up to hide edges
-                opacity: 0.6,
-                zIndex: -1,
-                pointerEvents: "none",
-              }}
-            />
+            {/* Ambient blur disabled on Safari (rough edges); canvas only rendered when !isSafari */}
+            {!isSafari && (
+              <canvas
+                ref={canvasRef}
+                width={30}
+                height={15}
+                style={{
+                  position: "absolute",
+                  top: "0",
+                  left: "0",
+                  width: "100%",
+                  height: "100%",
+                  filter: "blur(80px) contrast(1.15) saturate(1.1)",
+                  transform: "scale(1.3)",
+                  opacity: 0.35,
+                  zIndex: -1,
+                  pointerEvents: "none",
+                }}
+              />
+            )}
 
             <video
               ref={videoRef}
@@ -827,20 +826,18 @@ export function Player({
                 display: "block",
                 userSelect: "none",
                 pointerEvents: "none",
-                borderRadius: theme.radius.md, // Moved from container
+                borderRadius: theme.radius.md,
               }}
               playsInline
               controls={false}
               preload="metadata"
-              autoPlay
-              muted={false}
+              muted
               crossOrigin="anonymous"
-              onTimeUpdate={onTimeUpdate}
               onError={onError}
             />
           </Box>
 
-          {/* Audio Only / Music Mode Display */}
+          {/* Audio Only Display */}
           {isAudioOnly && (
             <Box
               style={{
@@ -939,75 +936,83 @@ export function Player({
                 fontVariantNumeric: "tabular-nums",
               }}
             >
-              {`${getFormattedTime(displayPosition)} / ${getFormattedTime(songLength)}`}
+              {`${getFormattedTime(isSeeking ? seekPosition : displayPosition)} / ${getFormattedTime(songLength)}`}
             </Text>
-            <Menu shadow="md" width={200} position="top-end">
-              <Menu.Target>
-                <Button variant="default" leftIcon={<IconMenu2 size={18} />}>
-                  Menu
-                </Button>
-              </Menu.Target>
-              <Menu.Dropdown>
-                <Menu.Label>Navigation</Menu.Label>
-                <Menu.Item icon={<IconHome size={14} />} component={Link} href="/">
-                  Home
-                </Menu.Item>
-                {getOriginalPlatformUrl() && (
+            <Flex gap="xs">
+              <Menu shadow="md" width={200} position="top-end">
+                <Menu.Target>
+                  <Button variant="default" leftIcon={<IconMenu2 size={18} />}>
+                    Menu
+                  </Button>
+                </Menu.Target>
+                <Menu.Dropdown>
+                  <Menu.Label>Navigation</Menu.Label>
+                  <Menu.Item icon={<IconHome size={14} />} component={Link} href="/">
+                    Home
+                  </Menu.Item>
+                  {getOriginalPlatformUrl() && (
+                    <Menu.Item
+                      icon={
+                        song.metadata.platform === "youtube" ? (
+                          <IconBrandYoutube size={14} />
+                        ) : (
+                          <IconBrandTiktok size={14} />
+                        )
+                      }
+                      component="a"
+                      href={getOriginalPlatformUrl()!}
+                      rightSection={<IconExternalLink size={12} />}
+                      target="_blank"
+                    >
+                      Go to {song.metadata.platform === "youtube" ? "YouTube" : "TikTok"}
+                    </Menu.Item>
+                  )}
+                  <Menu.Divider />
+                  <Menu.Label>Actions</Menu.Label>
                   <Menu.Item
-                    icon={
-                      song.metadata.platform === "youtube" ? (
-                        <IconBrandYoutube size={14} />
-                      ) : (
-                        <IconBrandTiktok size={14} />
-                      )
-                    }
+                    icon={<IconShare size={14} />}
+                    onClick={handleOpenShareModal}
+                  >
+                    Share
+                  </Menu.Item>
+                  <Menu.Item
+                    icon={<IconDownload size={14} />}
+                    onClick={openDownloadModal}
+                  >
+                    Download
+                  </Menu.Item>
+                  <Menu.Item
+                    icon={<IconBug size={14} />}
                     component="a"
-                    href={getOriginalPlatformUrl()!}
+                    href="https://github.com/bgwastu/moonlit/issues"
                     rightSection={<IconExternalLink size={12} />}
                     target="_blank"
                   >
-                    Go to {song.metadata.platform === "youtube" ? "YouTube" : "TikTok"}
+                    Report Bug
                   </Menu.Item>
-                )}
-                <Menu.Divider />
-                <Menu.Label>Actions</Menu.Label>
-                <Menu.Item icon={<IconShare size={14} />} onClick={handleOpenShareModal}>
-                  Share
-                </Menu.Item>
-                <Menu.Item icon={<IconDownload size={14} />} onClick={openDownloadModal}>
-                  Download
-                </Menu.Item>
-                <Menu.Item
-                  icon={<IconBug size={14} />}
-                  component="a"
-                  href="https://github.com/bgwastu/moonlit/issues"
-                  rightSection={<IconExternalLink size={12} />}
-                  target="_blank"
-                >
-                  Report Bug
-                </Menu.Item>
-                <Menu.Item
-                  icon={<IconBrandX size={14} />}
-                  component="a"
-                  href={`https://x.com/intent/tweet?text=I'm listening to ${song.metadata.title} by ${song.metadata.author} on Moonlit!&url=${window.location.href}`}
-                  rightSection={<IconExternalLink size={12} />}
-                  target="_blank"
-                >
-                  Share on X
-                </Menu.Item>
-                <Menu.Divider />
-                <Menu.Label>Settings</Menu.Label>
-                <Menu.Item icon={<IconCookie size={14} />} onClick={openCookiesModal}>
-                  Cookies Settings
-                </Menu.Item>
-              </Menu.Dropdown>
-            </Menu>
+                  <Menu.Item
+                    icon={<IconBrandX size={14} />}
+                    component="a"
+                    href={`https://x.com/intent/tweet?text=I'm listening to ${song.metadata.title} by ${song.metadata.author} on Moonlit!&url=${window.location.href}`}
+                    rightSection={<IconExternalLink size={12} />}
+                    target="_blank"
+                  >
+                    Share on X
+                  </Menu.Item>
+                  <Menu.Divider />
+                  <Menu.Label>Settings</Menu.Label>
+                  <Menu.Item icon={<IconCookie size={14} />} onClick={openCookiesModal}>
+                    Cookies Settings
+                  </Menu.Item>
+                </Menu.Dropdown>
+              </Menu>
+            </Flex>
           </Flex>
 
           <Slider
-            value={displayPosition}
+            value={isSeeking ? seekPosition : displayPosition}
             onChange={handleSliderChange}
-            onChangeEnd={setPlaybackPosition}
+            onChangeEnd={handleSeekChange}
             min={0}
             step={1}
             radius={0}
@@ -1033,17 +1038,11 @@ export function Player({
                 <ActionIcon
                   size="xl"
                   onClick={handleTogglePlayer}
-                  title={isPlaying ? "Pause" : isFinished ? "Replay" : "Play"}
+                  title={isPlaying ? "Pause" : "Play"}
                   variant="transparent"
                   color="gray"
                 >
-                  {isPlaying ? (
-                    <IconPause />
-                  ) : isFinished ? (
-                    <IconPlayerPlayFilled size={30} />
-                  ) : (
-                    <IconPlayerPlayFilled size={30} />
-                  )}
+                  {isPlaying ? <IconPause /> : <IconPlayerPlayFilled size={30} />}
                 </ActionIcon>
                 <ActionIcon
                   size="lg"
