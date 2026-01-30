@@ -40,7 +40,7 @@ https://github.com/bgwastu/moonlit/assets/67826350/a60fa36b-528a-4216-a925-97105
 
 Moonlit leverages the **Web Audio API** to process audio real-time in the browser.
 
-- **Time & Pitch Manipulation**: We use the incredible [signalsmith-stretch](https://github.com/Signalsmith-Audio/signalsmith-stretch-js) library to handle time-stretching and pitch-shifting with high quality and minimal artifacts.
+- **Time & Pitch Manipulation**: We use the [signalsmith-stretch](https://github.com/Signalsmith-Audio/signalsmith-stretch) library to handle time-stretching and pitch-shifting with high quality and minimal artifacts.
 - **Reverb**: Implemented using a Convolution Reverb with a generated impulse response.
 - **Syncing**: The processed audio is played through an AudioContext while keeping the video element (muted) synchronized for visuals.
 
