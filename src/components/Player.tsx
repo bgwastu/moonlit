@@ -452,9 +452,22 @@ export function Player({
       if (mode !== "custom") {
         setRate(newRate);
         setSemitones(newSemitones);
+        // Show toast for mode change
+        const modeLabels: Record<string, string> = {
+          slowed: "Slowed",
+          normal: "Normal",
+          speedup: "Speed Up",
+        };
+        showToast(
+          <Flex align="center" gap="xs">
+            <Text weight={600}>
+              {modeLabels[mode]} ({newRate.toFixed(2)}x)
+            </Text>
+          </Flex>,
+        );
       }
     },
-    [rate, semitones, setRate, setSemitones],
+    [rate, semitones, setRate, setSemitones, showToast],
   );
 
   const toggleLoop = useCallback(() => {
