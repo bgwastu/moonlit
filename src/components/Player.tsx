@@ -37,12 +37,11 @@ import {
   IconVolume,
   IconVolume2,
   IconVolume3,
-  IconVolume4,
   IconVolumeOff,
 } from "@tabler/icons-react";
 import { Pause } from "lucide-react";
+import AmbientCanvas from "@/components/AmbientCanvas";
 import LoadingOverlay from "@/components/LoadingOverlay";
-import { useAmbientMode } from "@/hooks/useAmbientMode";
 import { useDominantColor } from "@/hooks/useDominantColor";
 import { useMediaSession } from "@/hooks/useMediaSession";
 import { useStretchPlayer } from "@/hooks/useStretchPlayer";
@@ -51,8 +50,7 @@ import { useVideoPlayer } from "@/hooks/useVideoPlayer";
 import { useVideoStatePersistence } from "@/hooks/useVideoStatePersistence";
 import { Media } from "@/interfaces";
 import { getModeFromRate, getVideoState } from "@/lib/videoState";
-import { getFormattedTime } from "@/utils";
-import { getPlatform } from "@/utils";
+import { getFormattedTime, getPlatform } from "@/utils";
 import {
   createDynamicTheme,
   getOriginalPlatformUrl,
@@ -64,18 +62,9 @@ import DownloadModal from "./DownloadModal";
 
 type PlaybackMode = "slowed" | "normal" | "speedup" | "custom";
 
-export function Player({
-  media,
-  repeating,
-  initialDominantColor,
-}: {
-  media: Media;
-  repeating: boolean;
-  initialDominantColor?: string;
-}) {
+export function Player({ media, repeating }: { media: Media; repeating: boolean }) {
   const theme = useMantineTheme();
   const isMobile = useMediaQuery("(max-width: 768px)");
-  const canvasRef = useRef<HTMLCanvasElement>(null);
 
   // Use sourceUrl from media state
   const sourceUrl = media.sourceUrl;
@@ -97,16 +86,12 @@ export function Player({
     savedState?.pitchLockedToSpeed ?? true,
   );
 
-  // Slider values (only commit on onChangeEnd)
-  const [speedSliderValue, setSpeedSliderValue] = useState(initialRate);
-  const [pitchSliderValue, setPitchSliderValue] = useState(savedState?.semitones ?? 0);
-
   // Volume UI state (actual volume is managed by useStretchPlayer)
   const [isMuted, setIsMuted] = useState(false);
   const [isVolumeHovered, setIsVolumeHovered] = useState(false);
   const previousVolumeRef = useRef(savedState?.volume ?? 1);
 
-  const dominantColor = useDominantColor(media.metadata.coverUrl, initialDominantColor);
+  const dominantColor = useDominantColor(media.metadata.coverUrl);
   const { toast, showToast } = useToast();
 
   // Initialize state loaded flag
@@ -167,14 +152,6 @@ export function Player({
     !isPlaying &&
     !isRepeat;
 
-  // Ambient mode (canvas glow effect)
-  const { isSafari } = useAmbientMode({
-    videoElement,
-    canvasRef,
-    isAudioOnly,
-    isPlaying,
-  });
-
   // Media session (browser controls)
   const handleBackward = useCallback(() => {
     const newTime = Math.max(0, currentTime - 5);
@@ -224,32 +201,22 @@ export function Player({
     stateLoaded,
   });
 
-  // Sync slider values when rate/semitones change
-  useEffect(() => {
-    setSpeedSliderValue(rate);
-    setPitchSliderValue(semitones);
-  }, [rate, semitones]);
-
-  // Check if audio only
+  // Sync media dimensions (audio-only vs video with aspect ratio)
   useEffect(() => {
     if (!videoElement) return;
 
-    const checkAudioOnly = () => {
-      if (videoElement.videoWidth === 0 && videoElement.videoHeight === 0) {
-        setIsAudioOnly(true);
-      } else {
-        setIsAudioOnly(false);
-        if (videoElement.videoWidth && videoElement.videoHeight) {
-          setVideoAspectRatio(videoElement.videoWidth / videoElement.videoHeight);
-        }
+    const sync = () => {
+      const { videoWidth, videoHeight } = videoElement;
+      const audioOnly = videoWidth === 0 && videoHeight === 0;
+      setIsAudioOnly(audioOnly);
+      if (!audioOnly && videoWidth && videoHeight) {
+        setVideoAspectRatio(videoWidth / videoHeight);
       }
     };
 
-    if (videoElement.readyState >= 1) {
-      checkAudioOnly();
-    }
-    videoElement.addEventListener("loadedmetadata", checkAudioOnly);
-    return () => videoElement.removeEventListener("loadedmetadata", checkAudioOnly);
+    if (videoElement.readyState >= 1) sync();
+    videoElement.addEventListener("loadedmetadata", sync);
+    return () => videoElement.removeEventListener("loadedmetadata", sync);
   }, [videoElement]);
 
   // Sync video rate with audio rate
@@ -304,7 +271,6 @@ export function Player({
       if (pitchLockedToSpeed) {
         const syncedSemitones = getSemitonesFromRate(newRate);
         setSemitones(syncedSemitones);
-        setPitchSliderValue(syncedSemitones);
       }
       // Update mode based on rate
       if (Math.abs(newRate - 0.8) < 0.01) {
@@ -333,7 +299,6 @@ export function Player({
       if (locked) {
         const syncedSemitones = getSemitonesFromRate(rate);
         setSemitones(syncedSemitones);
-        setPitchSliderValue(syncedSemitones);
       }
     },
     [rate, setSemitones],
@@ -415,7 +380,7 @@ export function Player({
         </Flex>,
       );
     }
-  }, [isMuted, volume, showToast]);
+  }, [isMuted, volume, setVolume, showToast]);
 
   const handleVolumeChange = useCallback(
     (newVolume: number) => {
@@ -475,7 +440,7 @@ export function Player({
     <MantineProvider theme={dynamicTheme} inherit>
       <LoadingOverlay
         visible={isLoading || !isVideoReady || !videoElement}
-        message={isLoading ? "Processing audio..." : "Loading video..."}
+        message={isLoading ? "Decoding the audio..." : "Loading..."}
       />
 
       <CustomizePlaybackModal
@@ -483,12 +448,9 @@ export function Player({
         onClose={closeModal}
         pitchLockedToSpeed={pitchLockedToSpeed}
         onLockToggle={handleLockToggle}
-        speedSliderValue={speedSliderValue}
-        onSpeedChange={setSpeedSliderValue}
+        rate={rate}
         onSpeedChangeEnd={handleRateChange}
         semitones={semitones}
-        pitchSliderValue={pitchSliderValue}
-        onPitchChange={setPitchSliderValue}
         onPitchChangeEnd={handleSemitonesChange}
         reverbAmount={reverbAmount}
         onReverbChange={setReverbAmount}
@@ -631,26 +593,11 @@ export function Player({
               display: isAudioOnly ? "none" : "block",
             }}
           >
-            {/* Ambient blur (disabled on Safari) */}
-            {!isSafari && (
-              <canvas
-                ref={canvasRef}
-                width={30}
-                height={15}
-                style={{
-                  position: "absolute",
-                  top: "0",
-                  left: "0",
-                  width: "100%",
-                  height: "100%",
-                  filter: "blur(80px) contrast(1.15) saturate(1.1)",
-                  transform: "scale(1.3)",
-                  opacity: 0.35,
-                  zIndex: -1,
-                  pointerEvents: "none",
-                }}
-              />
-            )}
+            <AmbientCanvas
+              videoElement={videoElement}
+              isAudioOnly={isAudioOnly}
+              isPlaying={isPlaying}
+            />
 
             <video
               ref={videoRef}

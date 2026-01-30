@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { Alert, Button, Flex, Modal, Slider, Stack, Switch, Text } from "@mantine/core";
 import { IconInfoCircle, IconLock, IconLockOpen } from "@tabler/icons-react";
 
@@ -8,12 +9,9 @@ export interface CustomizePlaybackModalProps {
   onClose: () => void;
   pitchLockedToSpeed: boolean;
   onLockToggle: (locked: boolean) => void;
-  speedSliderValue: number;
-  onSpeedChange: (value: number) => void;
+  rate: number;
   onSpeedChangeEnd: (value: number) => void;
   semitones: number;
-  pitchSliderValue: number;
-  onPitchChange: (value: number) => void;
   onPitchChangeEnd: (value: number) => void;
   reverbAmount: number;
   onReverbChange: (value: number) => void;
@@ -26,18 +24,26 @@ export default function CustomizePlaybackModal({
   onClose,
   pitchLockedToSpeed,
   onLockToggle,
-  speedSliderValue,
-  onSpeedChange,
+  rate,
   onSpeedChangeEnd,
   semitones,
-  pitchSliderValue,
-  onPitchChange,
   onPitchChangeEnd,
   reverbAmount,
   onReverbChange,
   isNativeFallback = false,
   onReset,
 }: CustomizePlaybackModalProps) {
+  const [speedSliderValue, setSpeedSliderValue] = useState(rate);
+  const [pitchSliderValue, setPitchSliderValue] = useState(semitones);
+
+  // Sync slider state from player when modal opens
+  useEffect(() => {
+    if (opened) {
+      setSpeedSliderValue(rate);
+      setPitchSliderValue(semitones);
+    }
+  }, [opened, rate, semitones]);
+
   // In native fallback mode (Safari), pitch is always locked to speed
   const effectiveLocked = isNativeFallback || pitchLockedToSpeed;
   return (
@@ -93,8 +99,8 @@ export default function CustomizePlaybackModal({
               { value: 1.5, label: "1.5x" },
             ]}
             value={speedSliderValue}
-            onChange={onSpeedChange}
-            onChangeEnd={onSpeedChangeEnd}
+            onChange={setSpeedSliderValue}
+            onChangeEnd={(v) => onSpeedChangeEnd(v)}
           />
         </Flex>
 
@@ -126,8 +132,8 @@ export default function CustomizePlaybackModal({
             ]}
             label={(v) => `${v >= 0 ? "+" : ""}${v.toFixed(1)}`}
             value={effectiveLocked ? semitones : pitchSliderValue}
-            onChange={effectiveLocked ? () => {} : onPitchChange}
-            onChangeEnd={onPitchChangeEnd}
+            onChange={effectiveLocked ? () => {} : setPitchSliderValue}
+            onChangeEnd={(v) => onPitchChangeEnd(v)}
           />
         </Flex>
 
