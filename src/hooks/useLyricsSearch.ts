@@ -75,7 +75,7 @@ export function useLyricsSearch(
       setError(null);
       try {
         const res = await fetch(`${LRCLIB_BASE}/search?${sp}`, {
-          headers: { "User-Agent": USER_AGENT },
+          headers: { "Lrclib-Client": USER_AGENT },
         });
         if (!res.ok) throw new Error(`LRCLib ${res.status}`);
         const data = (await res.json()) as LyricsSearchRecord[];
