@@ -58,10 +58,11 @@ export function getTikTokCreatorAndVideoId(url: string): {
 }
 
 export function getFormattedTime(seconds: number) {
-  const minutes = Math.floor(seconds / 60);
-  const remainingSeconds = Math.floor(seconds % 60);
+  const totalSeconds = Math.max(0, Math.floor(seconds));
+  const minutes = Math.floor(totalSeconds / 60);
+  const remainingSeconds = totalSeconds % 60;
 
-  const formattedMinutes = String(minutes).padStart(2, "");
+  const formattedMinutes = String(minutes);
   const formattedSeconds = String(remainingSeconds).padStart(2, "0");
 
   return `${formattedMinutes}:${formattedSeconds}`;

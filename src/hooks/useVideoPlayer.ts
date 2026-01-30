@@ -3,7 +3,6 @@ import { useRouter } from "next/navigation";
 import { useShallowEffect } from "@mantine/hooks";
 import { notifications } from "@mantine/notifications";
 import { Media } from "@/interfaces";
-import { getSongLength } from "@/utils";
 import useNoSleep from "./useNoSleep";
 
 interface UseVideoPlayerProps {
@@ -29,9 +28,7 @@ export function useVideoPlayer({
   const [, noSleepControls] = useNoSleep();
 
   // Computed values
-  const currentPlayback = videoElement
-    ? Math.floor(videoElement.currentTime / videoElement.playbackRate)
-    : 0;
+  const currentPlayback = videoElement ? videoElement.currentTime : 0;
 
   const displayPosition = isSeeking ? seekPosition : currentPlayback;
   const isPlaying = videoElement ? !videoElement.paused : false;
@@ -40,7 +37,7 @@ export function useVideoPlayer({
 
   const songLength =
     videoElement && videoElement.duration && !isNaN(videoElement.duration)
-      ? getSongLength(videoElement.duration, videoElement.playbackRate)
+      ? videoElement.duration
       : 0;
 
   // Refs to track latest props for async cleanup/setup
@@ -104,7 +101,7 @@ export function useVideoPlayer({
 
         // Start time
         const initialTime = startAt || 0;
-        video.currentTime = initialTime * currentRate;
+        video.currentTime = initialTime;
 
         setIsVideoReady(true);
         console.log("Video setup completed");
@@ -189,8 +186,7 @@ export function useVideoPlayer({
     setSeekPosition(value);
     setIsSeeking(false);
 
-    const videoTime = value * videoElement.playbackRate;
-    videoElement.currentTime = videoTime;
+    videoElement.currentTime = value;
 
     if (isPlaying) {
       videoElement.play().catch(console.error);
