@@ -90,6 +90,7 @@ export function Player({ media, repeating }: { media: Media; repeating: boolean 
   const [isMuted, setIsMuted] = useState(false);
   const [isVolumeHovered, setIsVolumeHovered] = useState(false);
   const previousVolumeRef = useRef(savedState?.volume ?? 1);
+  const pitchLockedToSpeedRef = useRef(pitchLockedToSpeed);
 
   const dominantColor = useDominantColor(media.metadata.coverUrl);
   const { toast, showToast } = useToast();
@@ -201,6 +202,11 @@ export function Player({ media, repeating }: { media: Media; repeating: boolean 
     stateLoaded,
   });
 
+  // Keep ref in sync so rate-change handler always sees current lock state
+  useEffect(() => {
+    pitchLockedToSpeedRef.current = pitchLockedToSpeed;
+  }, [pitchLockedToSpeed]);
+
   // Sync media dimensions (audio-only vs video with aspect ratio)
   useEffect(() => {
     if (!videoElement) return;
@@ -268,7 +274,7 @@ export function Player({ media, repeating }: { media: Media; repeating: boolean 
   const handleRateChange = useCallback(
     (newRate: number) => {
       setRate(newRate);
-      if (pitchLockedToSpeed) {
+      if (pitchLockedToSpeedRef.current) {
         const syncedSemitones = getSemitonesFromRate(newRate);
         setSemitones(syncedSemitones);
       }
@@ -283,7 +289,7 @@ export function Player({ media, repeating }: { media: Media; repeating: boolean 
         setPlaybackMode("custom");
       }
     },
-    [setRate, setSemitones, pitchLockedToSpeed],
+    [setRate, setSemitones],
   );
 
   const handleSemitonesChange = useCallback(
@@ -467,6 +473,7 @@ export function Player({ media, repeating }: { media: Media; repeating: boolean 
         onClose={closeDownloadModal}
         media={media}
         currentPlaybackRate={rate}
+        currentSemitones={semitones}
         currentReverbAmount={reverbAmount}
       />
 

@@ -11,6 +11,7 @@ interface DownloadModalProps {
   onClose: () => void;
   media: Media;
   currentPlaybackRate: number;
+  currentSemitones: number;
   currentReverbAmount: number;
 }
 
@@ -104,6 +105,7 @@ export default function DownloadModal({
   onClose,
   media,
   currentPlaybackRate,
+  currentSemitones,
   currentReverbAmount,
 }: DownloadModalProps) {
   const [version, setVersion] = useState<"current" | "original">("current");
@@ -131,46 +133,86 @@ export default function DownloadModal({
     const arrayBuffer = await response.arrayBuffer();
 
     if (messageRef.current) messageRef.current.innerText = "Decoding audio...";
-    const audioContext = new AudioContext();
-    const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+    const decodeCtx = new AudioContext();
+    const audioBuffer = await decodeCtx.decodeAudioData(arrayBuffer);
+    await decodeCtx.close();
 
-    // Add extra time for reverb tail if reverb is applied
-    const reverbTailTime = currentReverbAmount > 0 ? 2 : 0;
-    const duration = audioBuffer.duration / currentPlaybackRate + reverbTailTime;
     const sampleRate = audioBuffer.sampleRate;
-    const offlineCtx = new OfflineAudioContext(
-      2,
-      Math.ceil(sampleRate * duration),
-      sampleRate,
-    );
+    const reverbTailTime = currentReverbAmount > 0 ? 2 : 0;
+    const outputDurationSeconds =
+      audioBuffer.duration / currentPlaybackRate + reverbTailTime;
+    const lengthInSamples = Math.ceil(outputDurationSeconds * sampleRate);
 
-    if (messageRef.current) messageRef.current.innerText = "Rendering...";
-    const source = offlineCtx.createBufferSource();
-    source.buffer = audioBuffer;
-    source.playbackRate.value = currentPlaybackRate;
+    const offlineCtx = new OfflineAudioContext(2, lengthInSamples, sampleRate);
 
-    // Apply reverb if enabled
-    if (currentReverbAmount > 0) {
-      const convolver = offlineCtx.createConvolver();
-      const dryGain = offlineCtx.createGain();
-      const wetGain = offlineCtx.createGain();
+    // Use stretch (rate + pitch) when AudioWorklet is available for 1:1 with playback
+    const useStretch = !!offlineCtx.audioWorklet;
 
-      convolver.buffer = generateImpulseResponse(offlineCtx, 2, 2);
+    if (useStretch) {
+      if (messageRef.current)
+        messageRef.current.innerText = "Rendering (stretch + reverb)...";
+      const SignalsmithStretch = (await import("signalsmith-stretch")).default;
+      const stretchNode = await SignalsmithStretch(offlineCtx);
 
-      dryGain.gain.value = 1 - currentReverbAmount * 0.5;
-      wetGain.gain.value = currentReverbAmount;
+      const channelBuffers: Float32Array[] = [];
+      for (let c = 0; c < audioBuffer.numberOfChannels; c++) {
+        channelBuffers.push(audioBuffer.getChannelData(c));
+      }
+      await stretchNode.addBuffers(channelBuffers);
 
-      // Route: source -> (dry + convolver->wet) -> destination
-      source.connect(dryGain);
-      source.connect(convolver);
-      convolver.connect(wetGain);
-      dryGain.connect(offlineCtx.destination);
-      wetGain.connect(offlineCtx.destination);
+      stretchNode.schedule({
+        active: true,
+        input: 0,
+        rate: currentPlaybackRate,
+        semitones: currentSemitones,
+        loopStart: 0,
+        loopEnd: audioBuffer.duration,
+      });
+
+      if (currentReverbAmount > 0) {
+        const convolver = offlineCtx.createConvolver();
+        const dryGain = offlineCtx.createGain();
+        const wetGain = offlineCtx.createGain();
+
+        convolver.buffer = generateImpulseResponse(offlineCtx, 2, 2);
+        dryGain.gain.value = 1 - currentReverbAmount * 0.5;
+        wetGain.gain.value = currentReverbAmount;
+
+        stretchNode.connect(dryGain);
+        stretchNode.connect(convolver);
+        convolver.connect(wetGain);
+        dryGain.connect(offlineCtx.destination);
+        wetGain.connect(offlineCtx.destination);
+      } else {
+        stretchNode.connect(offlineCtx.destination);
+      }
     } else {
-      source.connect(offlineCtx.destination);
-    }
+      if (messageRef.current)
+        messageRef.current.innerText = "Rendering (speed + reverb)...";
+      const source = offlineCtx.createBufferSource();
+      source.buffer = audioBuffer;
+      source.playbackRate.value =
+        currentPlaybackRate * Math.pow(2, currentSemitones / 12);
 
-    source.start(0);
+      if (currentReverbAmount > 0) {
+        const convolver = offlineCtx.createConvolver();
+        const dryGain = offlineCtx.createGain();
+        const wetGain = offlineCtx.createGain();
+
+        convolver.buffer = generateImpulseResponse(offlineCtx, 2, 2);
+        dryGain.gain.value = 1 - currentReverbAmount * 0.5;
+        wetGain.gain.value = currentReverbAmount;
+
+        source.connect(dryGain);
+        source.connect(convolver);
+        convolver.connect(wetGain);
+        dryGain.connect(offlineCtx.destination);
+        wetGain.connect(offlineCtx.destination);
+      } else {
+        source.connect(offlineCtx.destination);
+      }
+      source.start(0);
+    }
 
     const renderedBuffer = await offlineCtx.startRendering();
 
@@ -214,6 +256,11 @@ export default function DownloadModal({
 
   const getSettingsDescription = () => {
     const parts = [`Speed ${currentPlaybackRate}x`];
+    if (currentSemitones !== 0) {
+      parts.push(
+        `Pitch ${currentSemitones >= 0 ? "+" : ""}${currentSemitones.toFixed(1)} semitones`,
+      );
+    }
     if (currentReverbAmount > 0) {
       parts.push(`${Math.round(currentReverbAmount * 100)}% reverb`);
     }
