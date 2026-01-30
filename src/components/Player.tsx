@@ -44,6 +44,7 @@ import AmbientCanvas from "@/components/AmbientCanvas";
 import LoadingOverlay from "@/components/LoadingOverlay";
 import { useDominantColor } from "@/hooks/useDominantColor";
 import { useMediaSession } from "@/hooks/useMediaSession";
+import { usePlayerTapGestures } from "@/hooks/usePlayerTapGestures";
 import { useStretchPlayer } from "@/hooks/useStretchPlayer";
 import { useToast } from "@/hooks/useToast";
 import { useVideoPlayer } from "@/hooks/useVideoPlayer";
@@ -442,6 +443,14 @@ export function Player({ media, repeating }: { media: Media; repeating: boolean 
     [dominantColor, theme],
   );
 
+  const playerAreaRef = useRef<HTMLDivElement>(null);
+  usePlayerTapGestures(playerAreaRef, {
+    onBackward: handleBackward,
+    onForward: handleForward,
+    onTogglePlayback: handleTogglePlayer,
+    enabled: true,
+  });
+
   return (
     <MantineProvider theme={dynamicTheme} inherit>
       <LoadingOverlay
@@ -572,8 +581,9 @@ export function Player({ media, repeating }: { media: Media; repeating: boolean 
           </Transition>
         </Box>
 
-        {/* Video Player Area */}
+        {/* Video Player Area - tap for play/pause, double-tap left/right edges on mobile for backward/forward */}
         <Box
+          ref={playerAreaRef}
           style={{
             position: "absolute",
             inset: 0,
@@ -617,6 +627,7 @@ export function Player({ media, repeating }: { media: Media; repeating: boolean 
                 userSelect: "none",
                 borderRadius: theme.radius.md,
                 cursor: "pointer",
+                pointerEvents: "none",
               }}
               playsInline
               controls={false}
@@ -624,14 +635,12 @@ export function Player({ media, repeating }: { media: Media; repeating: boolean 
               muted
               crossOrigin="anonymous"
               onError={onError}
-              onClick={handleTogglePlayer}
             />
           </Box>
 
           {/* Audio Only Display */}
           {isAudioOnly && (
             <Box
-              onClick={handleTogglePlayer}
               style={{
                 zIndex: 1,
                 position: "relative",
@@ -643,7 +652,7 @@ export function Player({ media, repeating }: { media: Media; repeating: boolean 
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
-                cursor: "pointer",
+                pointerEvents: "none",
               }}
             >
               {media.metadata.coverUrl ? (
