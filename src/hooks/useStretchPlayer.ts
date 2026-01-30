@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { time } from "console";
 
 export type StretchPlayerState = "loading" | "ready" | "error";
 
@@ -11,6 +10,7 @@ interface UseStretchPlayerProps {
   initialSemitones?: number;
   initialPosition?: number;
   initialReverbAmount?: number;
+  initialVolume?: number;
   autoPlay?: boolean;
   onEnded?: () => void;
 }
@@ -23,6 +23,7 @@ interface UseStretchPlayerReturn {
   rate: number;
   semitones: number;
   reverbAmount: number;
+  volume: number;
   isNativeFallback: boolean;
   play: () => void;
   pause: () => void;
@@ -30,6 +31,7 @@ interface UseStretchPlayerReturn {
   setRate: (rate: number) => void;
   setSemitones: (semitones: number) => void;
   setReverbAmount: (amount: number) => void;
+  setVolume: (volume: number) => void;
   seek: (timeSeconds: number) => void;
 }
 
@@ -64,6 +66,7 @@ export function useStretchPlayer({
   initialSemitones = 0,
   initialPosition = 0,
   initialReverbAmount = 0,
+  initialVolume = 1,
   autoPlay = true,
   onEnded,
 }: UseStretchPlayerProps): UseStretchPlayerReturn {
@@ -75,6 +78,7 @@ export function useStretchPlayer({
   const [isPlaying, setIsPlaying] = useState(false);
   const [isNativeFallback, setIsNativeFallback] = useState(false);
   const [reverbAmount, setReverbAmountState] = useState(initialReverbAmount);
+  const [volume, setVolumeState] = useState(initialVolume);
 
   const audioContextRef = useRef<AudioContext | null>(null);
   const stretchNodeRef = useRef<any>(null);
@@ -90,7 +94,9 @@ export function useStretchPlayer({
   const convolverRef = useRef<ConvolverNode | null>(null);
   const dryGainRef = useRef<GainNode | null>(null);
   const wetGainRef = useRef<GainNode | null>(null);
+  const masterGainRef = useRef<GainNode | null>(null);
   const reverbAmountRef = useRef(initialReverbAmount);
+  const volumeRef = useRef(initialVolume);
 
   // Use refs for values needed in callbacks to avoid stale closures
   const rateRef = useRef(initialRate);
@@ -103,6 +109,7 @@ export function useStretchPlayer({
   semitonesRef.current = semitones;
   isPlayingRef.current = isPlaying;
   reverbAmountRef.current = reverbAmount;
+  volumeRef.current = volume;
   onEndedRef.current = onEnded;
 
   const cleanup = useCallback(() => {
@@ -139,6 +146,12 @@ export function useStretchPlayer({
       } catch (e) {}
       wetGainRef.current = null;
     }
+    if (masterGainRef.current) {
+      try {
+        masterGainRef.current.disconnect();
+      } catch (e) {}
+      masterGainRef.current = null;
+    }
     stretchInitedRef.current = false;
     useNativeFallbackRef.current = false;
     audioBufferRef.current = null;
@@ -173,10 +186,11 @@ export function useStretchPlayer({
       const stretchNode = await SignalsmithStretch(audioContext);
       stretchNodeRef.current = stretchNode;
 
-      // Set up reverb audio graph with ConvolverNode
+      // Set up reverb audio graph with ConvolverNode and master volume
       const convolver = audioContext.createConvolver();
       const dryGain = audioContext.createGain();
       const wetGain = audioContext.createGain();
+      const masterGain = audioContext.createGain();
 
       // Generate impulse response for reverb
       convolver.buffer = generateImpulseResponse(audioContext, 2, 2);
@@ -185,17 +199,20 @@ export function useStretchPlayer({
       const amount = reverbAmountRef.current;
       dryGain.gain.value = 1 - amount * 0.5;
       wetGain.gain.value = amount;
+      masterGain.gain.value = volumeRef.current;
 
-      // Route: stretchNode -> (dry + convolver->wet) -> destination
+      // Route: stretchNode -> (dry + convolver->wet) -> masterGain -> destination
       stretchNode.connect(dryGain);
       stretchNode.connect(convolver);
       convolver.connect(wetGain);
-      dryGain.connect(audioContext.destination);
-      wetGain.connect(audioContext.destination);
+      dryGain.connect(masterGain);
+      wetGain.connect(masterGain);
+      masterGain.connect(audioContext.destination);
 
       convolverRef.current = convolver;
       dryGainRef.current = dryGain;
       wetGainRef.current = wetGain;
+      masterGainRef.current = masterGain;
 
       console.log("StretchPlayer: reverb nodes initialized");
 
@@ -418,6 +435,27 @@ export function useStretchPlayer({
     }
   }, []);
 
+  // Set volume (0-1)
+  const setVolume = useCallback(
+    (newVolume: number) => {
+      const clampedVolume = Math.max(0, Math.min(1, newVolume));
+      setVolumeState(clampedVolume);
+      volumeRef.current = clampedVolume;
+
+      // Native fallback: use video.volume
+      if (useNativeFallbackRef.current && videoElement) {
+        videoElement.volume = clampedVolume;
+        return;
+      }
+
+      // Stretch node path: update master gain
+      if (masterGainRef.current) {
+        masterGainRef.current.gain.value = clampedVolume;
+      }
+    },
+    [videoElement],
+  );
+
   // Seek
   const seek = useCallback(
     (timeSeconds: number) => {
@@ -614,6 +652,7 @@ export function useStretchPlayer({
     rate,
     semitones,
     reverbAmount,
+    volume,
     isNativeFallback,
     play,
     pause,
@@ -621,6 +660,7 @@ export function useStretchPlayer({
     setRate,
     setSemitones,
     setReverbAmount,
+    setVolume,
     seek,
   };
 }

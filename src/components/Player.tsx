@@ -34,6 +34,11 @@ import {
   IconRepeatOff,
   IconRewindBackward5,
   IconRewindForward5,
+  IconVolume,
+  IconVolume2,
+  IconVolume3,
+  IconVolume4,
+  IconVolumeOff,
 } from "@tabler/icons-react";
 import { Pause } from "lucide-react";
 import LoadingOverlay from "@/components/LoadingOverlay";
@@ -96,6 +101,11 @@ export function Player({
   const [speedSliderValue, setSpeedSliderValue] = useState(initialRate);
   const [pitchSliderValue, setPitchSliderValue] = useState(savedState?.semitones ?? 0);
 
+  // Volume UI state (actual volume is managed by useStretchPlayer)
+  const [isMuted, setIsMuted] = useState(false);
+  const [isVolumeHovered, setIsVolumeHovered] = useState(false);
+  const previousVolumeRef = useRef(savedState?.volume ?? 1);
+
   const dominantColor = useDominantColor(song.metadata.coverUrl, initialDominantColor);
   const { toast, showToast } = useToast();
 
@@ -122,6 +132,7 @@ export function Player({
     rate,
     semitones,
     reverbAmount,
+    volume,
     isNativeFallback,
     play,
     pause,
@@ -129,6 +140,7 @@ export function Player({
     setRate,
     setSemitones,
     setReverbAmount,
+    setVolume,
     seek,
   } = useStretchPlayer({
     videoElement,
@@ -137,6 +149,7 @@ export function Player({
     initialRate: initialRate,
     initialSemitones: savedState?.semitones ?? 0,
     initialReverbAmount: savedState?.reverbAmount ?? 0,
+    initialVolume: savedState?.volume ?? 1,
     initialPosition: stateLoaded ? initialStartAt : 0,
     onEnded: () => {
       if (isRepeat) {
@@ -207,6 +220,7 @@ export function Player({
     reverbAmount,
     pitchLockedToSpeed,
     isRepeat,
+    volume,
     isReady,
     stateLoaded,
   });
@@ -372,11 +386,51 @@ export function Player({
     );
   }, [isRepeat, showToast]);
 
-  // Hotkeys
+  // Volume handlers
+  const handleMuteToggle = useCallback(() => {
+    if (isMuted || volume === 0) {
+      const newVol = previousVolumeRef.current > 0 ? previousVolumeRef.current : 1;
+      setVolume(newVol);
+      setIsMuted(false);
+      showToast(
+        <Flex align="center" gap="xs">
+          <IconVolume3 size={24} />
+          <Text weight={600}>Unmuted</Text>
+        </Flex>,
+      );
+    } else {
+      previousVolumeRef.current = volume;
+      setVolume(0);
+      setIsMuted(true);
+      showToast(
+        <Flex align="center" gap="xs">
+          <IconVolumeOff size={24} />
+          <Text weight={600}>Muted</Text>
+        </Flex>,
+      );
+    }
+  }, [isMuted, volume, showToast]);
+
+  const handleVolumeChange = useCallback(
+    (newVolume: number) => {
+      setVolume(newVolume);
+      setIsMuted(newVolume === 0);
+    },
+    [setVolume],
+  );
+
+  const getVolumeIcon = useCallback(() => {
+    if (isMuted || volume === 0) return <IconVolumeOff size={24} />;
+    if (volume < 0.66) return <IconVolume2 size={24} />;
+    return <IconVolume size={24} />;
+  }, [isMuted, volume]);
+
   useHotkeys([
     ["ArrowLeft", () => handleBackward()],
     ["ArrowRight", () => handleForward()],
     ["Space", () => handleTogglePlayer()],
+    ["k", () => handleTogglePlayer()],
+    ["m", () => handleMuteToggle()],
     [
       "shift+<",
       () => {
@@ -601,8 +655,8 @@ export function Player({
                 objectFit: "cover",
                 display: "block",
                 userSelect: "none",
-                pointerEvents: "none",
                 borderRadius: theme.radius.md,
+                cursor: "pointer",
               }}
               playsInline
               controls={false}
@@ -610,12 +664,14 @@ export function Player({
               muted
               crossOrigin="anonymous"
               onError={onError}
+              onClick={handleTogglePlayer}
             />
           </Box>
 
           {/* Audio Only Display */}
           {isAudioOnly && (
             <Box
+              onClick={handleTogglePlayer}
               style={{
                 zIndex: 1,
                 position: "relative",
@@ -627,6 +683,7 @@ export function Player({
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
+                cursor: "pointer",
               }}
             >
               {song.metadata.coverUrl ? (
@@ -670,21 +727,6 @@ export function Player({
               )}
             </Box>
           )}
-
-          {/* Player Click Area */}
-          <Box
-            onClick={handleTogglePlayer}
-            style={{
-              position: "absolute",
-              top: "50%",
-              left: "50%",
-              transform: "translate(-50%, -50%)",
-              width: "100%",
-              height: "100%",
-              zIndex: 10,
-              cursor: "pointer",
-            }}
-          />
         </Box>
 
         {/* Bottom Controls */}
@@ -776,10 +818,32 @@ export function Player({
             radius={0}
             mb={-3}
             showLabelOnHover={false}
-            size="sm"
+            size="xs"
             pr={0.3}
-            styles={{ thumb: { borderWidth: 0 } }}
-            thumbSize={isSeeking ? 20 : 15}
+            sx={{
+              "&:hover": {
+                ".mantine-Slider-track": {
+                  height: 6,
+                },
+                ".mantine-Slider-thumb": {
+                  opacity: 1,
+                  width: 15,
+                  height: 15,
+                },
+              },
+            }}
+            styles={{
+              thumb: {
+                borderWidth: 0,
+                opacity: 0,
+                width: 0,
+                height: 0,
+                transition: "opacity 0.15s, width 0.15s, height 0.15s",
+              },
+              track: {
+                transition: "height 0.15s",
+              },
+            }}
             label={(v) => (currentTime >= duration - 5 ? null : getFormattedTime(v))}
             max={duration}
           />
@@ -800,24 +864,75 @@ export function Player({
                     <IconPlayerPlayFilled size={30} />
                   )}
                 </ActionIcon>
-                <ActionIcon
-                  size="lg"
-                  onClick={handleBackward}
-                  title="Backward 5 sec"
-                  variant="transparent"
-                  color="gray"
+                {/* Volume Control */}
+                <Flex
+                  align="center"
+                  onMouseEnter={() => !isMobile && setIsVolumeHovered(true)}
+                  onMouseLeave={() => !isMobile && setIsVolumeHovered(false)}
+                  style={{ position: "relative" }}
                 >
-                  <IconRewindBackward5 />
-                </ActionIcon>
-                <ActionIcon
-                  size="lg"
-                  onClick={handleForward}
-                  title="Forward 5 sec"
-                  variant="transparent"
-                  color="gray"
-                >
-                  <IconRewindForward5 />
-                </ActionIcon>
+                  <ActionIcon
+                    size="lg"
+                    onClick={() => {
+                      if (isMobile) {
+                        setIsVolumeHovered(!isVolumeHovered);
+                      } else {
+                        handleMuteToggle();
+                      }
+                    }}
+                    title={isMuted || volume === 0 ? "Unmute" : "Mute"}
+                    variant="transparent"
+                    color="gray"
+                  >
+                    {getVolumeIcon()}
+                  </ActionIcon>
+                  <Box
+                    style={{
+                      width: isVolumeHovered ? 80 : 0,
+                      overflow: "hidden",
+                      transition: "width 0.2s ease",
+                    }}
+                  >
+                    <Slider
+                      value={isMuted ? 0 : volume}
+                      onChange={handleVolumeChange}
+                      min={0}
+                      max={1}
+                      step={0.01}
+                      size="sm"
+                      w={70}
+                      ml={4}
+                      styles={{
+                        thumb: {
+                          borderWidth: 0,
+                        },
+                      }}
+                    />
+                  </Box>
+                </Flex>
+                {/* Backward/Forward - hidden on mobile */}
+                <MediaQuery smallerThan="xs" styles={{ display: "none" }}>
+                  <Flex align="center" gap={4}>
+                    <ActionIcon
+                      size="lg"
+                      onClick={handleBackward}
+                      title="Backward 5 sec"
+                      variant="transparent"
+                      color="gray"
+                    >
+                      <IconRewindBackward5 />
+                    </ActionIcon>
+                    <ActionIcon
+                      size="lg"
+                      onClick={handleForward}
+                      title="Forward 5 sec"
+                      variant="transparent"
+                      color="gray"
+                    >
+                      <IconRewindForward5 />
+                    </ActionIcon>
+                  </Flex>
+                </MediaQuery>
                 <ActionIcon
                   size="lg"
                   onClick={toggleLoop}
