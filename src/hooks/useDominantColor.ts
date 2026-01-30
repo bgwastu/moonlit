@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { getImageUrlForCanvas } from "@/lib/imageProxy";
 
 /** Extract dominant color from image using canvas pixel sampling */
 export function getDominantColorFromImage(
@@ -52,7 +53,7 @@ export function useDominantColor(imageUrl?: string, initialColor?: string) {
 
     const img = document.createElement("img");
     img.crossOrigin = "Anonymous";
-    img.src = imageUrl?.replace(/(hq|mq|sd)?default/, "maxresdefault") || imageUrl;
+    img.src = getImageUrlForCanvas(imageUrl || "") || imageUrl || "";
 
     img.onload = () => {
       const color = getDominantColorFromImage(img);

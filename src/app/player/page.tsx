@@ -18,21 +18,17 @@ export async function generateMetadata({
     return { title: "Moonlit Player" };
   }
 
-  if (isYoutubeURL(url)) {
-    const id = getYouTubeId(url);
-    if (!id) return { title: "Moonlit" };
-
+  if (isYoutubeURL(url) || isTikTokURL(url)) {
     try {
-      const videoDetails = await fetchYoutubeDetails(id);
-      const title = `${videoDetails.title} - Moonlit`;
-      const description = `Watch "${videoDetails.title}" by ${videoDetails.channelTitle} with customizable slowed and nightcore effects on Moonlit.`;
+      const info = await getVideoInfo(url);
+      const title = `${info.title} - Moonlit`;
+      const description =
+        info.artist || info.author
+          ? `Listen to "${info.title}"${info.artist ? ` by ${info.artist}` : ""}${info.album ? ` from ${info.album}` : ""} on Moonlit.`
+          : `Watch "${info.title}" on Moonlit.`;
       const imageUrl = `https://moonlit.wastu.net/api/og?title=${encodeURIComponent(
-        videoDetails.title,
-      )}&cover=${encodeURIComponent(
-        videoDetails.thumbnails.maxres?.url ||
-          videoDetails.thumbnails.high?.url ||
-          videoDetails.thumbnails.default.url,
-      )}`;
+        info.title,
+      )}&cover=${encodeURIComponent(info.thumbnail)}`;
 
       return {
         title,
@@ -41,21 +37,19 @@ export async function generateMetadata({
         twitter: { card: "summary_large_image", title, description, images: [imageUrl] },
       };
     } catch {
-      return { title: "Moonlit" };
-    }
-  }
-
-  if (isTikTokURL(url)) {
-    try {
-      const info = await getVideoInfo(url);
-      const title = `${info.title} - Moonlit`;
-      return {
-        title,
-        description: `Watch tiktok by ${info.author} on Moonlit.`,
-        openGraph: { title, images: [{ url: info.thumbnail }] },
-      };
-    } catch {
-      return { title: "TikTok Video - Moonlit" };
+      if (isYoutubeURL(url)) {
+        const id = getYouTubeId(url);
+        if (id) {
+          try {
+            const videoDetails = await fetchYoutubeDetails(id);
+            const title = `${videoDetails.title} - Moonlit`;
+            return { title };
+          } catch {
+            // ignore
+          }
+        }
+      }
+      return { title: isTikTokURL(url) ? "TikTok Video - Moonlit" : "Moonlit Player" };
     }
   }
 
@@ -70,49 +64,46 @@ export default async function Page({ searchParams }: { searchParams: SearchParam
     return <InitialPlayer isLocalFile />;
   }
 
-  // YouTube
-  if (isYoutubeURL(url)) {
-    const id = getYouTubeId(url);
-    if (!id) notFound();
-
-    try {
-      const metadata = await fetchYoutubeDetails(id);
-      const duration = parseISO8601Duration(metadata.duration);
-
-      return (
-        <InitialPlayer
-          url={url}
-          metadata={{
-            title: metadata.title,
-            author: metadata.channelTitle,
-            coverUrl: metadata.thumbnails.default.url,
-          }}
-          duration={duration}
-        />
-      );
-    } catch {
-      throw new Error(`Video not found or private (YouTube)`);
-    }
-  }
-
-  // TikTok
-  if (isTikTokURL(url)) {
+  // YouTube and TikTok: use getVideoInfo for metadata (includes music: title, artist, album)
+  if (isYoutubeURL(url) || isTikTokURL(url)) {
     try {
       const info = await getVideoInfo(url);
+      const metadata: Parameters<typeof InitialPlayer>[0]["metadata"] = {
+        title: info.title,
+        author: info.author,
+        coverUrl: info.thumbnail,
+      };
+      if (info.artist) metadata.artist = info.artist;
+      if (info.album) metadata.album = info.album;
 
       return (
-        <InitialPlayer
-          url={url}
-          metadata={{
-            title: info.title,
-            author: info.author,
-            coverUrl: info.thumbnail,
-          }}
-          duration={info.lengthSeconds}
-        />
+        <InitialPlayer url={url} metadata={metadata} duration={info.lengthSeconds} />
       );
     } catch (e) {
-      console.error("TikTok metadata fetch error:", e);
+      if (isYoutubeURL(url)) {
+        const id = getYouTubeId(url);
+        if (id) {
+          try {
+            const details = await fetchYoutubeDetails(id);
+            const duration = parseISO8601Duration(details.duration);
+            return (
+              <InitialPlayer
+                url={url}
+                metadata={{
+                  title: details.title,
+                  author: details.channelTitle,
+                  coverUrl: details.thumbnails.default.url,
+                }}
+                duration={duration}
+              />
+            );
+          } catch {
+            // fallthrough
+          }
+        }
+        throw new Error(`Video not found or private (YouTube)`);
+      }
+      console.error("Metadata fetch error:", e);
       return <InitialPlayer url={url} metadata={{}} />;
     }
   }

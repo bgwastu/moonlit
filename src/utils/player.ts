@@ -54,7 +54,7 @@ export function getEffectiveRate(rate: number, semitones: number): number {
 export function getHighResCoverUrl(coverUrl: string, platform?: string): string {
   if (!coverUrl) return coverUrl;
   if (platform === "youtube") {
-    return coverUrl.replace(/(hq|mq|sd)?default/, "maxresdefault");
+    return coverUrl.replace(/(?<!maxres)(hq|mq|sd)?default/, "maxresdefault");
   }
   return coverUrl;
 }

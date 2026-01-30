@@ -1,8 +1,8 @@
-import { spawn, execSync } from "child_process";
 import { NextResponse } from "next/server";
+import { execSync, spawn } from "child_process";
 import { existsSync } from "fs";
-
 import path from "path";
+
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
 const DATA_DIR = path.join(process.cwd(), "data");
 const SYSTEM_COOKIES_PATH = path.join(DATA_DIR, "cookies.txt");
@@ -19,10 +19,7 @@ function verifyPassword(request: Request): boolean {
 export async function GET(request: Request) {
   // Check if admin is enabled
   if (!ADMIN_PASSWORD) {
-    return NextResponse.json(
-      { error: "Admin not configured" },
-      { status: 403 },
-    );
+    return NextResponse.json({ error: "Admin not configured" }, { status: 403 });
   }
 
   // Verify password
@@ -35,20 +32,14 @@ export async function GET(request: Request) {
     return NextResponse.json({ version });
   } catch (error) {
     console.error("[Moonlit] Error getting yt-dlp version:", error);
-    return NextResponse.json(
-      { error: "Failed to get version" },
-      { status: 500 },
-    );
+    return NextResponse.json({ error: "Failed to get version" }, { status: 500 });
   }
 }
 
 export async function POST(request: Request) {
   // Check if admin is enabled
   if (!ADMIN_PASSWORD) {
-    return NextResponse.json(
-      { error: "Admin not configured" },
-      { status: 403 },
-    );
+    return NextResponse.json({ error: "Admin not configured" }, { status: 403 });
   }
 
   // Verify password
@@ -77,10 +68,7 @@ export async function POST(request: Request) {
 
     if (action === "test") {
       if (!url) {
-        return NextResponse.json(
-          { error: "URL is required for test" },
-          { status: 400 },
-        );
+        return NextResponse.json({ error: "URL is required for test" }, { status: 400 });
       }
 
       // Test URL extraction
@@ -113,11 +101,19 @@ export async function POST(request: Request) {
           if (code === 0) {
             try {
               const info = JSON.parse(stdout);
+              const artists = info.artists;
+              const artist =
+                Array.isArray(artists) && artists.length > 0
+                  ? artists.join(", ")
+                  : info.artist;
+              const author = artist || info.uploader || info.channel;
               resolve(
                 NextResponse.json({
                   success: true,
-                  title: info.title,
-                  author: info.uploader || info.channel,
+                  title: info.track || info.title,
+                  author,
+                  ...(artist && { artist }),
+                  ...(info.album && { album: info.album }),
                   duration: info.duration,
                 }),
               );
@@ -154,9 +150,7 @@ export async function POST(request: Request) {
         // Timeout after 30 seconds
         setTimeout(() => {
           proc.kill();
-          resolve(
-            NextResponse.json({ error: "Test timed out" }, { status: 504 }),
-          );
+          resolve(NextResponse.json({ error: "Test timed out" }, { status: 504 }));
         }, 30000);
       });
     }

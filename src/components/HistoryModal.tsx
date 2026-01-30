@@ -208,7 +208,8 @@ export default function HistoryModal({ opened, onClose }: HistoryModalProps) {
                                 truncate
                                 style={{ maxWidth: 200 }}
                               >
-                                {item.metadata.author}
+                                {item.metadata.artist ?? item.metadata.author}
+                                {item.metadata.album && ` · ${item.metadata.album}`}
                               </Text>
                               <Text size="xs" color="dimmed" style={{ flexShrink: 0 }}>
                                 •

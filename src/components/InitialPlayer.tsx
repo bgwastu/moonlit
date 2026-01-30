@@ -174,7 +174,10 @@ export default function InitialPlayer({
             />
             <Flex direction="column">
               <Text weight={600}>{media.metadata.title}</Text>
-              <Text>{media.metadata.author}</Text>
+              <Text>
+                {media.metadata.artist ?? media.metadata.author}
+                {media.metadata.album && ` · ${media.metadata.album}`}
+              </Text>
             </Flex>
           </Flex>
           <Button onClick={handleGoToPlayer}>Play</Button>

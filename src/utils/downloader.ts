@@ -209,6 +209,8 @@ export async function downloadWithProgress(
                           id: id || "unknown",
                           title: preload.title || "",
                           author: preload.author || "",
+                          ...(preload.artist != null && { artist: preload.artist }),
+                          ...(preload.album != null && { album: preload.album }),
                           coverUrl: preload.coverUrl || "",
                         }).catch(() => {});
                       }
@@ -220,6 +222,8 @@ export async function downloadWithProgress(
                           id: id || "unknown",
                           title: preload.title || "",
                           author: preload.author || "",
+                          ...(preload.artist != null && { artist: preload.artist }),
+                          ...(preload.album != null && { album: preload.album }),
                           coverUrl: preload.coverUrl || "",
                         },
                       });
