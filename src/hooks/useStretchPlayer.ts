@@ -568,10 +568,26 @@ export function useStretchPlayer({
           setCurrentTime(Math.min(audioTime, dur));
 
           // Sync video to audio
-          if (isPlayingRef.current && videoElement) {
-            const drift = Math.abs(videoElement.currentTime - audioTime);
-            if (drift > 0.3) {
-              videoElement.currentTime = audioTime;
+          if (videoElement) {
+            // Keep playback rate in sync (browsers might reset it in background)
+            const targetRate = useNativeFallbackRef.current
+              ? rateRef.current * Math.pow(2, semitonesRef.current / 12)
+              : rateRef.current;
+            if (Math.abs(videoElement.playbackRate - targetRate) > 0.01) {
+              videoElement.playbackRate = targetRate;
+            }
+
+            if (isPlayingRef.current && !videoElement.seeking) {
+              const drift = Math.abs(videoElement.currentTime - audioTime);
+              // Tighter sync threshold (0.15s) and check if it's lagging
+              if (drift > 0.15) {
+                videoElement.currentTime = audioTime;
+              }
+
+              // Ensure video is playing if we think it should be
+              if (videoElement.paused && document.visibilityState === "visible") {
+                videoElement.play().catch(() => {});
+              }
             }
           }
 
@@ -677,27 +693,55 @@ export function useStretchPlayer({
 
       if (video) {
         const drift = Math.abs(video.currentTime - audioTime);
-        if (drift > 0.1) video.currentTime = audioTime;
+        if (drift > 0.05) video.currentTime = audioTime;
+
+        // Ensure rate is correct
+        const targetRate = useNativeFallbackRef.current
+          ? rateRef.current * Math.pow(2, semitonesRef.current / 12)
+          : rateRef.current;
+        video.playbackRate = targetRate;
 
         // Resume video if audio was playing in background
-        if (audioWasPlaying && video.paused) {
-          video.play().catch(() => {});
+        if (audioWasPlaying) {
+          video.play().catch((err) => {
+            console.warn("StretchPlayer: could not resume video on visible:", err);
+          });
         }
       }
     };
 
     const onVisible = () => {
-      syncFromSource();
+      // Small delay to let browser stabilize
+      setTimeout(syncFromSource, 50);
+    };
+
+    const handleVideoPause = () => {
+      // If the video was paused by the system (not by us), sync our state
+      if (isPlayingRef.current && document.visibilityState === "visible") {
+        console.log("StretchPlayer: video paused by system/user-gesture, syncing state");
+        pause();
+      }
+    };
+
+    const handleVideoPlay = () => {
+      if (!isPlayingRef.current && document.visibilityState === "visible") {
+        console.log("StretchPlayer: video played by system/user-gesture, syncing state");
+        play();
+      }
     };
 
     document.addEventListener("visibilitychange", onVisible);
     window.addEventListener("pageshow", onVisible);
+    videoElement?.addEventListener("pause", handleVideoPause);
+    videoElement?.addEventListener("play", handleVideoPlay);
 
     return () => {
       document.removeEventListener("visibilitychange", onVisible);
       window.removeEventListener("pageshow", onVisible);
+      videoElement?.removeEventListener("pause", handleVideoPause);
+      videoElement?.removeEventListener("play", handleVideoPlay);
     };
-  }, [videoElement]);
+  }, [videoElement, play, pause]);
 
   return {
     state,
