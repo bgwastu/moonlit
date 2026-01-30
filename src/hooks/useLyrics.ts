@@ -29,13 +29,36 @@ interface UseLyricsOptions {
   artistName: string;
   durationSeconds: number;
   enabled: boolean;
+  selectedSyncedLyrics?: string | null; // If provided, use this instead of fetching
+  offsetSeconds?: number; // Offset to apply to lyrics timing
+}
+
+export interface DiscoveredLyrics {
+  id: number;
+  trackName: string;
+  artistName: string;
+  syncedLyrics: string;
 }
 
 interface UseLyricsReturn {
   lyrics: Lyric[];
   state: LyricsState;
   error: string | null;
+  discoveredLyrics: DiscoveredLyrics | null;
   refetch: () => void;
+}
+
+/** Apply offset to parsed lyrics */
+function applyOffset(lyrics: Lyric[], offsetMs: number): Lyric[] {
+  if (offsetMs === 0) return lyrics;
+  return lyrics.map((lyric) => ({
+    ...lyric,
+    startTimeMs: lyric.startTimeMs + offsetMs,
+    parts: lyric.parts?.map((part) => ({
+      ...part,
+      startTimeMs: part.startTimeMs + offsetMs,
+    })),
+  }));
 }
 
 export function useLyrics({
@@ -43,15 +66,21 @@ export function useLyrics({
   artistName,
   durationSeconds,
   enabled,
+  selectedSyncedLyrics,
+  offsetSeconds = 0,
 }: UseLyricsOptions): UseLyricsReturn {
   const [lyrics, setLyrics] = useState<Lyric[]>([]);
   const [state, setState] = useState<LyricsState>("idle");
   const [error, setError] = useState<string | null>(null);
+  const [discoveredLyrics, setDiscoveredLyrics] = useState<DiscoveredLyrics | null>(null);
+
+  const offsetMs = offsetSeconds * 1000;
 
   const fetchLyrics = useCallback(async () => {
     if (!trackName?.trim() || !artistName?.trim() || durationSeconds <= 0) {
       setLyrics([]);
       setState("idle");
+      setDiscoveredLyrics(null);
       return;
     }
     setState("loading");
@@ -70,6 +99,7 @@ export function useLyrics({
         if (res.status === 404) {
           setLyrics([]);
           setState("not_found");
+          setDiscoveredLyrics(null);
           return;
         }
         throw new Error(`LRCLib ${res.status}`);
@@ -79,25 +109,41 @@ export function useLyrics({
       if (!durationMatches(durationSeconds, recordDuration)) {
         setLyrics([]);
         setState("not_found");
+        setDiscoveredLyrics(null);
         return;
       }
       const synced = data.syncedLyrics?.trim();
       if (!synced) {
         setLyrics([]);
         setState("not_found");
+        setDiscoveredLyrics(null);
         return;
       }
       const durationMs = recordDuration * 1000;
       const parsed = parseLRC(synced, durationMs);
-      setLyrics(parsed);
+      setLyrics(applyOffset(parsed, offsetMs));
       setState(parsed.length > 0 ? "ready" : "not_found");
+
+      // Store discovered lyrics metadata
+      if (parsed.length > 0 && data.id) {
+        setDiscoveredLyrics({
+          id: data.id,
+          trackName: data.trackName ?? trackName,
+          artistName: data.artistName ?? artistName,
+          syncedLyrics: synced,
+        });
+      } else {
+        setDiscoveredLyrics(null);
+      }
     } catch (e) {
       setLyrics([]);
       setState("error");
       setError(e instanceof Error ? e.message : "Failed to load lyrics");
+      setDiscoveredLyrics(null);
     }
-  }, [trackName, artistName, durationSeconds]);
+  }, [trackName, artistName, durationSeconds, offsetMs]);
 
+  // Handle selected synced lyrics (user-selected override)
   useEffect(() => {
     if (!enabled) {
       setLyrics([]);
@@ -105,8 +151,17 @@ export function useLyrics({
       setError(null);
       return;
     }
-    fetchLyrics();
-  }, [enabled, fetchLyrics]);
 
-  return { lyrics, state, error, refetch: fetchLyrics };
+    if (selectedSyncedLyrics) {
+      const durationMs = durationSeconds * 1000;
+      const parsed = parseLRC(selectedSyncedLyrics, durationMs);
+      setLyrics(applyOffset(parsed, offsetMs));
+      setState(parsed.length > 0 ? "ready" : "not_found");
+      return;
+    }
+
+    fetchLyrics();
+  }, [enabled, selectedSyncedLyrics, durationSeconds, offsetMs, fetchLyrics]);
+
+  return { lyrics, state, error, discoveredLyrics, refetch: fetchLyrics };
 }
