@@ -671,13 +671,19 @@ export function useStretchPlayer({
       const audioTime = node.inputTime ?? 0;
       const dur = durationRef.current;
       setCurrentTime(Math.min(audioTime, dur));
+
+      // Check if audio was still playing in background
+      const audioWasPlaying = isPlayingRef.current;
+
       if (video) {
         const drift = Math.abs(video.currentTime - audioTime);
         if (drift > 0.1) video.currentTime = audioTime;
+
+        // Resume video if audio was playing in background
+        if (audioWasPlaying && video.paused) {
+          video.play().catch(() => {});
+        }
       }
-      const playing = !video.paused;
-      setIsPlaying(playing);
-      isPlayingRef.current = playing;
     };
 
     const onVisible = () => {
