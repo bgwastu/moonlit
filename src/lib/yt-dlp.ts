@@ -261,7 +261,6 @@ export async function getVideoInfo(url: string, cookies?: string): Promise<Video
       (typeof info.title === "string" ? info.title : "") ||
       "";
 
-    // Author: for music use artist when available, else channel/uploader
     const author = artist || uploader;
 
     return {
