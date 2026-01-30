@@ -64,7 +64,7 @@ export function useLyrics({
         duration: String(Math.round(durationSeconds)),
       });
       const res = await fetch(`${LRCLIB_BASE}/get?${params}`, {
-        headers: { "User-Agent": USER_AGENT },
+        headers: { "Lrclib-Client": USER_AGENT },
       });
       if (!res.ok) {
         if (res.status === 404) {

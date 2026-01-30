@@ -181,7 +181,7 @@ export function Player({ media, repeating }: { media: Media; repeating: boolean 
   });
 
   useEffect(() => {
-    if (lyricsState !== "not_found" || !showLyrics) return;
+    if ((lyricsState !== "not_found" && lyricsState !== "error") || !showLyrics) return;
     const t = setTimeout(() => setShowLyrics(false), 2000);
     return () => clearTimeout(t);
   }, [lyricsState, showLyrics]);
