@@ -68,10 +68,23 @@ export default function HistoryModal({ opened, onClose }: HistoryModalProps) {
       return;
     }
 
-    // For remote files, navigate to the player with the URL
-    // This ensures page.tsx handles it correctly (fetching metadata, etc.)
-    // We use the sourceUrl which should be the full YouTube/TikTok URL
-    router.push(`/player?url=${encodeURIComponent(item.sourceUrl)}`);
+    // For remote files, navigate using platform-specific URL schema
+    if (platform === "youtube") {
+      const id = getYouTubeId(item.sourceUrl);
+      if (id) {
+        router.push(`/watch?v=${id}`);
+        return;
+      }
+    } else if (platform === "tiktok") {
+      const { creator, videoId } = getTikTokCreatorAndVideoId(item.sourceUrl);
+      if (creator && videoId) {
+        router.push(`/@${creator}/video/${videoId}`);
+        return;
+      }
+    }
+
+    // Fallback - shouldn't normally reach here
+    console.warn("Could not parse URL for history item:", item.sourceUrl);
   };
 
   const clearHistory = () => {
