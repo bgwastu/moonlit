@@ -8,6 +8,10 @@ import { getTempDir } from "@/utils/server";
 export interface VideoInfo {
   title: string;
   author: string;
+  /** Artist(s) for music content (YouTube Music, etc.) */
+  artist?: string;
+  /** Album name for music content */
+  album?: string;
   thumbnail: string;
   lengthSeconds: number;
 }
@@ -226,7 +230,18 @@ function parseProgress(line: string): DownloadProgress | null {
   return null;
 }
 
-/** Get video metadata without downloading */
+/** Normalize artist from yt-dlp output (artists array or deprecated artist string) */
+function parseArtist(info: Record<string, unknown>): string | undefined {
+  const artists = info.artists;
+  if (Array.isArray(artists) && artists.length > 0) {
+    return artists.map((a) => (typeof a === "string" ? a : String(a))).join(", ");
+  }
+  const artist = info.artist;
+  if (typeof artist === "string" && artist.trim()) return artist.trim();
+  return undefined;
+}
+
+/** Get video metadata without downloading. For music (YouTube Music, etc.) extracts track, artist, album. */
 export async function getVideoInfo(url: string, cookies?: string): Promise<VideoInfo> {
   const result = await executeYtDlp({
     args: ["--skip-download", "-J", "--no-playlist", url],
@@ -236,12 +251,27 @@ export async function getVideoInfo(url: string, cookies?: string): Promise<Video
   if (result.code !== 0) throw new Error(parseYtDlpError(result.stderr));
 
   try {
-    const info = JSON.parse(result.stdout);
+    const info = JSON.parse(result.stdout) as Record<string, unknown>;
+    const artist = parseArtist(info);
+    const uploader = (info.uploader as string) || (info.channel as string) || "";
+
+    // For music: prefer track as title; otherwise use video title
+    const title =
+      (typeof info.track === "string" && info.track.trim() ? info.track.trim() : null) ||
+      (typeof info.title === "string" ? info.title : "") ||
+      "";
+
+    // Author: for music use artist when available, else channel/uploader
+    const author = artist || uploader;
+
     return {
-      title: info.title || "",
-      author: info.uploader || info.channel || "",
-      thumbnail: info.thumbnail || "",
-      lengthSeconds: Math.floor(info.duration || 0),
+      title,
+      author,
+      ...(artist && { artist }),
+      ...(typeof info.album === "string" &&
+        info.album.trim() && { album: info.album.trim() }),
+      thumbnail: (typeof info.thumbnail === "string" ? info.thumbnail : "") || "",
+      lengthSeconds: Math.floor(Number(info.duration) || 0),
     };
   } catch {
     throw new Error("Failed to parse video information.");

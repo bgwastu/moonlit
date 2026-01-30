@@ -36,13 +36,16 @@ export function useMediaSession({
     let highResCover = media.metadata.coverUrl;
     if (getPlatform(media.sourceUrl) === "youtube") {
       highResCover =
-        media.metadata.coverUrl?.replace(/(hq|mq|sd)?default/, "maxresdefault") ||
-        media.metadata.coverUrl;
+        media.metadata.coverUrl?.replace(
+          /(?<!maxres)(hq|mq|sd)?default/,
+          "maxresdefault",
+        ) || media.metadata.coverUrl;
     }
 
     navigator.mediaSession.metadata = new MediaMetadata({
       title: media.metadata.title,
-      artist: media.metadata.author,
+      artist: media.metadata.artist ?? media.metadata.author,
+      album: media.metadata.album ?? "",
       artwork: [
         {
           src: highResCover,

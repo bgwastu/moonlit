@@ -5,6 +5,10 @@ export interface Media {
     id: string | null;
     title: string;
     author: string;
+    /** Artist(s) for music content */
+    artist?: string;
+    /** Album name for music content */
+    album?: string;
     coverUrl: string;
   };
 }

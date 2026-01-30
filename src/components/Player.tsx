@@ -8,6 +8,7 @@ import {
   Center,
   Flex,
   Image,
+  Loader,
   MantineProvider,
   MediaQuery,
   Menu,
@@ -24,6 +25,7 @@ import {
   IconCookie,
   IconDownload,
   IconExternalLink,
+  IconFileMusic,
   IconHome,
   IconMenu2,
   IconMusic,
@@ -43,6 +45,7 @@ import { Pause } from "lucide-react";
 import AmbientCanvas from "@/components/AmbientCanvas";
 import LoadingOverlay from "@/components/LoadingOverlay";
 import { useDominantColor } from "@/hooks/useDominantColor";
+import { useLyrics } from "@/hooks/useLyrics";
 import { useMediaSession } from "@/hooks/useMediaSession";
 import { usePlayerTapGestures } from "@/hooks/usePlayerTapGestures";
 import { useStretchPlayer } from "@/hooks/useStretchPlayer";
@@ -60,8 +63,11 @@ import {
 import CookiesModal from "./CookiesModal";
 import CustomizePlaybackModal from "./CustomizePlaybackModal";
 import DownloadModal from "./DownloadModal";
+import LyricsPanel from "./LyricsPanel";
 
 type PlaybackMode = "slowed" | "normal" | "speedup" | "custom";
+
+const LYRICS_STORAGE_KEY = "moonlit-lyrics-enabled";
 
 export function Player({ media, repeating }: { media: Media; repeating: boolean }) {
   const theme = useMantineTheme();
@@ -92,6 +98,24 @@ export function Player({ media, repeating }: { media: Media; repeating: boolean 
   const [isVolumeHovered, setIsVolumeHovered] = useState(false);
   const previousVolumeRef = useRef(savedState?.volume ?? 1);
   const pitchLockedToSpeedRef = useRef(pitchLockedToSpeed);
+
+  // Lyrics panel (persisted)
+  const [showLyrics, setShowLyrics] = useState(false);
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem(LYRICS_STORAGE_KEY);
+      if (stored !== null) setShowLyrics(JSON.parse(stored));
+    } catch {
+      // ignore
+    }
+  }, []);
+  useEffect(() => {
+    try {
+      localStorage.setItem(LYRICS_STORAGE_KEY, JSON.stringify(showLyrics));
+    } catch {
+      // ignore
+    }
+  }, [showLyrics]);
 
   const dominantColor = useDominantColor(media.metadata.coverUrl);
   const { toast, showToast } = useToast();
@@ -144,6 +168,24 @@ export function Player({ media, repeating }: { media: Media; repeating: boolean 
       }
     },
   });
+
+  const {
+    lyrics,
+    state: lyricsState,
+    error: lyricsError,
+  } = useLyrics({
+    trackName: media.metadata.title,
+    artistName: media.metadata.artist ?? media.metadata.author,
+    durationSeconds: duration,
+    enabled: true, // Always prefetch to determine availability
+  });
+
+  // Auto-hide lyrics if not found, but allow loading state to persist for a bit
+  useEffect(() => {
+    if (lyricsState === "not_found" && showLyrics) {
+      setShowLyrics(false);
+    }
+  }, [lyricsState, showLyrics]);
 
   const isLoading = stretchState === "loading";
   const isReady = stretchState === "ready";
@@ -540,163 +582,232 @@ export function Player({ media, repeating }: { media: Media; repeating: boolean 
           </Flex>
         </Flex>
 
-        {/* Toast */}
-        <Box
-          style={{
-            position: "absolute",
-            inset: 0,
-            zIndex: 20,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            pointerEvents: "none",
-          }}
-        >
-          <Transition
-            mounted={toast.visible}
-            transition="pop"
-            duration={200}
-            timingFunction="ease"
-          >
-            {(styles) => (
-              <Box
-                style={{
-                  ...styles,
-                  background: "rgba(0, 0, 0, 0.45)",
-                  backdropFilter: "blur(12px)",
-                  borderRadius: toast.isCircular ? "50%" : theme.radius.xl,
-                  padding: toast.isCircular ? "20px" : "12px 24px",
-                  boxShadow: "0 8px 32px rgba(0, 0, 0, 0.2)",
-                  color: "white",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  width: toast.isCircular ? "90px" : "auto",
-                  height: toast.isCircular ? "90px" : "auto",
-                }}
-              >
-                {toast.message}
-              </Box>
-            )}
-          </Transition>
-        </Box>
-
-        {/* Video Player Area - tap for play/pause, double-tap left/right edges on mobile for backward/forward */}
-        <Box
-          ref={playerAreaRef}
+        {/* Main content: video left, lyrics right (better-lyrics layout when lyrics on) */}
+        <Flex
           style={{
             position: "absolute",
             inset: 0,
             zIndex: 1,
-            backgroundColor: "transparent",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
+            flexDirection: "row", // Always row on desktop, mobile handled via overlay/media query if needed (but logic below handles mobile layout)
             overflow: "hidden",
           }}
         >
-          {/* Video Container */}
+          {/* Video Player Area - left side, ~1/3 width when lyrics on (better-lyrics) */}
           <Box
+            ref={playerAreaRef}
             style={{
+              flex: 1, // Always take available space (flex logic handles the sibling)
+              minWidth: 0,
+              minHeight: 0,
+              backgroundColor: "transparent",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              overflow: "hidden",
               position: "relative",
-              width: "auto",
-              height: "auto",
-              maxWidth: isMobile ? "100vw" : "60vw",
-              maxHeight: isMobile ? "70vh" : "70vh",
-              aspectRatio: `${videoAspectRatio}`,
-              borderRadius: theme.radius.md,
-              zIndex: 1,
-              margin: "10px",
-              display: isAudioOnly ? "none" : "block",
             }}
           >
-            <AmbientCanvas
-              videoElement={videoElement}
-              isAudioOnly={isAudioOnly}
-              isPlaying={isPlaying}
-            />
-
-            <video
-              ref={videoRef}
-              key={media.fileUrl}
-              style={{
-                width: "100%",
-                height: "100%",
-                objectFit: "cover",
-                display: "block",
-                userSelect: "none",
-                borderRadius: theme.radius.md,
-                cursor: "pointer",
-                pointerEvents: "none",
-              }}
-              playsInline
-              controls={false}
-              preload="metadata"
-              muted
-              crossOrigin="anonymous"
-              onError={onError}
-            />
-          </Box>
-
-          {/* Audio Only Display */}
-          {isAudioOnly && (
+            {/* Toast - Moved inside player area to center relative to video */}
             <Box
               style={{
-                zIndex: 1,
-                position: "relative",
-                width: "auto",
-                height: "auto",
-                maxWidth: isMobile ? "100vw" : "60vw",
-                maxHeight: isMobile ? "70vh" : "60vh",
-                aspectRatio: "1/1",
+                position: "absolute",
+                inset: 0,
+                zIndex: 20,
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
                 pointerEvents: "none",
               }}
             >
-              {media.metadata.coverUrl ? (
-                <Image
-                  src={
-                    media.metadata.coverUrl?.replace(
-                      /(hq|mq|sd)?default/,
-                      "maxresdefault",
-                    ) || media.metadata.coverUrl
-                  }
-                  width="100%"
-                  height="100%"
-                  radius={theme.radius.md}
-                  fit="contain"
-                  style={{ userSelect: "none", pointerEvents: "none" }}
-                  alt={media.metadata.title}
+              <Transition
+                mounted={toast.visible}
+                transition="pop"
+                duration={200}
+                timingFunction="ease"
+              >
+                {(styles) => (
+                  <Box
+                    style={{
+                      ...styles,
+                      background: "rgba(0, 0, 0, 0.45)",
+                      backdropFilter: "blur(12px)",
+                      borderRadius: toast.isCircular ? "50%" : theme.radius.xl,
+                      padding: toast.isCircular ? "20px" : "12px 24px",
+                      boxShadow: "0 8px 32px rgba(0, 0, 0, 0.2)",
+                      color: "white",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      width: toast.isCircular ? "90px" : "auto",
+                      height: toast.isCircular ? "90px" : "auto",
+                    }}
+                  >
+                    {toast.message}
+                  </Box>
+                )}
+              </Transition>
+            </Box>
+            {/* Video Container */}
+            <Box
+              style={{
+                position: "relative",
+                width: "auto",
+                height: "auto",
+                maxWidth: isMobile ? "100vw" : showLyrics ? "100%" : "60vw",
+                maxHeight: isMobile ? "60vh" : "60vh",
+                aspectRatio: `${videoAspectRatio}`,
+                borderRadius: theme.radius.md,
+                zIndex: 1,
+                margin: "10px",
+                display: isAudioOnly ? "none" : "block",
+              }}
+            >
+              <AmbientCanvas
+                videoElement={videoElement}
+                isAudioOnly={isAudioOnly}
+                isPlaying={isPlaying}
+              />
+
+              <video
+                ref={videoRef}
+                key={media.fileUrl}
+                style={{
+                  width: "100%",
+                  height: "100%",
+                  objectFit: "cover",
+                  display: "block",
+                  userSelect: "none",
+                  borderRadius: theme.radius.md,
+                  cursor: "pointer",
+                  pointerEvents: "none",
+                }}
+                playsInline
+                controls={false}
+                preload="metadata"
+                muted
+                crossOrigin="anonymous"
+                onError={onError}
+              />
+            </Box>
+
+            {/* Audio Only Display */}
+            {isAudioOnly && (
+              <Box
+                style={{
+                  zIndex: 1,
+                  position: "relative",
+                  width: "auto",
+                  height: "auto",
+                  maxWidth: isMobile ? "100vw" : "60vw",
+                  maxHeight: isMobile ? "70vh" : "60vh",
+                  aspectRatio: "1/1",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  pointerEvents: "none",
+                }}
+              >
+                {media.metadata.coverUrl ? (
+                  <Image
+                    src={
+                      media.metadata.coverUrl?.replace(
+                        /(?<!maxres)(hq|mq|sd)?default/,
+                        "maxresdefault",
+                      ) || media.metadata.coverUrl
+                    }
+                    width="100%"
+                    height="100%"
+                    radius={theme.radius.md}
+                    fit="contain"
+                    style={{ userSelect: "none", pointerEvents: "none" }}
+                    alt={media.metadata.title}
+                  />
+                ) : (
+                  <Box
+                    w="100%"
+                    h="100%"
+                    bg="rgba(255,255,255,0.1)"
+                    style={{
+                      borderRadius: theme.radius.md,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      flexDirection: "column",
+                      gap: 10,
+                      userSelect: "none",
+                    }}
+                  >
+                    <IconMusic size={80} style={{ opacity: 0.5 }} />
+                    <Text size="xl" weight={600} align="center">
+                      {media.metadata.title}
+                    </Text>
+                    <Text size="md" color="dimmed" align="center">
+                      {media.metadata.artist ?? media.metadata.author}
+                      {media.metadata.album && ` · ${media.metadata.album}`}
+                    </Text>
+                  </Box>
+                )}
+              </Box>
+            )}
+          </Box>
+
+          {/* Lyrics panel: desktop = right side; mobile = overlay on video */}
+          {/* Lyrics panel: desktop = right side; mobile = overlay on video */}
+          {/* We always render this block for desktop transition, but conditionally display for mobile */}
+          {isMobile ? (
+            showLyrics && (
+              <Box
+                style={{
+                  position: "absolute",
+                  inset: 0,
+                  zIndex: 2,
+                  backgroundColor: "transparent",
+                  display: "flex",
+                  flexDirection: "column",
+                  overflow: "hidden",
+                }}
+              >
+                <LyricsPanel
+                  lyrics={lyrics}
+                  state={lyricsState}
+                  error={lyricsError}
+                  currentTimeSeconds={currentTime}
+                  isPlaying={isPlaying}
+                  onSeek={seek}
+                  style={{ flex: 1, minHeight: 0 }}
                 />
-              ) : (
-                <Box
-                  w="100%"
-                  h="100%"
-                  bg="rgba(255,255,255,0.1)"
-                  style={{
-                    borderRadius: theme.radius.md,
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    flexDirection: "column",
-                    gap: 10,
-                    userSelect: "none",
-                  }}
-                >
-                  <IconMusic size={80} style={{ opacity: 0.5 }} />
-                  <Text size="xl" weight={600} align="center">
-                    {media.metadata.title}
-                  </Text>
-                  <Text size="md" color="dimmed" align="center">
-                    {media.metadata.author}
-                  </Text>
-                </Box>
-              )}
+              </Box>
+            )
+          ) : (
+            <Box
+              style={{
+                width: showLyrics ? "35%" : "0px", // Animate width
+                maxWidth: "500px",
+                minWidth: showLyrics ? "300px" : "0px",
+                flex: "none",
+                height: "100%",
+                display: "flex",
+                flexDirection: "column",
+                overflow: "hidden",
+                backgroundColor: "transparent",
+                transition:
+                  "width 0.4s cubic-bezier(0.4, 0, 0.2, 1), min-width 0.4s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s ease",
+                opacity: showLyrics ? 1 : 0,
+                pointerEvents: showLyrics ? "auto" : "none",
+              }}
+            >
+              <LyricsPanel
+                lyrics={lyrics}
+                state={lyricsState}
+                error={lyricsError}
+                currentTimeSeconds={currentTime}
+                isPlaying={isPlaying}
+                onSeek={seek}
+                style={{ flex: 1, minHeight: 0 }}
+              />
             </Box>
           )}
-        </Box>
+        </Flex>
 
         {/* Bottom Controls */}
         <Box
@@ -768,6 +879,32 @@ export function Player({ media, repeating }: { media: Media; repeating: boolean 
                     target="_blank"
                   >
                     Report Bug
+                  </Menu.Item>
+                  <Menu.Divider />
+                  <Menu.Label>Display</Menu.Label>
+                  <Menu.Item
+                    icon={
+                      lyricsState === "loading" ? (
+                        <Loader size={14} variant="oval" />
+                      ) : (
+                        <IconFileMusic size={14} />
+                      )
+                    }
+                    onClick={() => {
+                      setShowLyrics((prev) => !prev);
+                    }}
+                    disabled={
+                      lyricsState === "loading" ||
+                      lyricsState === "not_found" ||
+                      lyricsState === "error"
+                    }
+                    rightSection={
+                      <Text size="xs" color="dimmed">
+                        {lyricsState === "loading" ? "..." : showLyrics ? "On" : "Off"}
+                      </Text>
+                    }
+                  >
+                    Lyrics
                   </Menu.Item>
                   <Menu.Divider />
                   <Menu.Label>Settings</Menu.Label>
@@ -955,7 +1092,8 @@ export function Player({ media, repeating }: { media: Media; repeating: boolean 
                     )}
                   </Flex>
                   <Text size="xs" color="dimmed" lineClamp={1}>
-                    {media.metadata.author}
+                    {media.metadata.artist ?? media.metadata.author}
+                    {media.metadata.album && ` · ${media.metadata.album}`}
                   </Text>
                 </Box>
               </Flex>
