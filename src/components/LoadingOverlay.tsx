@@ -1,8 +1,8 @@
 import {
   Flex,
   Loader,
-  Text,
   LoadingOverlay as MantineLoadingOverlay,
+  Text,
 } from "@mantine/core";
 
 interface Props {
@@ -13,7 +13,7 @@ export default function LoadingOverlay({ visible, message }: Props) {
   return (
     <MantineLoadingOverlay
       visible={visible}
-      overlayBlur={2}
+      overlayBlur={5}
       loader={
         <Flex direction="column" gap="md" align="center" justify="center">
           <Loader />

@@ -1,15 +1,9 @@
-import { LocalFilePlayer } from "@/components/LocalFilePlayer";
-import UnifiedPlayer from "@/components/UnifiedPlayer";
-import { getVideoInfo } from "@/lib/yt-dlp";
-import { fetchYoutubeDetails } from "@/lib/youtube";
-import {
-  getYouTubeId,
-  isTikTokURL,
-  isYoutubeURL,
-  parseISO8601Duration,
-} from "@/utils";
 import { Metadata } from "next";
 import { notFound } from "next/navigation";
+import InitialPlayer from "@/components/InitialPlayer";
+import { fetchYoutubeDetails } from "@/lib/youtube";
+import { getVideoInfo } from "@/lib/yt-dlp";
+import { getYouTubeId, isTikTokURL, isYoutubeURL, parseISO8601Duration } from "@/utils";
 
 type SearchParams = { [key: string]: string | string[] | undefined };
 
@@ -24,7 +18,6 @@ export async function generateMetadata({
     return { title: "Moonlit Player" };
   }
 
-  // YouTube Metadata
   if (isYoutubeURL(url)) {
     const id = getYouTubeId(url);
     if (!id) return { title: "Moonlit" };
@@ -44,38 +37,22 @@ export async function generateMetadata({
       return {
         title,
         description,
-        openGraph: {
-          title,
-          description,
-          type: "website",
-          images: [{ url: imageUrl }],
-        },
-        twitter: {
-          card: "summary_large_image",
-          title,
-          description,
-          images: [imageUrl],
-        },
+        openGraph: { title, description, type: "website", images: [{ url: imageUrl }] },
+        twitter: { card: "summary_large_image", title, description, images: [imageUrl] },
       };
     } catch {
       return { title: "Moonlit" };
     }
   }
 
-  // TikTok Metadata
   if (isTikTokURL(url)) {
     try {
-      // Use yt-dlp for TikTok metadata (Server Side)
       const info = await getVideoInfo(url);
       const title = `${info.title} - Moonlit`;
-
       return {
         title,
         description: `Watch tiktok by ${info.author} on Moonlit.`,
-        openGraph: {
-          title,
-          images: [{ url: info.thumbnail }],
-        },
+        openGraph: { title, images: [{ url: info.thumbnail }] },
       };
     } catch {
       return { title: "TikTok Video - Moonlit" };
@@ -85,16 +62,12 @@ export async function generateMetadata({
   return { title: "Moonlit Player" };
 }
 
-export default async function Page({
-  searchParams,
-}: {
-  searchParams: SearchParams;
-}) {
+export default async function Page({ searchParams }: { searchParams: SearchParams }) {
   const url = searchParams.url as string;
 
   // Local File Player (No URL)
   if (!url) {
-    return <LocalFilePlayer />;
+    return <InitialPlayer isLocalFile />;
   }
 
   // YouTube
@@ -107,7 +80,7 @@ export default async function Page({
       const duration = parseISO8601Duration(metadata.duration);
 
       return (
-        <UnifiedPlayer
+        <InitialPlayer
           url={url}
           metadata={{
             title: metadata.title,
@@ -118,7 +91,6 @@ export default async function Page({
         />
       );
     } catch {
-      // Don't show custom error div, throw so error.tsx handles it
       throw new Error(`Video not found or private (YouTube)`);
     }
   }
@@ -129,7 +101,7 @@ export default async function Page({
       const info = await getVideoInfo(url);
 
       return (
-        <UnifiedPlayer
+        <InitialPlayer
           url={url}
           metadata={{
             title: info.title,
@@ -141,18 +113,9 @@ export default async function Page({
       );
     } catch (e) {
       console.error("TikTok metadata fetch error:", e);
-      // Fallback: Return player with minimal metadata - stream will provide actual data
-      return (
-        <UnifiedPlayer
-          url={url}
-          metadata={{
-            platform: "tiktok",
-          }}
-        />
-      );
+      return <InitialPlayer url={url} metadata={{ platform: "tiktok" }} />;
     }
   }
 
-  // Fallback / Invalid URL
   throw new Error("Invalid URL provided");
 }

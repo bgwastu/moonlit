@@ -1,5 +1,6 @@
-import { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
 
+/** Extract dominant color from image using canvas pixel sampling */
 export function getDominantColorFromImage(
   img: HTMLImageElement,
   palenessFactor: number = 0.8,
@@ -9,20 +10,17 @@ export function getDominantColorFromImage(
   if (!ctx) return "rgb(0,0,0)";
 
   ctx.drawImage(img, 0, 0);
-  // If image is not loaded yet or has 0 dimensions, return default
   if (img.width === 0 || img.height === 0) return "rgb(0,0,0)";
 
   const imageData = ctx.getImageData(0, 0, img.width, img.height);
   const data = imageData.data;
-  let r = 0;
-  let g = 0;
-  let b = 0;
-  let count = 0;
+  let r = 0,
+    g = 0,
+    b = 0,
+    count = 0;
 
   for (let i = 0; i < data.length; i += 4) {
-    if (data[i + 3] <= 0) {
-      continue;
-    }
+    if (data[i + 3] <= 0) continue;
     r += data[i];
     g += data[i + 1];
     b += data[i + 2];
@@ -38,6 +36,7 @@ export function getDominantColorFromImage(
   return `rgb(${r}, ${g}, ${b})`;
 }
 
+/** Hook to extract and track dominant color from an image URL */
 export function useDominantColor(imageUrl?: string, initialColor?: string) {
   const [dominantColor, setDominantColor] = useState<string>(
     initialColor || "rgba(0,0,0,0)",
@@ -53,8 +52,7 @@ export function useDominantColor(imageUrl?: string, initialColor?: string) {
 
     const img = document.createElement("img");
     img.crossOrigin = "Anonymous";
-    img.src =
-      imageUrl?.replace(/(hq|mq|sd)?default/, "maxresdefault") || imageUrl;
+    img.src = imageUrl?.replace(/(hq|mq|sd)?default/, "maxresdefault") || imageUrl;
 
     img.onload = () => {
       const color = getDominantColorFromImage(img);

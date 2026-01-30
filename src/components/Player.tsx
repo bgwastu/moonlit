@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { generateColors } from "@mantine/colors-generator";
+import { SiTiktok, SiYoutube } from "@icons-pack/react-simple-icons";
 import {
   ActionIcon,
   Box,
@@ -9,7 +9,6 @@ import {
   Flex,
   Image,
   MantineProvider,
-  MantineThemeOverride,
   MediaQuery,
   Menu,
   SegmentedControl,
@@ -21,9 +20,6 @@ import {
 import { useDisclosure, useHotkeys, useMediaQuery } from "@mantine/hooks";
 import {
   IconAdjustments,
-  IconBrandTiktok,
-  IconBrandYoutube,
-  IconBrandYoutubeFilled,
   IconBug,
   IconCookie,
   IconDownload,
@@ -39,17 +35,26 @@ import {
   IconRewindBackward5,
   IconRewindForward5,
 } from "@tabler/icons-react";
+import { Pause } from "lucide-react";
 import LoadingOverlay from "@/components/LoadingOverlay";
+import { useAmbientMode } from "@/hooks/useAmbientMode";
 import { useDominantColor } from "@/hooks/useDominantColor";
+import { useMediaSession } from "@/hooks/useMediaSession";
 import { useStretchPlayer } from "@/hooks/useStretchPlayer";
+import { useToast } from "@/hooks/useToast";
 import { useVideoPlayer } from "@/hooks/useVideoPlayer";
+import { useVideoStatePersistence } from "@/hooks/useVideoStatePersistence";
 import { PlaybackMode, Song } from "@/interfaces";
-import { getVideoState, saveVideoState } from "@/lib/videoState";
+import { getModeFromRate, getVideoState } from "@/lib/videoState";
 import { getFormattedTime } from "@/utils";
+import {
+  createDynamicTheme,
+  getOriginalPlatformUrl,
+  getSemitonesFromRate,
+} from "@/utils/player";
 import CookiesModal from "./CookiesModal";
 import CustomizePlaybackModal from "./CustomizePlaybackModal";
 import DownloadModal from "./DownloadModal";
-import { IconPause } from "./IconPause";
 
 export function Player({
   song,
@@ -62,6 +67,7 @@ export function Player({
 }) {
   const theme = useMantineTheme();
   const isMobile = useMediaQuery("(max-width: 768px)");
+  const canvasRef = useRef<HTMLCanvasElement>(null);
 
   const videoUrl = song.metadata.id
     ? song.metadata.platform === "youtube"
@@ -69,45 +75,36 @@ export function Player({
       : `https://www.tiktok.com/video/${song.metadata.id}`
     : song.fileUrl;
 
-  const [playbackMode, setPlaybackMode] = useState<PlaybackMode>("slowed");
-  const [initialStartAt, setInitialStartAt] = useState(0);
-  const [stateLoaded, setStateLoaded] = useState(false);
-  const dominantColor = useDominantColor(song.metadata.coverUrl, initialDominantColor);
-
-  const [isAudioOnly, setIsAudioOnly] = useState(false);
-  const [videoAspectRatio, setVideoAspectRatio] = useState<number>(16 / 9);
-  const [isRepeat, setIsRepeat] = useState(repeating);
-  // Local slider values during drag; only commit on onChangeEnd
-  const [speedSliderValue, setSpeedSliderValue] = useState(0.8);
-  const [pitchSliderValue, setPitchSliderValue] = useState(0);
-
   // Load saved state
   const savedState = useMemo(() => getVideoState(videoUrl), [videoUrl]);
 
-  // Pitch lock setting - loaded from saved state
+  // State - derive mode from rate
+  const initialRate = savedState?.rate ?? 0.8;
+  const [playbackMode, setPlaybackMode] = useState<PlaybackMode>(
+    getModeFromRate(initialRate),
+  );
+  const initialStartAt = savedState?.position ?? 0;
+  const [stateLoaded, setStateLoaded] = useState(false);
+  const [isAudioOnly, setIsAudioOnly] = useState(false);
+  const [videoAspectRatio, setVideoAspectRatio] = useState<number>(16 / 9);
+  const [isRepeat, setIsRepeat] = useState(savedState?.isRepeat ?? repeating);
   const [pitchLockedToSpeed, setPitchLockedToSpeed] = useState(
     savedState?.pitchLockedToSpeed ?? true,
   );
 
-  // Initial rate based on mode
-  const getInitialRate = () => {
-    if (savedState?.rate) return savedState.rate;
-    if (savedState?.mode === "slowed") return 0.8;
-    if (savedState?.mode === "speedup") return 1.25;
-    if (savedState?.mode === "normal") return 1;
-    return 0.8; // Default to slowed
-  };
+  // Slider values (only commit on onChangeEnd)
+  const [speedSliderValue, setSpeedSliderValue] = useState(initialRate);
+  const [pitchSliderValue, setPitchSliderValue] = useState(savedState?.semitones ?? 0);
 
+  const dominantColor = useDominantColor(song.metadata.coverUrl, initialDominantColor);
+  const { toast, showToast } = useToast();
+
+  // Initialize state loaded flag
   useEffect(() => {
-    if (savedState) {
-      setPlaybackMode(savedState.mode);
-      setInitialStartAt(savedState.position);
-    }
-
     setStateLoaded(true);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Video player setup
   const { videoRef, videoElement, isVideoReady, onError } = useVideoPlayer({
     song,
     repeating,
@@ -116,6 +113,7 @@ export function Player({
     startAt: stateLoaded ? initialStartAt : 0,
   });
 
+  // Stretch player (audio processing)
   const {
     state: stretchState,
     isPlaying,
@@ -136,12 +134,11 @@ export function Player({
     videoElement,
     fileUrl: song.fileUrl,
     isVideoReady,
-    initialRate: getInitialRate(),
+    initialRate: initialRate,
     initialSemitones: savedState?.semitones ?? 0,
     initialReverbAmount: savedState?.reverbAmount ?? 0,
     initialPosition: stateLoaded ? initialStartAt : 0,
     onEnded: () => {
-      // Handle repeat when playback ends
       if (isRepeat) {
         seek(0);
         play();
@@ -157,129 +154,70 @@ export function Player({
     duration > 0 &&
     !isPlaying &&
     !isRepeat;
-  const songLength = duration;
-  const displayPosition = currentTime;
 
-  // Sync slider local state when rate/semitones change from elsewhere (e.g. mode change)
+  // Ambient mode (canvas glow effect)
+  const { isSafari } = useAmbientMode({
+    videoElement,
+    canvasRef,
+    isAudioOnly,
+    isPlaying,
+  });
+
+  // Media session (browser controls)
+  const handleBackward = useCallback(() => {
+    const newTime = Math.max(0, currentTime - 5);
+    seek(newTime);
+    showToast(
+      <Flex align="center" gap="xs">
+        <IconRewindBackward5 size={24} />
+        <Text weight={600}>-5s</Text>
+      </Flex>,
+    );
+  }, [currentTime, seek, showToast]);
+
+  const handleForward = useCallback(() => {
+    const newTime = Math.min(duration, currentTime + 5);
+    seek(newTime);
+    showToast(
+      <Flex align="center" gap="xs">
+        <IconRewindForward5 size={24} />
+        <Text weight={600}>+5s</Text>
+      </Flex>,
+    );
+  }, [currentTime, duration, seek, showToast]);
+
+  useMediaSession({
+    song,
+    isPlaying,
+    currentTime,
+    duration,
+    onPlay: play,
+    onPause: pause,
+    onSeekBackward: handleBackward,
+    onSeekForward: handleForward,
+    onSeek: seek,
+  });
+
+  // Video state persistence
+  useVideoStatePersistence({
+    videoUrl,
+    currentTime,
+    rate,
+    semitones,
+    reverbAmount,
+    pitchLockedToSpeed,
+    isRepeat,
+    isReady,
+    stateLoaded,
+  });
+
+  // Sync slider values when rate/semitones change
   useEffect(() => {
     setSpeedSliderValue(rate);
     setPitchSliderValue(semitones);
   }, [rate, semitones]);
 
-  // Disable ambient blur on Safari (renders rough/sharp edges there)
-  const [isSafari, setIsSafari] = useState(false);
-  useEffect(() => {
-    if (typeof navigator === "undefined") return;
-    const ua = navigator.userAgent;
-    // Safari (desktop and iOS) has "Safari" and no "Chrome"/"CriOS"
-    setIsSafari(ua.includes("Safari") && !ua.includes("Chrome") && !ua.includes("CriOS"));
-  }, []);
-
-  // Ambient Mode (Canvas Extraction) - skipped on Safari
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const animationFrameRef = useRef<number>();
-
-  useEffect(() => {
-    if (isSafari || !videoElement || !canvasRef.current || isAudioOnly) return;
-
-    const canvas = canvasRef.current;
-    const ctx = canvas.getContext("2d", { alpha: false });
-
-    if (!ctx) return;
-
-    const draw = () => {
-      if (videoElement && !videoElement.paused && !videoElement.ended) {
-        ctx.drawImage(videoElement, 0, 0, canvas.width, canvas.height);
-      }
-      animationFrameRef.current = requestAnimationFrame(draw);
-    };
-
-    draw();
-
-    return () => {
-      if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
-    };
-  }, [isSafari, videoElement, isAudioOnly, isPlaying]);
-
-  const [modalOpened, { open: openModal, close: closeModal }] = useDisclosure(false);
-  const [cookiesModalOpened, { open: openCookiesModal, close: closeCookiesModal }] =
-    useDisclosure(false);
-  const [downloadModalOpened, { open: openDownloadModal, close: closeDownloadModal }] =
-    useDisclosure(false);
-
-  // Save state periodically
-  const lastSaveRef = useRef<number>(0);
-  useEffect(() => {
-    if (!stateLoaded || !isReady) return;
-
-    const now = Date.now();
-    if (now - lastSaveRef.current < 5000) return;
-    lastSaveRef.current = now;
-
-    saveVideoState(videoUrl, {
-      position: currentTime,
-      mode: playbackMode,
-      rate,
-      semitones,
-      reverbAmount,
-      pitchLockedToSpeed,
-      isRepeat,
-    });
-  }, [
-    currentTime,
-    playbackMode,
-    rate,
-    semitones,
-    reverbAmount,
-    pitchLockedToSpeed,
-    isRepeat,
-    videoUrl,
-    stateLoaded,
-    isReady,
-  ]);
-
-  // Save state on unmount
-  useEffect(() => {
-    const saveState = () => {
-      if (!stateLoaded) return;
-      saveVideoState(videoUrl, {
-        position: currentTime,
-        mode: playbackMode,
-        rate,
-        semitones,
-        reverbAmount,
-        pitchLockedToSpeed,
-        isRepeat,
-      });
-    };
-
-    const handleVisibilityChange = () => {
-      if (document.hidden) {
-        saveState();
-      }
-    };
-
-    window.addEventListener("beforeunload", saveState);
-    document.addEventListener("visibilitychange", handleVisibilityChange);
-
-    return () => {
-      saveState();
-      window.removeEventListener("beforeunload", saveState);
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
-    };
-  }, [
-    currentTime,
-    playbackMode,
-    rate,
-    semitones,
-    reverbAmount,
-    pitchLockedToSpeed,
-    isRepeat,
-    videoUrl,
-    stateLoaded,
-  ]);
-
-  // Check Audio Only
+  // Check if audio only
   useEffect(() => {
     if (!videoElement) return;
 
@@ -298,31 +236,17 @@ export function Player({
       checkAudioOnly();
     }
     videoElement.addEventListener("loadedmetadata", checkAudioOnly);
-
-    return () => {
-      videoElement.removeEventListener("loadedmetadata", checkAudioOnly);
-    };
+    return () => videoElement.removeEventListener("loadedmetadata", checkAudioOnly);
   }, [videoElement]);
 
-  // Toast Logic
-  const [toast, setToast] = useState<{
-    message: React.ReactNode;
-    visible: boolean;
-    isCircular?: boolean;
-  }>({
-    message: null,
-    visible: false,
-  });
-  const toastTimeoutRef = useRef<NodeJS.Timeout>();
+  // Modal controls
+  const [modalOpened, { open: openModal, close: closeModal }] = useDisclosure(false);
+  const [cookiesModalOpened, { open: openCookiesModal, close: closeCookiesModal }] =
+    useDisclosure(false);
+  const [downloadModalOpened, { open: openDownloadModal, close: closeDownloadModal }] =
+    useDisclosure(false);
 
-  const showToast = useCallback((message: React.ReactNode, isCircular?: boolean) => {
-    if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
-    setToast({ message, visible: true, isCircular });
-    toastTimeoutRef.current = setTimeout(() => {
-      setToast((prev) => ({ ...prev, visible: false }));
-    }, 1200);
-  }, []);
-
+  // Seeking state
   const [isSeeking, setIsSeeking] = useState(false);
   const [seekPosition, setSeekPosition] = useState(0);
 
@@ -339,28 +263,6 @@ export function Player({
     [seek],
   );
 
-  const handleBackward = useCallback(() => {
-    const newTime = Math.max(0, currentTime - 5);
-    seek(newTime);
-    showToast(
-      <Flex align="center" gap="xs">
-        <IconRewindBackward5 size={24} />
-        <Text weight={600}>-5s</Text>
-      </Flex>,
-    );
-  }, [currentTime, seek, showToast]);
-
-  const handleForward = useCallback(() => {
-    const newTime = Math.min(songLength, currentTime + 5);
-    seek(newTime);
-    showToast(
-      <Flex align="center" gap="xs">
-        <IconRewindForward5 size={24} />
-        <Text weight={600}>+5s</Text>
-      </Flex>,
-    );
-  }, [currentTime, songLength, seek, showToast]);
-
   const handleTogglePlayer = useCallback(() => {
     if (isEnded) {
       seek(0);
@@ -369,7 +271,7 @@ export function Player({
     } else {
       togglePlayback();
       if (isPlaying) {
-        showToast(<IconPause width={40} height={40} />, true);
+        showToast(<Pause size={40} fill="currentColor" />, true);
       } else {
         showToast(<IconPlayerPlayFilled size={40} />, true);
       }
@@ -379,13 +281,12 @@ export function Player({
   const handleRateChange = useCallback(
     (newRate: number) => {
       setRate(newRate);
-      // Only update pitch when lock is ON; when lock is OFF, leave semitones unchanged
       if (pitchLockedToSpeed) {
-        const syncedSemitones = 12 * Math.log2(newRate);
+        const syncedSemitones = getSemitonesFromRate(newRate);
         setSemitones(syncedSemitones);
         setPitchSliderValue(syncedSemitones);
       }
-      // Update playback mode based on rate
+      // Update mode based on rate
       if (Math.abs(newRate - 0.8) < 0.01) {
         setPlaybackMode("slowed");
       } else if (Math.abs(newRate - 1) < 0.01) {
@@ -410,8 +311,9 @@ export function Player({
     (locked: boolean) => {
       setPitchLockedToSpeed(locked);
       if (locked) {
-        setSemitones(12 * Math.log2(rate));
-        setPitchSliderValue(12 * Math.log2(rate));
+        const syncedSemitones = getSemitonesFromRate(rate);
+        setSemitones(syncedSemitones);
+        setPitchSliderValue(syncedSemitones);
       }
     },
     [rate, setSemitones],
@@ -425,18 +327,18 @@ export function Player({
 
       if (mode === "slowed") {
         newRate = 0.8;
-        newSemitones = 12 * Math.log2(0.8);
+        newSemitones = getSemitonesFromRate(0.8);
       } else if (mode === "normal") {
         newRate = 1;
         newSemitones = 0;
       } else if (mode === "speedup") {
         newRate = 1.25;
-        newSemitones = 12 * Math.log2(1.25);
+        newSemitones = getSemitonesFromRate(1.25);
       }
+
       if (mode !== "custom") {
         setRate(newRate);
         setSemitones(newSemitones);
-        // Show toast for mode change
         const modeLabels: Record<string, string> = {
           slowed: "Slowed",
           normal: "Normal",
@@ -447,6 +349,12 @@ export function Player({
             <Text weight={600}>
               {modeLabels[mode]} ({newRate.toFixed(2)}x)
             </Text>
+          </Flex>,
+        );
+      } else {
+        showToast(
+          <Flex align="center" gap="xs">
+            <Text weight={600}>Custom ({rate.toFixed(2)}x)</Text>
           </Flex>,
         );
       }
@@ -497,107 +405,11 @@ export function Player({
     ],
   ]);
 
-  const getOriginalPlatformUrl = () => {
-    if (song.metadata.platform === "youtube" && song.metadata.id) {
-      const realSeconds = Math.floor(currentTime);
-      return `https://www.youtube.com/watch?v=${song.metadata.id}&t=${realSeconds}s`;
-    }
-    if (song.metadata.platform === "tiktok" && song.metadata.id) {
-      const currentUrl = window.location.pathname;
-      const match = currentUrl.match(/\/(@[^/]+)\/video\/(\d+)/);
-      if (match) {
-        const [, creator, videoId] = match;
-        return `https://www.tiktok.com/${creator}/video/${videoId}`;
-      }
-    }
-    return null;
-  };
-
-  const dynamicTheme = useMemo(() => {
-    if (dominantColor === "rgba(0,0,0,0)") return theme;
-
-    return {
-      ...theme,
-      primaryColor: "brand",
-      colors: {
-        ...theme.colors,
-        brand: generateColors(dominantColor) as any,
-      },
-    } as MantineThemeOverride;
-  }, [dominantColor, theme]);
-
-  // Media Session API
-  useEffect(() => {
-    if (!("mediaSession" in navigator)) return;
-
-    let highResCover = song.metadata.coverUrl;
-    if (song.metadata.platform === "youtube") {
-      highResCover =
-        song.metadata.coverUrl?.replace(/(hq|mq|sd)?default/, "maxresdefault") ||
-        song.metadata.coverUrl;
-    }
-
-    navigator.mediaSession.metadata = new MediaMetadata({
-      title: song.metadata.title,
-      artist: song.metadata.author,
-      artwork: [
-        {
-          src: highResCover,
-          sizes: "512x512",
-          type: "image/jpeg",
-        },
-      ],
-    });
-
-    navigator.mediaSession.setActionHandler("play", () => play());
-    navigator.mediaSession.setActionHandler("pause", () => pause());
-    navigator.mediaSession.setActionHandler("seekbackward", () => handleBackward());
-    navigator.mediaSession.setActionHandler("seekforward", () => handleForward());
-    navigator.mediaSession.setActionHandler("previoustrack", () => handleBackward());
-    navigator.mediaSession.setActionHandler("nexttrack", () => handleForward());
-
-    try {
-      navigator.mediaSession.setActionHandler("seekto", (details) => {
-        if (details.seekTime !== undefined) {
-          seek(details.seekTime);
-        }
-      });
-    } catch (error) {
-      console.log("MediaSession seekto not supported");
-    }
-
-    return () => {
-      navigator.mediaSession.setActionHandler("play", null);
-      navigator.mediaSession.setActionHandler("pause", null);
-      navigator.mediaSession.setActionHandler("seekbackward", null);
-      navigator.mediaSession.setActionHandler("seekforward", null);
-      navigator.mediaSession.setActionHandler("previoustrack", null);
-      navigator.mediaSession.setActionHandler("nexttrack", null);
-      try {
-        navigator.mediaSession.setActionHandler("seekto", null);
-      } catch (e) {}
-    };
-  }, [song, play, pause, handleBackward, handleForward, seek]);
-
-  useEffect(() => {
-    if (!("mediaSession" in navigator)) return;
-    navigator.mediaSession.playbackState = isPlaying ? "playing" : "paused";
-  }, [isPlaying]);
-
-  useEffect(() => {
-    if (!("mediaSession" in navigator) || !("setPositionState" in navigator.mediaSession))
-      return;
-
-    try {
-      navigator.mediaSession.setPositionState({
-        duration: Math.max(0, songLength),
-        playbackRate: 1.0,
-        position: Math.max(0, Math.min(displayPosition, songLength)),
-      });
-    } catch (e) {
-      console.error("Error setting position state:", e);
-    }
-  }, [displayPosition, songLength]);
+  const originalPlatformUrl = getOriginalPlatformUrl(song, currentTime);
+  const dynamicTheme = useMemo(
+    () => createDynamicTheme(dominantColor, theme),
+    [dominantColor, theme],
+  );
 
   return (
     <MantineProvider theme={dynamicTheme} inherit>
@@ -759,7 +571,7 @@ export function Player({
               display: isAudioOnly ? "none" : "block",
             }}
           >
-            {/* Ambient blur disabled on Safari (rough edges); canvas only rendered when !isSafari */}
+            {/* Ambient blur (disabled on Safari) */}
             {!isSafari && (
               <canvas
                 ref={canvasRef}
@@ -829,10 +641,7 @@ export function Player({
                   height="100%"
                   radius={theme.radius.md}
                   fit="contain"
-                  style={{
-                    userSelect: "none",
-                    pointerEvents: "none",
-                  }}
+                  style={{ userSelect: "none", pointerEvents: "none" }}
                   alt={song.metadata.title}
                 />
               ) : (
@@ -900,7 +709,7 @@ export function Player({
                 fontVariantNumeric: "tabular-nums",
               }}
             >
-              {`${getFormattedTime(isSeeking ? seekPosition : displayPosition)} / ${getFormattedTime(songLength)}`}
+              {`${getFormattedTime(isSeeking ? seekPosition : currentTime)} / ${getFormattedTime(duration)}`}
             </Text>
             <Flex gap="xs">
               <Menu shadow="md" width={200} position="top-end">
@@ -914,17 +723,17 @@ export function Player({
                   <Menu.Item icon={<IconHome size={14} />} component={Link} href="/">
                     Home
                   </Menu.Item>
-                  {getOriginalPlatformUrl() && (
+                  {originalPlatformUrl && (
                     <Menu.Item
                       icon={
                         song.metadata.platform === "youtube" ? (
-                          <IconBrandYoutube size={14} />
+                          <SiYoutube size={14} />
                         ) : (
-                          <IconBrandTiktok size={14} />
+                          <SiTiktok size={14} />
                         )
                       }
                       component="a"
-                      href={getOriginalPlatformUrl()!}
+                      href={originalPlatformUrl}
                       rightSection={<IconExternalLink size={12} />}
                       target="_blank"
                     >
@@ -959,7 +768,7 @@ export function Player({
           </Flex>
 
           <Slider
-            value={isSeeking ? seekPosition : displayPosition}
+            value={isSeeking ? seekPosition : currentTime}
             onChange={handleSliderChange}
             onChangeEnd={handleSeekChange}
             min={0}
@@ -969,16 +778,10 @@ export function Player({
             showLabelOnHover={false}
             size="sm"
             pr={0.3}
-            styles={{
-              thumb: {
-                borderWidth: 0,
-              },
-            }}
+            styles={{ thumb: { borderWidth: 0 } }}
             thumbSize={isSeeking ? 20 : 15}
-            label={(v) =>
-              displayPosition >= songLength - 5 ? null : getFormattedTime(v)
-            }
-            max={songLength}
+            label={(v) => (currentTime >= duration - 5 ? null : getFormattedTime(v))}
+            max={duration}
           />
 
           <Box style={{ backgroundColor: theme.colors.dark[6] }}>
@@ -991,7 +794,11 @@ export function Player({
                   variant="transparent"
                   color="gray"
                 >
-                  {isPlaying ? <IconPause /> : <IconPlayerPlayFilled size={30} />}
+                  {isPlaying ? (
+                    <Pause size={30} fill="currentColor" />
+                  ) : (
+                    <IconPlayerPlayFilled size={30} />
+                  )}
                 </ActionIcon>
                 <ActionIcon
                   size="lg"
@@ -1042,11 +849,11 @@ export function Player({
                     <Text size="sm" weight={600} lineClamp={1}>
                       {song.metadata.title}
                     </Text>
-                    {getOriginalPlatformUrl() && (
+                    {originalPlatformUrl && (
                       <MediaQuery smallerThan="md" styles={{ display: "none" }}>
                         <ActionIcon
                           component="a"
-                          href={getOriginalPlatformUrl()!}
+                          href={originalPlatformUrl}
                           target="_blank"
                           variant="transparent"
                           size="xs"
@@ -1054,9 +861,9 @@ export function Player({
                           style={{ opacity: 0.7 }}
                         >
                           {song.metadata.platform === "youtube" ? (
-                            <IconBrandYoutubeFilled size={16} />
+                            <SiYoutube size={16} />
                           ) : (
-                            <IconBrandTiktok size={14} />
+                            <SiTiktok size={14} />
                           )}
                         </ActionIcon>
                       </MediaQuery>

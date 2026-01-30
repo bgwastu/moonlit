@@ -1,69 +1,45 @@
 "use client";
 
-import Dynamic from "@/components/Dynamic";
-import { themeAtom } from "@/state";
-import {
-  Button,
-  Dialog,
-  MantineProvider,
-  Text,
-  useMantineTheme,
-} from "@mantine/core";
-import { useLocalStorage, useOs } from "@mantine/hooks";
+import { useEffect, useState } from "react";
+import { MantineProvider } from "@mantine/core";
 import { Notifications } from "@mantine/notifications";
-import { useAtom } from "jotai";
 import { PostHogProvider } from "posthog-js/react";
+import { AppProvider, useAppContext } from "@/context/AppContext";
 
-export default function LayoutWrapper({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
-  const theme = useMantineTheme();
-  const [globalTheme] = useAtom(themeAtom);
+function LayoutContent({ children }: { children: React.ReactNode }) {
+  const { theme } = useAppContext();
+  const [ready, setReady] = useState(false);
 
-  const os = useOs();
-  const [iosDismissed, setIosDismissed] = useLocalStorage({
-    key: "warning-dismissed",
-    defaultValue: false,
-  });
+  useEffect(() => {
+    setReady(true);
+  }, []);
+
+  if (!ready) {
+    return (
+      <div style={{ backgroundColor: "#1A1B1E", height: "100dvh", width: "100%" }} />
+    );
+  }
 
   return (
-    <Dynamic>
-      <PostHogProvider
-        apiKey={process.env.NEXT_PUBLIC_POSTHOG_API_KEY}
-        options={{
-          api_host: "/ev",
-          ui_host: "https://us.i.posthog.com",
-        }}
-      >
-        <MantineProvider withGlobalStyles withNormalizeCSS theme={globalTheme}>
-            <Notifications />
-            <Dialog
-              opened={os === "ios" && !iosDismissed}
-              withCloseButton
-              onClose={() => {
-                setIosDismissed(true);
-              }}
-              size="lg"
-              bg={theme.colors.dark[6]}
-              radius="md"
-            >
-              <Text size="sm" mb="xs" fw={500}>
-                Moonlit is not yet optimized for IOS devices
-              </Text>
-              <Button
-                onClick={() => {
-                  setIosDismissed(true);
-                }}
-                variant="default"
-              >
-                I understand
-              </Button>
-            </Dialog>
-            {children}
-        </MantineProvider>
-      </PostHogProvider>  
-    </Dynamic>
+    <MantineProvider withGlobalStyles withNormalizeCSS theme={theme}>
+      <Notifications />
+      {children}
+    </MantineProvider>
+  );
+}
+
+export default function LayoutWrapper({ children }: { children: React.ReactNode }) {
+  return (
+    <PostHogProvider
+      apiKey={process.env.NEXT_PUBLIC_POSTHOG_API_KEY}
+      options={{
+        api_host: "/ev",
+        ui_host: "https://us.i.posthog.com",
+      }}
+    >
+      <AppProvider>
+        <LayoutContent>{children}</LayoutContent>
+      </AppProvider>
+    </PostHogProvider>
   );
 }
