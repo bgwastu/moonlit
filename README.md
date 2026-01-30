@@ -8,7 +8,7 @@ See it in action: [moonlit.wastu.net](https://moonlit.wastu.net)
 
 You can listen to your favorite tracks from multiple platforms on Moonlit:
 
-- **YouTube**: Replace `youtube.com` with `moonlit.wastu.net` to the URL (example: <a href="https://www.youtube.com/watch?v=AEp08vVYreg" target="_blank">moonlit.wastu.net/watch?v=AEp08vVYreg</a>)
+- **YouTube**: Replace `youtube.com` with `moonlit.wastu.net` to the URL (example: <a href="https://moonlit.wastu.net/watch?v=AEp08vVYreg" target="_blank">moonlit.wastu.net/watch?v=AEp08vVYreg</a>)
 - **TikTok**: Replace `tiktok.com` with `moonlit.wastu.net` to the URL (example: <a href="https://moonlit.wastu.net/@etherealbia/video/7482838437075094790" target="_blank">moonlit.wastu.net/@etherealbia/video/7482838437075094790</a>)
 
 ### Browser Extension / Userscript 🧩
