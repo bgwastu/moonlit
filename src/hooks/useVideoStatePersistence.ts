@@ -9,6 +9,7 @@ interface UseVideoStatePersistenceProps {
   reverbAmount: number;
   pitchLockedToSpeed: boolean;
   isRepeat: boolean;
+  volume: number;
   isReady: boolean;
   stateLoaded: boolean;
 }
@@ -25,6 +26,7 @@ export function useVideoStatePersistence({
   reverbAmount,
   pitchLockedToSpeed,
   isRepeat,
+  volume,
   isReady,
   stateLoaded,
 }: UseVideoStatePersistenceProps): void {
@@ -44,6 +46,7 @@ export function useVideoStatePersistence({
       reverbAmount,
       pitchLockedToSpeed,
       isRepeat,
+      volume,
     });
   }, [
     currentTime,
@@ -52,6 +55,7 @@ export function useVideoStatePersistence({
     reverbAmount,
     pitchLockedToSpeed,
     isRepeat,
+    volume,
     videoUrl,
     stateLoaded,
     isReady,
@@ -67,6 +71,7 @@ export function useVideoStatePersistence({
         reverbAmount,
         pitchLockedToSpeed,
         isRepeat,
+        volume,
       });
     };
 
@@ -89,6 +94,7 @@ export function useVideoStatePersistence({
     reverbAmount,
     pitchLockedToSpeed,
     isRepeat,
+    volume,
     videoUrl,
     stateLoaded,
   ]);

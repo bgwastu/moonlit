@@ -5,6 +5,7 @@ export interface VideoState {
   reverbAmount: number;
   pitchLockedToSpeed: boolean;
   isRepeat: boolean;
+  volume: number;
   lastUpdated: number;
 }
 
@@ -53,6 +54,7 @@ export function saveVideoState(url: string, state: Partial<VideoState>): void {
       pitchLockedToSpeed:
         state.pitchLockedToSpeed ?? existing?.pitchLockedToSpeed ?? true,
       isRepeat: state.isRepeat ?? existing?.isRepeat ?? false,
+      volume: state.volume ?? existing?.volume ?? 1,
       lastUpdated: Date.now(),
     };
 
