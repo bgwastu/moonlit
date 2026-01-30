@@ -4,12 +4,12 @@ import { useRef, useState } from "react";
 import { Alert, Button, Group, Modal, Progress, Radio, Stack, Text } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { IconDownload, IconInfoCircle } from "@tabler/icons-react";
-import { Song } from "@/interfaces";
+import { Media } from "@/interfaces";
 
 interface DownloadModalProps {
   opened: boolean;
   onClose: () => void;
-  song: Song;
+  media: Media;
   currentPlaybackRate: number;
   currentReverbAmount: number;
 }
@@ -102,7 +102,7 @@ function generateImpulseResponse(
 export default function DownloadModal({
   opened,
   onClose,
-  song,
+  media,
   currentPlaybackRate,
   currentReverbAmount,
 }: DownloadModalProps) {
@@ -110,9 +110,9 @@ export default function DownloadModal({
   const [isProcessing, setIsProcessing] = useState(false);
   const messageRef = useRef<HTMLDivElement>(null);
 
-  const exportOriginalAsWav = async (): Promise<Blob> => {
+  const exportOriginal = async (): Promise<{ blob: Blob; ext: string }> => {
     if (messageRef.current) messageRef.current.innerText = "Downloading source...";
-    const response = await fetch(song.fileUrl);
+    const response = await fetch(media.fileUrl);
     const arrayBuffer = await response.arrayBuffer();
 
     if (messageRef.current) messageRef.current.innerText = "Decoding audio...";
@@ -120,12 +120,14 @@ export default function DownloadModal({
     const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
 
     if (messageRef.current) messageRef.current.innerText = "Encoding to WAV...";
-    return audioBufferToWav(audioBuffer);
+    const wavBlob = audioBufferToWav(audioBuffer);
+
+    return { blob: wavBlob, ext: "wav" };
   };
 
-  const exportCurrentSettingsAsWav = async (): Promise<Blob> => {
+  const exportCurrentSettingsAsWav = async (): Promise<{ blob: Blob; ext: string }> => {
     if (messageRef.current) messageRef.current.innerText = "Downloading source...";
-    const response = await fetch(song.fileUrl);
+    const response = await fetch(media.fileUrl);
     const arrayBuffer = await response.arrayBuffer();
 
     if (messageRef.current) messageRef.current.innerText = "Decoding audio...";
@@ -173,16 +175,16 @@ export default function DownloadModal({
     const renderedBuffer = await offlineCtx.startRendering();
 
     if (messageRef.current) messageRef.current.innerText = "Encoding to WAV...";
-    return audioBufferToWav(renderedBuffer);
+    return { blob: audioBufferToWav(renderedBuffer), ext: "wav" };
   };
 
   const handleDownload = async () => {
     setIsProcessing(true);
 
     try {
-      const blob =
+      const { blob, ext } =
         version === "original"
-          ? await exportOriginalAsWav()
+          ? await exportOriginal()
           : await exportCurrentSettingsAsWav();
 
       const url = URL.createObjectURL(blob);
@@ -190,8 +192,8 @@ export default function DownloadModal({
       a.href = url;
       a.download =
         version === "original"
-          ? `${song.metadata.title}_original.wav`
-          : `${song.metadata.title}_remix.wav`;
+          ? `${media.metadata.title}.${ext}`
+          : `${media.metadata.title}_remix.${ext}`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -222,7 +224,9 @@ export default function DownloadModal({
     <Modal opened={opened} onClose={onClose} title="Download" centered>
       <Stack>
         <Alert icon={<IconInfoCircle size={16} />} variant="light">
-          Only WAV export is supported for now.
+          {version === "original"
+            ? "Converting original file to WAV"
+            : "Only WAV export is supported for remixes."}
         </Alert>
 
         <Radio.Group
@@ -240,7 +244,7 @@ export default function DownloadModal({
             <Radio
               value="original"
               label="Original"
-              description="Unchanged audio — export as WAV"
+              description="Download original file as WAV"
             />
           </Stack>
         </Radio.Group>

@@ -1,8 +1,9 @@
 import { useEffect } from "react";
-import { Song } from "@/interfaces";
+import { Media } from "@/interfaces";
+import { getPlatform } from "@/utils";
 
 interface UseMediaSessionProps {
-  song: Song;
+  media: Media;
   isPlaying: boolean;
   currentTime: number;
   duration: number;
@@ -18,7 +19,7 @@ interface UseMediaSessionProps {
  * Sets up metadata, action handlers, and playback state.
  */
 export function useMediaSession({
-  song,
+  media,
   isPlaying,
   currentTime,
   duration,
@@ -32,16 +33,16 @@ export function useMediaSession({
   useEffect(() => {
     if (!("mediaSession" in navigator)) return;
 
-    let highResCover = song.metadata.coverUrl;
-    if (song.metadata.platform === "youtube") {
+    let highResCover = media.metadata.coverUrl;
+    if (getPlatform(media.sourceUrl) === "youtube") {
       highResCover =
-        song.metadata.coverUrl?.replace(/(hq|mq|sd)?default/, "maxresdefault") ||
-        song.metadata.coverUrl;
+        media.metadata.coverUrl?.replace(/(hq|mq|sd)?default/, "maxresdefault") ||
+        media.metadata.coverUrl;
     }
 
     navigator.mediaSession.metadata = new MediaMetadata({
-      title: song.metadata.title,
-      artist: song.metadata.author,
+      title: media.metadata.title,
+      artist: media.metadata.author,
       artwork: [
         {
           src: highResCover,
@@ -79,7 +80,7 @@ export function useMediaSession({
         navigator.mediaSession.setActionHandler("seekto", null);
       } catch {}
     };
-  }, [song, onPlay, onPause, onSeekBackward, onSeekForward, onSeek]);
+  }, [media, onPlay, onPause, onSeekBackward, onSeekForward, onSeek]);
 
   // Update playback state
   useEffect(() => {

@@ -1,16 +1,17 @@
 import { generateColors } from "@mantine/colors-generator";
 import { MantineThemeOverride } from "@mantine/core";
-import { Song } from "@/interfaces";
+import { Media } from "@/interfaces";
+import { getPlatform } from "@/utils";
 
 /**
  * Get the original platform URL for the current video.
  */
-export function getOriginalPlatformUrl(song: Song, currentTime: number): string | null {
-  if (song.metadata.platform === "youtube" && song.metadata.id) {
+export function getOriginalPlatformUrl(media: Media, currentTime: number): string | null {
+  if (getPlatform(media.sourceUrl) === "youtube" && media.metadata.id) {
     const realSeconds = Math.floor(currentTime);
-    return `https://www.youtube.com/watch?v=${song.metadata.id}&t=${realSeconds}s`;
+    return `https://www.youtube.com/watch?v=${media.metadata.id}&t=${realSeconds}s`;
   }
-  if (song.metadata.platform === "tiktok" && song.metadata.id) {
+  if (getPlatform(media.sourceUrl) === "tiktok" && media.metadata.id) {
     const currentUrl = typeof window !== "undefined" ? window.location.pathname : "";
     const match = currentUrl.match(/\/(@[^/]+)\/video\/(\d+)/);
     if (match) {

@@ -38,7 +38,7 @@ import HistoryModal from "@/components/HistoryModal";
 import LoadingOverlay from "@/components/LoadingOverlay";
 import { useAppContext } from "@/context/AppContext";
 import useNoSleep from "@/hooks/useNoSleep";
-import type { Song } from "@/interfaces";
+import type { Media } from "@/interfaces";
 import { getCookiesToUse } from "@/lib/cookies";
 import Icon from "../components/Icon";
 import {
@@ -54,7 +54,7 @@ function LocalUpload() {
     status: false,
     message: null,
   });
-  const { setSong } = useAppContext();
+  const { setMedia } = useAppContext();
   const posthog = usePostHog();
   const router = useRouter();
   const [, noSleep] = useNoSleep();
@@ -70,12 +70,23 @@ function LocalUpload() {
           posthog.capture("upload_music");
           setLoading({
             status: true,
-            message: "Reading music file, please wait...",
+            message: "Saving to library...",
           });
+
+          // Generate stable ID for local file
+          const fileId = `local-${Date.now()}`;
+          const sourceUrl = `local:${fileId}:video`; // Storing as "video" generic media
+
+          // 1. Save Blob to Cache
+          const { setMedia: cacheSetMedia, setMeta } = await import("@/utils/cache");
+          await cacheSetMedia(sourceUrl, files[0]);
+
+          // 2. Parse tags
           const tags = await convertFileToBuffer(files[0]).then(parse);
+          let metadata: Media["metadata"];
+
           if (tags !== false) {
             let imgSrc = "";
-
             if (tags.image?.data) {
               const coverBlob = new Blob([new Uint8Array(tags.image.data)], {
                 type: tags.image.mime,
@@ -83,36 +94,36 @@ function LocalUpload() {
               imgSrc = URL.createObjectURL(coverBlob);
             }
 
-            const metadata = {
-              id: null,
+            metadata = {
+              id: fileId,
               title: tags.title ?? files[0].name,
               author: tags.artist ?? "Unknown",
               coverUrl: imgSrc || "",
             };
-
-            const newSong: Song = {
-              fileUrl: URL.createObjectURL(files[0]),
-              metadata,
-            };
-            setSong(newSong);
-            router.push("/player");
-            setLoading({ status: false, message: null });
-
-            noSleep.enable();
           } else {
-            const newSong: Song = {
-              fileUrl: URL.createObjectURL(files[0]),
-              metadata: {
-                id: null,
-                title: files[0].name,
-                author: "Unknown",
-                coverUrl: "",
-              },
+            metadata = {
+              id: fileId,
+              title: files[0].name,
+              author: "Unknown",
+              coverUrl: "",
             };
-            setSong(newSong);
-            router.push("/player");
-            setLoading({ status: false, message: null });
           }
+
+          // 3. Save Metadata to Cache
+          await setMeta(`local:${fileId}`, metadata);
+
+          // 4. Update State
+          const blobUrl = URL.createObjectURL(files[0]);
+          const newMedia: Media = {
+            fileUrl: blobUrl,
+            sourceUrl: sourceUrl, // Use cache key as stable identifier/sourceUrl
+            metadata,
+          };
+
+          setMedia(newMedia);
+          router.push("/player");
+          setLoading({ status: false, message: null });
+          noSleep.enable();
         }}
         onReject={(files) => console.log("rejected files", files)}
       >
