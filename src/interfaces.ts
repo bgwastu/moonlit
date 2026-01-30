@@ -17,6 +17,14 @@ export interface HistoryItem extends Media {
   playedAt: number;
 }
 
+export interface LyricsSettings {
+  id: number | null;
+  syncedLyrics: string | null;
+  trackName: string | null;
+  artistName: string | null;
+  offset: number; // in seconds, +/- to shift timing
+}
+
 export interface State {
   position: number;
   rate: number;
@@ -26,4 +34,5 @@ export interface State {
   isRepeat: boolean;
   volume: number;
   lastUpdated: number;
+  lyrics?: LyricsSettings | null;
 }

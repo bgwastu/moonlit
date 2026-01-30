@@ -23,6 +23,16 @@ export function getOriginalPlatformUrl(media: Media, currentTime: number): strin
 }
 
 /**
+ * Get YouTube Music URL for a video.
+ */
+export function getYouTubeMusicUrl(media: Media): string | null {
+  if (getPlatform(media.sourceUrl) === "youtube" && media.metadata.id) {
+    return `https://music.youtube.com/watch?v=${media.metadata.id}`;
+  }
+  return null;
+}
+
+/**
  * Create a dynamic theme based on the dominant color.
  */
 export function createDynamicTheme(

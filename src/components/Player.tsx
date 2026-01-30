@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { SiTiktok, SiYoutube } from "@icons-pack/react-simple-icons";
+import { SiTiktok, SiYoutube, SiYoutubemusic } from "@icons-pack/react-simple-icons";
 import {
   ActionIcon,
   Box,
@@ -31,6 +31,7 @@ import {
   IconFileMusic,
   IconHome,
   IconMenu2,
+  IconMicrophone2,
   IconMusic,
   IconPlayerPlay,
   IconPlayerPlayFilled,
@@ -57,17 +58,23 @@ import { useToast } from "@/hooks/useToast";
 import { useVideoPlayer } from "@/hooks/useVideoPlayer";
 import { useVideoStatePersistence } from "@/hooks/useVideoStatePersistence";
 import { Media } from "@/interfaces";
+import { LyricsSettings } from "@/interfaces";
+import { LyricsSearchRecord } from "@/lib/lyrics";
 import { getModeFromRate, getVideoState } from "@/lib/videoState";
+import { saveVideoState } from "@/lib/videoState";
 import { getFormattedTime, getPlatform } from "@/utils";
 import {
   createDynamicTheme,
   getOriginalPlatformUrl,
   getSemitonesFromRate,
+  getYouTubeMusicUrl,
 } from "@/utils/player";
 import CookiesModal from "./CookiesModal";
 import CustomizePlaybackModal from "./CustomizePlaybackModal";
 import DownloadModal from "./DownloadModal";
 import LyricsPanel from "./LyricsPanel";
+import LyricsSearchModal from "./LyricsSearchModal";
+import LyricsSettingsModal from "./LyricsSettingsModal";
 
 type PlaybackMode = "slowed" | "normal" | "speedup" | "custom";
 
@@ -116,6 +123,11 @@ export function Player({ media, repeating }: { media: Media; repeating: boolean 
   const pitchLockedToSpeedRef = useRef(pitchLockedToSpeed);
 
   const [showLyrics, setShowLyrics] = useState(false);
+  const [lyricsSettings, setLyricsSettings] = useState<LyricsSettings | null>(
+    savedState?.lyrics ?? null,
+  );
+  const [lyricsSearchModalOpened, setLyricsSearchModalOpened] = useState(false);
+  const [lyricsSettingsModalOpened, setLyricsSettingsModalOpened] = useState(false);
 
   const dominantColor = useDominantColor(media.metadata.coverUrl);
   const { toast, showToast } = useToast();
@@ -173,18 +185,67 @@ export function Player({ media, repeating }: { media: Media; repeating: boolean 
     lyrics,
     state: lyricsState,
     error: lyricsError,
+    discoveredLyrics,
   } = useLyrics({
     trackName: media.metadata.title,
     artistName: media.metadata.artist ?? media.metadata.author,
     durationSeconds: duration,
     enabled: showLyrics && duration > 0,
+    selectedSyncedLyrics: lyricsSettings?.syncedLyrics,
+    offsetSeconds: lyricsSettings?.offset ?? 0,
   });
 
+  // Populate lyricsSettings when lyrics are auto-discovered
   useEffect(() => {
-    if ((lyricsState !== "not_found" && lyricsState !== "error") || !showLyrics) return;
-    const t = setTimeout(() => setShowLyrics(false), 2000);
-    return () => clearTimeout(t);
-  }, [lyricsState, showLyrics]);
+    if (discoveredLyrics && !lyricsSettings) {
+      const newSettings: LyricsSettings = {
+        id: discoveredLyrics.id,
+        syncedLyrics: discoveredLyrics.syncedLyrics,
+        trackName: discoveredLyrics.trackName,
+        artistName: discoveredLyrics.artistName,
+        offset: 0,
+      };
+      setLyricsSettings(newSettings);
+      saveVideoState(sourceUrl, { lyrics: newSettings });
+    }
+  }, [discoveredLyrics, lyricsSettings, sourceUrl]);
+
+  // Auto-open search modal when lyrics not found
+  useEffect(() => {
+    if (lyricsState === "not_found" && showLyrics && !lyricsSettings?.syncedLyrics) {
+      setLyricsSearchModalOpened(true);
+    }
+  }, [lyricsState, showLyrics, lyricsSettings?.syncedLyrics]);
+
+  // Whether lyrics are available (either discovered or manually selected)
+  const hasLyrics = lyricsState === "ready" && lyrics.length > 0;
+
+  // Lyrics handlers
+  const handleSelectLyrics = useCallback(
+    (record: LyricsSearchRecord) => {
+      const newSettings: LyricsSettings = {
+        id: record.id,
+        syncedLyrics: record.syncedLyrics,
+        trackName: record.trackName,
+        artistName: record.artistName,
+        offset: 0,
+      };
+      setLyricsSettings(newSettings);
+      saveVideoState(sourceUrl, { lyrics: newSettings });
+      setLyricsSearchModalOpened(false);
+    },
+    [sourceUrl],
+  );
+
+  const handleLyricsOffsetChange = useCallback(
+    (offset: number) => {
+      setLyricsSettings((prev) => (prev ? { ...prev, offset } : null));
+      saveVideoState(sourceUrl, {
+        lyrics: lyricsSettings ? { ...lyricsSettings, offset } : null,
+      });
+    },
+    [sourceUrl, lyricsSettings],
+  );
 
   const isLoading = stretchState === "loading";
   const isReady = stretchState === "ready";
@@ -230,7 +291,7 @@ export function Player({ media, repeating }: { media: Media; repeating: boolean 
     onSeek: seek,
   });
 
-  // Video state persistence
+  // Video state persistence (lyrics are saved separately on change)
   useVideoStatePersistence({
     sourceUrl,
     currentTime,
@@ -480,6 +541,7 @@ export function Player({ media, repeating }: { media: Media; repeating: boolean 
   ]);
 
   const originalPlatformUrl = getOriginalPlatformUrl(media, currentTime);
+  const youtubeMusicUrl = getYouTubeMusicUrl(media);
   const dynamicTheme = useMemo(
     () => createDynamicTheme(dominantColor, theme),
     [dominantColor, theme],
@@ -529,6 +591,27 @@ export function Player({ media, repeating }: { media: Media; repeating: boolean 
       />
 
       <CookiesModal opened={cookiesModalOpened} onClose={closeCookiesModal} />
+
+      <LyricsSearchModal
+        opened={lyricsSearchModalOpened}
+        onClose={() => setLyricsSearchModalOpened(false)}
+        initialSearchQuery={media.metadata.title}
+        trackDurationSeconds={duration}
+        currentLyricsId={lyricsSettings?.id ?? null}
+        onSelectLyrics={handleSelectLyrics}
+      />
+
+      <LyricsSettingsModal
+        opened={lyricsSettingsModalOpened}
+        onClose={() => setLyricsSettingsModalOpened(false)}
+        showLyrics={showLyrics}
+        onToggleLyrics={setShowLyrics}
+        currentLyricsTrackName={lyricsSettings?.trackName ?? null}
+        currentLyricsArtistName={lyricsSettings?.artistName ?? null}
+        currentOffset={lyricsSettings?.offset ?? 0}
+        onOffsetChange={handleLyricsOffsetChange}
+        onChangeLyrics={() => setLyricsSearchModalOpened(true)}
+      />
 
       <Box style={{ position: "relative", height: "100dvh" }}>
         {/* Top Controls */}
@@ -848,6 +931,15 @@ export function Player({ media, repeating }: { media: Media; repeating: boolean 
               {`${getFormattedTime(isSeeking ? seekPosition : currentTime)} / ${getFormattedTime(duration)}`}
             </Text>
             <Flex gap="xs">
+              {showLyrics && hasLyrics && (
+                <Button
+                  variant="default"
+                  leftIcon={<IconMicrophone2 size={18} />}
+                  onClick={() => setLyricsSettingsModalOpened(true)}
+                >
+                  Lyrics
+                </Button>
+              )}
               <Menu shadow="md" width={200} position="top-end">
                 <Menu.Target>
                   <Button variant="default" leftIcon={<IconMenu2 size={18} />}>
@@ -873,8 +965,18 @@ export function Player({ media, repeating }: { media: Media; repeating: boolean 
                       rightSection={<IconExternalLink size={12} />}
                       target="_blank"
                     >
-                      Go to{" "}
                       {getPlatform(media.sourceUrl) === "youtube" ? "YouTube" : "TikTok"}
+                    </Menu.Item>
+                  )}
+                  {youtubeMusicUrl && (
+                    <Menu.Item
+                      icon={<SiYoutubemusic size={14} />}
+                      component="a"
+                      href={youtubeMusicUrl}
+                      rightSection={<IconExternalLink size={12} />}
+                      target="_blank"
+                    >
+                      YouTube Music
                     </Menu.Item>
                   )}
                   <Menu.Divider />
@@ -1095,6 +1197,22 @@ export function Player({ media, repeating }: { media: Media; repeating: boolean 
                           ) : (
                             <SiTiktok size={14} />
                           )}
+                        </ActionIcon>
+                      </MediaQuery>
+                    )}
+                    {youtubeMusicUrl && (
+                      <MediaQuery smallerThan="md" styles={{ display: "none" }}>
+                        <ActionIcon
+                          component="a"
+                          href={youtubeMusicUrl}
+                          target="_blank"
+                          variant="transparent"
+                          size="xs"
+                          color="primary"
+                          ml={2}
+                          style={{ opacity: 0.7 }}
+                        >
+                          <SiYoutubemusic size={15} />
                         </ActionIcon>
                       </MediaQuery>
                     )}
