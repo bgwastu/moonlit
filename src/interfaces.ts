@@ -17,9 +17,6 @@ export interface HistoryItem extends Song {
 
 export interface PlaybackSettings {
   playbackRate: number;
-  reverbWet: number;
-  reverbDecay: number;
-  reverbPreDelay: number;
 }
 
 export type PlaybackMode = "slowed" | "normal" | "speedup" | "custom";

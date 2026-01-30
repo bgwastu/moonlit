@@ -1,0 +1,136 @@
+"use client";
+
+import { Alert, Button, Flex, Modal, Slider, Stack, Switch, Text } from "@mantine/core";
+import { IconInfoCircle, IconLock, IconLockOpen } from "@tabler/icons-react";
+
+export interface CustomizePlaybackModalProps {
+  opened: boolean;
+  onClose: () => void;
+  pitchLockedToSpeed: boolean;
+  onLockToggle: (locked: boolean) => void;
+  speedSliderValue: number;
+  onSpeedChange: (value: number) => void;
+  onSpeedChangeEnd: (value: number) => void;
+  semitones: number;
+  pitchSliderValue: number;
+  onPitchChange: (value: number) => void;
+  onPitchChangeEnd: (value: number) => void;
+  isNativeFallback?: boolean;
+  onReset: () => void;
+}
+
+export default function CustomizePlaybackModal({
+  opened,
+  onClose,
+  pitchLockedToSpeed,
+  onLockToggle,
+  speedSliderValue,
+  onSpeedChange,
+  onSpeedChangeEnd,
+  semitones,
+  pitchSliderValue,
+  onPitchChange,
+  onPitchChangeEnd,
+  isNativeFallback = false,
+  onReset,
+}: CustomizePlaybackModalProps) {
+  // In native fallback mode (Safari), pitch is always locked to speed
+  const effectiveLocked = isNativeFallback || pitchLockedToSpeed;
+  return (
+    <Modal
+      opened={opened}
+      onClose={onClose}
+      overlayProps={{ opacity: 0.5, blur: 4 }}
+      title="Customize Playback"
+    >
+      <Stack>
+        {isNativeFallback && (
+          <Alert icon={<IconInfoCircle size={16} />} color="blue" mb="md">
+            On Safari, pitch is always synced to speed for best compatibility.
+          </Alert>
+        )}
+        <Flex align="center" justify="space-between" mb="sm" gap="md" wrap="wrap">
+          <Flex align="center" gap="xs">
+            {effectiveLocked ? (
+              <IconLock size={18} style={{ opacity: 0.8 }} />
+            ) : (
+              <IconLockOpen size={18} style={{ opacity: 0.8 }} />
+            )}
+            <Text size="sm" fw={500}>
+              Lock pitch to speed
+            </Text>
+          </Flex>
+          <Switch
+            size="md"
+            checked={effectiveLocked}
+            disabled={isNativeFallback}
+            onChange={(e) => onLockToggle(e.currentTarget.checked)}
+          />
+        </Flex>
+
+        <Flex direction="column" mb={22} gap={2}>
+          <Text size="sm">Speed: {speedSliderValue.toFixed(2)}x</Text>
+          <Slider
+            min={0.5}
+            max={1.5}
+            label={(v) =>
+              v < 0.7 ? `who hurt u? 😭 (${v.toFixed(2)}x)` : `${v.toFixed(2)}x`
+            }
+            step={0.01}
+            thumbSize={20}
+            styles={{
+              thumb: { borderWidth: 0 },
+            }}
+            marks={[
+              { value: 0.5, label: "0.5x" },
+              { value: 0.8, label: "Slow" },
+              { value: 1, label: "1x" },
+              { value: 1.25, label: "Fast" },
+              { value: 1.5, label: "1.5x" },
+            ]}
+            value={speedSliderValue}
+            onChange={onSpeedChange}
+            onChangeEnd={onSpeedChangeEnd}
+          />
+        </Flex>
+
+        <Flex direction="column" mb={22} gap={2}>
+          <Text size="sm">
+            Pitch: {(effectiveLocked ? semitones : pitchSliderValue) >= 0 ? "+" : ""}
+            {(effectiveLocked ? semitones : pitchSliderValue).toFixed(1)} semitones
+            {effectiveLocked && (
+              <Text component="span" size="xs" c="dimmed" ml={6}>
+                (synced to speed)
+              </Text>
+            )}
+          </Text>
+          <Slider
+            min={-12}
+            max={12}
+            step={0.1}
+            thumbSize={20}
+            disabled={effectiveLocked}
+            styles={{
+              thumb: { borderWidth: 0 },
+            }}
+            marks={[
+              { value: -12, label: "-12" },
+              { value: -6, label: "-6" },
+              { value: 0, label: "0" },
+              { value: 6, label: "+6" },
+              { value: 12, label: "+12" },
+            ]}
+            label={(v) => `${v >= 0 ? "+" : ""}${v.toFixed(1)}`}
+            value={effectiveLocked ? semitones : pitchSliderValue}
+            onChange={effectiveLocked ? () => {} : onPitchChange}
+            onChangeEnd={onPitchChangeEnd}
+          />
+        </Flex>
+
+        <Button variant="light" onClick={onReset}>
+          Reset to Default
+        </Button>
+      </Stack>
+    </Modal>
+  );
+}

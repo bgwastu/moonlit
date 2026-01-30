@@ -6,8 +6,8 @@
 export interface VideoState {
   position: number; // Current playback position in seconds
   mode: "slowed" | "normal" | "speedup" | "custom";
-  customRate: number;
-  reverbAmount: number;
+  rate: number; // playback speed ratio (0.5-2.0)
+  semitones: number; // pitch shift in semitones (-12 to +12)
   isRepeat: boolean;
   lastUpdated: number; // Timestamp
 }
@@ -23,12 +23,8 @@ export function getVideoStorageKey(url: string): string {
   try {
     const urlObj = new URL(url);
     // For YouTube: use video ID
-    if (
-      urlObj.hostname.includes("youtube") ||
-      urlObj.hostname.includes("youtu.be")
-    ) {
-      const videoId =
-        urlObj.searchParams.get("v") || urlObj.pathname.split("/").pop();
+    if (urlObj.hostname.includes("youtube") || urlObj.hostname.includes("youtu.be")) {
+      const videoId = urlObj.searchParams.get("v") || urlObj.pathname.split("/").pop();
       return `${STORAGE_KEY_PREFIX}yt:${videoId}`;
     }
     // For TikTok: use video ID from path
@@ -56,8 +52,8 @@ export function saveVideoState(url: string, state: Partial<VideoState>): void {
     const newState: VideoState = {
       position: state.position ?? existing?.position ?? 0,
       mode: state.mode ?? existing?.mode ?? "slowed",
-      customRate: state.customRate ?? existing?.customRate ?? 1,
-      reverbAmount: state.reverbAmount ?? existing?.reverbAmount ?? 0,
+      rate: state.rate ?? existing?.rate ?? 0.8,
+      semitones: state.semitones ?? existing?.semitones ?? 0,
       isRepeat: state.isRepeat ?? existing?.isRepeat ?? false,
       lastUpdated: Date.now(),
     };
