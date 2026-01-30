@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { time } from "console";
 
 export type StretchPlayerState = "loading" | "ready" | "error";
 
@@ -11,6 +12,7 @@ interface UseStretchPlayerProps {
   initialPosition?: number;
   initialReverbAmount?: number;
   autoPlay?: boolean;
+  onEnded?: () => void;
 }
 
 interface UseStretchPlayerReturn {
@@ -63,6 +65,7 @@ export function useStretchPlayer({
   initialPosition = 0,
   initialReverbAmount = 0,
   autoPlay = true,
+  onEnded,
 }: UseStretchPlayerProps): UseStretchPlayerReturn {
   const [state, setState] = useState<StretchPlayerState>("loading");
   const [rate, setRateState] = useState(initialRate);
@@ -93,12 +96,14 @@ export function useStretchPlayer({
   const rateRef = useRef(initialRate);
   const semitonesRef = useRef(initialSemitones);
   const isPlayingRef = useRef(false);
+  const onEndedRef = useRef(onEnded);
 
   // Keep refs in sync
   rateRef.current = rate;
   semitonesRef.current = semitones;
   isPlayingRef.current = isPlaying;
   reverbAmountRef.current = reverbAmount;
+  onEndedRef.current = onEnded;
 
   const cleanup = useCallback(() => {
     console.log("StretchPlayer: cleanup");
@@ -499,9 +504,13 @@ export function useStretchPlayer({
 
             // Handle end
             if (time >= durationRef.current - 0.1 && isPlayingRef.current) {
-              videoElement.pause();
-              setIsPlaying(false);
-              isPlayingRef.current = false;
+              if (onEndedRef.current) {
+                onEndedRef.current();
+              } else {
+                videoElement.pause();
+                setIsPlaying(false);
+                isPlayingRef.current = false;
+              }
             }
             return;
           }
@@ -524,10 +533,14 @@ export function useStretchPlayer({
 
           // Handle end
           if (audioTime >= dur - 0.1 && isPlayingRef.current) {
-            node.schedule({ active: false });
-            setIsPlaying(false);
-            isPlayingRef.current = false;
-            if (videoElement) videoElement.pause();
+            if (onEndedRef.current) {
+              onEndedRef.current();
+            } else {
+              node.schedule({ active: false });
+              setIsPlaying(false);
+              isPlayingRef.current = false;
+              if (videoElement) videoElement.pause();
+            }
           }
         }, 100);
 
