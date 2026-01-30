@@ -650,6 +650,49 @@ export function useStretchPlayer({
     }
   }, [videoElement, state, rate, semitones]);
 
+  // Re-sync state when tab becomes visible again (browser sleep, background tab, etc.)
+  useEffect(() => {
+    const syncFromSource = () => {
+      if (document.visibilityState !== "visible") return;
+      const video = videoElement;
+      if (!video || durationRef.current <= 0) return;
+
+      if (useNativeFallbackRef.current) {
+        const time = video.currentTime;
+        const playing = !video.paused;
+        setCurrentTime(Math.min(time, durationRef.current));
+        setIsPlaying(playing);
+        isPlayingRef.current = playing;
+        return;
+      }
+
+      const node = stretchNodeRef.current;
+      if (!node) return;
+      const audioTime = node.inputTime ?? 0;
+      const dur = durationRef.current;
+      setCurrentTime(Math.min(audioTime, dur));
+      if (video) {
+        const drift = Math.abs(video.currentTime - audioTime);
+        if (drift > 0.1) video.currentTime = audioTime;
+      }
+      const playing = !video.paused;
+      setIsPlaying(playing);
+      isPlayingRef.current = playing;
+    };
+
+    const onVisible = () => {
+      syncFromSource();
+    };
+
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("pageshow", onVisible);
+
+    return () => {
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("pageshow", onVisible);
+    };
+  }, [videoElement]);
+
   return {
     state,
     isPlaying,
