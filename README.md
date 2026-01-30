@@ -1,8 +1,8 @@
 # Moonlit
 
-Are you a weirdo who likes to listen to _slowed_ or _nightcore_ music? Well, you'll probably like this app.
+Are you a weirdo who likes to listen to _slowed_, _nightcore_ (or _sped up_, as the new generation calls it) music? Well, you'll probably like this app.
 
-Moonlit is a music app with customizable playback to accompany your moods. It works by using playback rate adjustment and the Web Audio API (for reverb) to manipulate the audio in real-time.
+Moonlit lets you grab tracks from YouTube or TikTok and tweak their pitch, reverb, and playback speed in real-time. It’s a simple tool for creating your own _slowed_ or _nightcore_ vibes.
 
 See it in action: [moonlit.wastu.net](https://moonlit.wastu.net)
 
@@ -11,18 +11,18 @@ You can listen to your favorite tracks from multiple platforms on Moonlit:
 - **YouTube**: Replace `youtube.com` with `moonlit.wastu.net` to the URL (example: <a href="https://moonlit.wastu.net/watch?v=AEp08vVYreg" target="_blank">moonlit.wastu.net/watch?v=AEp08vVYreg</a>)
 - **TikTok**: Replace `tiktok.com` with `moonlit.wastu.net` to the URL (example: <a href="https://moonlit.wastu.net/@etherealbia/video/7482838437075094790" target="_blank">moonlit.wastu.net/@etherealbia/video/7482838437075094790</a>)
 
-### Browser Extension / Userscript 🧩
+### Userscript
 
-Want a smoother experience? Install our **Userscript** to add an "Open in Moonlit" button directly to YouTube and TikTok!
+Want a smoother experience? Install **Userscript** to add an "Open in Moonlit" button directly to YouTube and TikTok!
 
 [![Install Userscript](https://img.shields.io/badge/Install-Userscript-5F3DC4?style=for-the-badge&logo=tampermonkey&logoColor=white)](https://moonlit.wastu.net/moonlit-opener.user.js)
 
 1. Install [Tampermonkey](https://www.tampermonkey.net/) extension.
 2. Click the button above to install the script.
 
-# Demo 🔊
+# Demo (with audio 🔊)
+https://github.com/user-attachments/assets/a54716fb-35cb-4158-b789-74a74fc359dc
 
-https://github.com/bgwastu/moonlit/assets/67826350/a60fa36b-528a-4216-a925-971055a9ff42
 
 # Features
 
@@ -44,7 +44,7 @@ Moonlit leverages the **Web Audio API** to process audio real-time in the browse
 - **Reverb**: Implemented using a Convolution Reverb with a generated impulse response.
 - **Syncing**: The processed audio is played through an AudioContext while keeping the video element (muted) synchronized for visuals.
 
-# Credits 🌟
+# Credits
 
 - **Signalsmith Stretch**: A massive shoutout to [Signalsmith Audio](https://signalsmith-audio.co.uk/) for their open-source time-stretching library. Honestly, I'm too dumb to implement complex DSP algorithms like this by myself, so this library is doing all the heavy lifting! 😅
 
