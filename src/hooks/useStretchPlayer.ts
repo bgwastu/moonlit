@@ -155,6 +155,7 @@ export function useStretchPlayer({
     stretchInitedRef.current = false;
     useNativeFallbackRef.current = false;
     audioBufferRef.current = null;
+    initStartedRef.current = false;
     if (audioContextRef.current && audioContextRef.current.state !== "closed") {
       audioContextRef.current.close().catch(() => {});
       audioContextRef.current = null;
@@ -487,8 +488,12 @@ export function useStretchPlayer({
   );
 
   // Initial load: context + fetch + decode (stretch node is deferred to play())
+  // Re-run when context was cleared (e.g. hot reload) so we don't get stuck with no context
   useEffect(() => {
-    if (!isVideoReady || !videoElement || !fileUrl || initStartedRef.current) {
+    if (!isVideoReady || !videoElement || !fileUrl) {
+      return;
+    }
+    if (initStartedRef.current && audioContextRef.current !== null) {
       return;
     }
     initStartedRef.current = true;
@@ -501,6 +506,7 @@ export function useStretchPlayer({
 
       try {
         cleanup();
+        initStartedRef.current = true;
 
         // Create AudioContext
         const audioContext = new (

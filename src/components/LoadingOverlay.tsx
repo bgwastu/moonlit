@@ -13,7 +13,8 @@ export default function LoadingOverlay({ visible, message }: Props) {
   return (
     <MantineLoadingOverlay
       visible={visible}
-      overlayBlur={5}
+      overlayBlur={10}
+      overlayOpacity={0.9}
       loader={
         <Flex direction="column" gap="md" align="center" justify="center">
           <Loader />

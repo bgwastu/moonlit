@@ -22,7 +22,6 @@ import { IconMusic } from "@tabler/icons-react";
 import Icon from "@/components/Icon";
 import { Player } from "@/components/Player";
 import { useAppContext } from "@/context/AppContext";
-import { getDominantColorFromImage, useDominantColor } from "@/hooks/useDominantColor";
 import { useMediaDownloader } from "@/hooks/useMediaDownloader";
 import useNoSleep from "@/hooks/useNoSleep";
 import { HistoryItem, Media } from "@/interfaces";
@@ -46,7 +45,6 @@ export default function InitialPlayer({
   const { media, history, setHistory } = useAppContext();
   const [isPlayer, setIsPlayer] = useState(false);
   const [noSleepEnabled, noSleepControls] = useNoSleep();
-  const [dominantColor, setDominantColor] = useState<string>("rgba(0,0,0,0)");
 
   const { downloadState, startDownload } = useMediaDownloader(url || "", metadata || {});
 
@@ -113,21 +111,6 @@ export default function InitialPlayer({
     checkAndStart();
   }, [url, duration, router, startDownload, isYouTube, isLocalFile]);
 
-  // Extract dominant color from cover
-  // Extract dominant color from cover
-  useEffect(() => {
-    const coverUrl = isLocalFile ? media?.metadata.coverUrl : metadata?.coverUrl;
-    if (!coverUrl) return;
-
-    const img = document.createElement("img");
-    img.crossOrigin = "Anonymous";
-    img.src = coverUrl.replace(/(hq|mq|sd)?default/, "maxresdefault") || coverUrl;
-    img.onload = () => {
-      const color = getDominantColorFromImage(img);
-      setDominantColor(color);
-    };
-  }, [metadata?.coverUrl, media?.metadata.coverUrl, isLocalFile]);
-
   const handleGoToPlayer = () => {
     setIsPlayer(true);
     if (!noSleepEnabled) {
@@ -154,14 +137,7 @@ export default function InitialPlayer({
   // Show player
   if (isPlayer && media) {
     const isShortForm = isLocalFile ? false : !isYouTube || url?.includes("/shorts/");
-    return (
-      <Player
-        key={media.fileUrl}
-        media={media}
-        repeating={isShortForm}
-        initialDominantColor={dominantColor}
-      />
-    );
+    return <Player key={media.fileUrl} media={media} repeating={isShortForm} />;
   }
 
   // Local file mode - waiting for user to click play
