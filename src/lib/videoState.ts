@@ -1,51 +1,45 @@
-/**
- * Video State Management
- * Saves and restores playback state per video URL
- */
-
 export interface VideoState {
-  position: number; // Current playback position in seconds
-  mode: "slowed" | "normal" | "speedup" | "custom";
-  rate: number; // playback speed ratio (0.5-2.0)
-  semitones: number; // pitch shift in semitones (-12 to +12)
-  reverbAmount: number; // reverb mix level (0-1)
-  pitchLockedToSpeed: boolean; // whether pitch is locked to speed
+  position: number;
+  rate: number;
+  semitones: number;
+  reverbAmount: number;
+  pitchLockedToSpeed: boolean;
   isRepeat: boolean;
-  lastUpdated: number; // Timestamp
+  lastUpdated: number;
 }
 
 const STORAGE_KEY_PREFIX = "moonlit:video:";
-const MAX_STORED_VIDEOS = 50; // Limit to prevent localStorage bloat
+const MAX_STORED_VIDEOS = 50;
 
-/**
- * Get a storage key for a video URL
- */
+/** Derive playback mode from rate value */
+export function getModeFromRate(
+  rate: number,
+): "slowed" | "normal" | "speedup" | "custom" {
+  if (Math.abs(rate - 0.8) < 0.01) return "slowed";
+  if (Math.abs(rate - 1) < 0.01) return "normal";
+  if (Math.abs(rate - 1.25) < 0.01) return "speedup";
+  return "custom";
+}
+
+/** Generate storage key from video URL */
 export function getVideoStorageKey(url: string): string {
-  // Create a simplified key from the URL
   try {
     const urlObj = new URL(url);
-    // For YouTube: use video ID
     if (urlObj.hostname.includes("youtube") || urlObj.hostname.includes("youtu.be")) {
       const videoId = urlObj.searchParams.get("v") || urlObj.pathname.split("/").pop();
       return `${STORAGE_KEY_PREFIX}yt:${videoId}`;
     }
-    // For TikTok: use video ID from path
     if (urlObj.hostname.includes("tiktok")) {
       const match = urlObj.pathname.match(/video\/(\d+)/);
-      if (match) {
-        return `${STORAGE_KEY_PREFIX}tt:${match[1]}`;
-      }
+      if (match) return `${STORAGE_KEY_PREFIX}tt:${match[1]}`;
     }
-    // Fallback: use full URL hash
     return `${STORAGE_KEY_PREFIX}${btoa(url).slice(0, 32)}`;
   } catch {
     return `${STORAGE_KEY_PREFIX}${btoa(url).slice(0, 32)}`;
   }
 }
 
-/**
- * Save video state to localStorage
- */
+/** Save video playback state to localStorage */
 export function saveVideoState(url: string, state: Partial<VideoState>): void {
   try {
     const key = getVideoStorageKey(url);
@@ -53,7 +47,6 @@ export function saveVideoState(url: string, state: Partial<VideoState>): void {
 
     const newState: VideoState = {
       position: state.position ?? existing?.position ?? 0,
-      mode: state.mode ?? existing?.mode ?? "slowed",
       rate: state.rate ?? existing?.rate ?? 0.8,
       semitones: state.semitones ?? existing?.semitones ?? 0,
       reverbAmount: state.reverbAmount ?? existing?.reverbAmount ?? 0,
@@ -64,71 +57,56 @@ export function saveVideoState(url: string, state: Partial<VideoState>): void {
     };
 
     localStorage.setItem(key, JSON.stringify(newState));
-
-    // Cleanup old entries if too many
     cleanupOldEntries();
   } catch (e) {
     console.error("Failed to save video state:", e);
   }
 }
 
-/**
- * Get video state from localStorage
- */
+/** Get video playback state from localStorage */
 export function getVideoState(url: string): VideoState | null {
   try {
     const key = getVideoStorageKey(url);
     const stored = localStorage.getItem(key);
     if (!stored) return null;
     return JSON.parse(stored) as VideoState;
-  } catch (e) {
-    console.error("Failed to get video state:", e);
+  } catch {
     return null;
   }
 }
 
-/**
- * Clear video state for a specific URL
- */
+/** Clear video state for a URL */
 export function clearVideoState(url: string): void {
   try {
-    const key = getVideoStorageKey(url);
-    localStorage.removeItem(key);
-  } catch (e) {
-    console.error("Failed to clear video state:", e);
-  }
+    localStorage.removeItem(getVideoStorageKey(url));
+  } catch {}
 }
 
-/**
- * Cleanup old entries to prevent localStorage bloat
- */
+/** Remove oldest entries when exceeding storage limit */
 function cleanupOldEntries(): void {
   try {
     const entries: { key: string; lastUpdated: number }[] = [];
 
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i);
-      if (key && key.startsWith(STORAGE_KEY_PREFIX)) {
+      if (key?.startsWith(STORAGE_KEY_PREFIX)) {
         const data = localStorage.getItem(key);
         if (data) {
           try {
             const parsed = JSON.parse(data);
             entries.push({ key, lastUpdated: parsed.lastUpdated || 0 });
           } catch {
-            // Remove corrupted entries
             localStorage.removeItem(key);
           }
         }
       }
     }
 
-    // If we have too many entries, remove the oldest ones
     if (entries.length > MAX_STORED_VIDEOS) {
       entries.sort((a, b) => a.lastUpdated - b.lastUpdated);
-      const toRemove = entries.slice(0, entries.length - MAX_STORED_VIDEOS);
-      toRemove.forEach(({ key }) => localStorage.removeItem(key));
+      entries.slice(0, entries.length - MAX_STORED_VIDEOS).forEach(({ key }) => {
+        localStorage.removeItem(key);
+      });
     }
-  } catch (e) {
-    console.error("Failed to cleanup old entries:", e);
-  }
+  } catch {}
 }

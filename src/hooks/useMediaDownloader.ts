@@ -1,21 +1,17 @@
-import { songAtom } from "@/state";
-import { isSupportedURL } from "@/utils";
-import { DownloadState, downloadWithProgress } from "@/utils/downloader";
-import { notifications } from "@mantine/notifications";
-import { useAtom } from "jotai";
-import { useRouter } from "next/navigation";
-import { usePostHog } from "posthog-js/react";
 import { useCallback, useState } from "react";
+import { useRouter } from "next/navigation";
+import { notifications } from "@mantine/notifications";
+import { usePostHog } from "posthog-js/react";
+import { useAppContext } from "@/context/AppContext";
 import { Song } from "@/interfaces";
-import { isYoutubeURL, isTikTokURL } from "@/utils";
+import { isSupportedURL } from "@/utils";
+import { isTikTokURL, isYoutubeURL } from "@/utils";
+import { DownloadState, downloadWithProgress } from "@/utils/downloader";
 
-export function useMediaDownloader(
-  url: string,
-  metadata: Partial<Song["metadata"]>,
-) {
+export function useMediaDownloader(url: string, metadata: Partial<Song["metadata"]>) {
   const router = useRouter();
   const posthog = usePostHog();
-  const [, setSong] = useAtom(songAtom);
+  const { setSong } = useAppContext();
 
   const [downloadState, setDownloadState] = useState<DownloadState>({
     status: "idle",
@@ -40,7 +36,7 @@ export function useMediaDownloader(
         return () => {};
       }
 
-      (setSong as (song: Song | null) => void)(null);
+      setSong(null);
       setDownloadState({ status: "idle", percent: 0 });
 
       const abortController = new AbortController();
@@ -54,7 +50,7 @@ export function useMediaDownloader(
         downloadQuality,
       )
         .then((downloadedSong: Song) => {
-          (setSong as (song: Song | null) => void)(downloadedSong);
+          setSong(downloadedSong);
         })
         .catch((e) => {
           if (e.name === "AbortError") return;

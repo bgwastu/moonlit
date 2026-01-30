@@ -17,9 +17,8 @@ import {
   useMantineTheme,
 } from "@mantine/core";
 import { IconHistory, IconPlayerPlay, IconTrash, IconX } from "@tabler/icons-react";
-import { useAtom } from "jotai";
+import { useAppContext } from "@/context/AppContext";
 import { HistoryItem } from "@/interfaces";
-import { historyAtom } from "@/state";
 import { getTikTokCreatorAndVideoId, getYouTubeId } from "@/utils";
 
 interface HistoryModalProps {
@@ -43,7 +42,7 @@ const timeAgo = (date: number) => {
 };
 
 export default function HistoryModal({ opened, onClose }: HistoryModalProps) {
-  const [history, setHistory] = useAtom(historyAtom);
+  const { history, setHistory } = useAppContext();
   const router = useRouter();
   const theme = useMantineTheme();
   const [hoveredItem, setHoveredItem] = useState<string | null>(null);

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { SiTiktok, SiYoutube } from "@icons-pack/react-simple-icons";
 import {
   ActionIcon,
   Anchor,
@@ -22,8 +23,6 @@ import { useForm } from "@mantine/form";
 import { notifications } from "@mantine/notifications";
 import {
   IconBrandGithub,
-  IconBrandTiktok,
-  IconBrandYoutube,
   IconCookie,
   IconHistory,
   IconMusicCheck,
@@ -33,16 +32,15 @@ import {
 } from "@tabler/icons-react";
 import parse from "id3-parser";
 import { convertFileToBuffer } from "id3-parser/lib/util";
-import { atom, useAtom } from "jotai";
 import { usePostHog } from "posthog-js/react";
 import CookiesModal from "@/components/CookiesModal";
 import HistoryModal from "@/components/HistoryModal";
 import LoadingOverlay from "@/components/LoadingOverlay";
+import { useAppContext } from "@/context/AppContext";
 import useNoSleep from "@/hooks/useNoSleep";
 import type { Song } from "@/interfaces";
 import { getCookiesToUse } from "@/lib/cookies";
 import Icon from "../components/Icon";
-import { songAtom } from "../state";
 import {
   getTikTokCreatorAndVideoId,
   getYouTubeId,
@@ -51,107 +49,95 @@ import {
   isYoutubeURL,
 } from "../utils";
 
-const loadingAtom = atom<{
-  status: boolean;
-  message: string | null;
-}>({
-  status: false,
-  message: null,
-});
-
 function LocalUpload() {
-  const [loading, setLoading] = useAtom(loadingAtom);
-  const [, setSong] = useAtom(songAtom);
+  const [loading, setLoading] = useState<{ status: boolean; message: string | null }>({
+    status: false,
+    message: null,
+  });
+  const { setSong } = useAppContext();
   const posthog = usePostHog();
   const router = useRouter();
   const [, noSleep] = useNoSleep();
 
-  const handleSetSong = (newSong: Song) => {
-    (setSong as (song: Song | null) => void)(newSong);
-  };
-
   return (
-    <Dropzone
-      accept={["audio/mpeg", "video/mp4", "audio/wav"]}
-      maxFiles={1}
-      disabled={loading.status}
-      onDrop={async (files) => {
-        posthog.capture("upload_music");
-        setLoading({
-          status: true,
-          message: "Reading music file, please wait...",
-        });
-        const tags = await convertFileToBuffer(files[0]).then(parse);
-        if (tags !== false) {
-          let imgSrc = "";
-
-          if (tags.image?.data) {
-            const coverBlob = new Blob([new Uint8Array(tags.image.data)], {
-              type: tags.image.mime,
-            });
-            imgSrc = URL.createObjectURL(coverBlob);
-          }
-
-          const metadata = {
-            id: null,
-            title: tags.title ?? files[0].name,
-            author: tags.artist ?? "Unknown",
-            coverUrl: imgSrc || "",
-          };
-
-          const newSong: Song = {
-            fileUrl: URL.createObjectURL(files[0]),
-            metadata,
-          };
-          handleSetSong(newSong);
-          router.push("/player");
+    <>
+      <LoadingOverlay visible={loading.status} message={loading.message} />
+      <Dropzone
+        accept={["audio/mpeg", "video/mp4", "audio/wav"]}
+        maxFiles={1}
+        disabled={loading.status}
+        onDrop={async (files) => {
+          posthog.capture("upload_music");
           setLoading({
-            status: false,
-            message: null,
+            status: true,
+            message: "Reading music file, please wait...",
           });
+          const tags = await convertFileToBuffer(files[0]).then(parse);
+          if (tags !== false) {
+            let imgSrc = "";
 
-          noSleep.enable();
-        } else {
-          const newSong: Song = {
-            fileUrl: URL.createObjectURL(files[0]),
-            metadata: {
+            if (tags.image?.data) {
+              const coverBlob = new Blob([new Uint8Array(tags.image.data)], {
+                type: tags.image.mime,
+              });
+              imgSrc = URL.createObjectURL(coverBlob);
+            }
+
+            const metadata = {
               id: null,
-              title: files[0].name,
-              author: "Unknown",
-              coverUrl: "",
-            },
-          };
-          handleSetSong(newSong);
-          router.push("/player");
-          setLoading({
-            status: false,
-            message: null,
-          });
-        }
-      }}
-      onReject={(files) => console.log("rejected files", files)}
-    >
-      <Flex align="center" justify="center" gap="sm" mih={220} h="100%">
-        <Dropzone.Accept>
-          <IconMusicCheck size="3.2rem" stroke={1.5} />
-        </Dropzone.Accept>
-        <Dropzone.Reject>
-          <IconMusicX size="3.2rem" stroke={1.5} />
-        </Dropzone.Reject>
-        <Dropzone.Idle>
-          <IconMusicPlus size="3.2rem" stroke={1.5} />
-        </Dropzone.Idle>
+              title: tags.title ?? files[0].name,
+              author: tags.artist ?? "Unknown",
+              coverUrl: imgSrc || "",
+            };
 
-        <div>
-          <Text size="xl" inline>
-            Drag music here or click to select files
-          </Text>
-          <Text size="sm" color="dimmed" inline mt={7}>
-            Upload a music/video file to play with custom effects
-          </Text>
-        </div>
-      </Flex>
-    </Dropzone>
+            const newSong: Song = {
+              fileUrl: URL.createObjectURL(files[0]),
+              metadata,
+            };
+            setSong(newSong);
+            router.push("/player");
+            setLoading({ status: false, message: null });
+
+            noSleep.enable();
+          } else {
+            const newSong: Song = {
+              fileUrl: URL.createObjectURL(files[0]),
+              metadata: {
+                id: null,
+                title: files[0].name,
+                author: "Unknown",
+                coverUrl: "",
+              },
+            };
+            setSong(newSong);
+            router.push("/player");
+            setLoading({ status: false, message: null });
+          }
+        }}
+        onReject={(files) => console.log("rejected files", files)}
+      >
+        <Flex align="center" justify="center" gap="sm" mih={220} h="100%">
+          <Dropzone.Accept>
+            <IconMusicCheck size="3.2rem" stroke={1.5} />
+          </Dropzone.Accept>
+          <Dropzone.Reject>
+            <IconMusicX size="3.2rem" stroke={1.5} />
+          </Dropzone.Reject>
+          <Dropzone.Idle>
+            <IconMusicPlus size="3.2rem" stroke={1.5} />
+          </Dropzone.Idle>
+
+          <div>
+            <Text size="xl" inline>
+              Drag music here or click to select files
+            </Text>
+            <Text size="sm" color="dimmed" inline mt={7}>
+              Upload a music/video file to play with custom effects
+            </Text>
+          </div>
+        </Flex>
+      </Dropzone>
+    </>
   );
 }
 
@@ -227,9 +213,9 @@ function YoutubeUpload({ onOpenCookies }: { onOpenCookies: () => void }) {
         <TextInput
           icon={
             form.values.url.includes("youtube") ? (
-              <IconBrandYoutube />
+              <SiYoutube size={20} />
             ) : form.values.url.includes("tiktok") ? (
-              <IconBrandTiktok />
+              <SiTiktok size={20} />
             ) : (
               <IconWorld />
             )
@@ -273,16 +259,12 @@ function FooterSection() {
   );
 }
 
-// ... (existing imports are fine, I will just add History logic)
-
 export default function UploadPage() {
-  const [loading] = useAtom(loadingAtom);
   const [cookiesOpened, setCookiesOpened] = useState(false);
   const [historyOpened, setHistoryOpened] = useState(false);
 
   return (
     <>
-      <LoadingOverlay visible={loading.status} message={loading.message} />
       <CookiesModal opened={cookiesOpened} onClose={() => setCookiesOpened(false)} />
       <HistoryModal opened={historyOpened} onClose={() => setHistoryOpened(false)} />
 
@@ -297,9 +279,7 @@ export default function UploadPage() {
                     fz={rem(28)}
                     fw="bold"
                     lts={rem(0.2)}
-                    style={{
-                      userSelect: "none",
-                    }}
+                    style={{ userSelect: "none" }}
                   >
                     Moonlit
                   </Text>
