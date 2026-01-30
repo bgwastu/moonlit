@@ -9,6 +9,7 @@ interface UseStretchPlayerProps {
   initialRate?: number;
   initialSemitones?: number;
   initialPosition?: number;
+  initialReverbAmount?: number;
   autoPlay?: boolean;
 }
 
@@ -19,16 +20,39 @@ interface UseStretchPlayerReturn {
   duration: number;
   rate: number;
   semitones: number;
+  reverbAmount: number;
   isNativeFallback: boolean;
   play: () => void;
   pause: () => void;
   togglePlayback: () => void;
   setRate: (rate: number) => void;
   setSemitones: (semitones: number) => void;
+  setReverbAmount: (amount: number) => void;
   seek: (timeSeconds: number) => void;
 }
 
 const FETCH_TIMEOUT_MS = 30000;
+
+// Generate impulse response for reverb
+function generateImpulseResponse(
+  context: AudioContext | OfflineAudioContext,
+  duration: number = 2,
+  decay: number = 2,
+): AudioBuffer {
+  const sampleRate = context.sampleRate;
+  const length = sampleRate * duration;
+  const impulse = context.createBuffer(2, length, sampleRate);
+  const leftChannel = impulse.getChannelData(0);
+  const rightChannel = impulse.getChannelData(1);
+
+  for (let i = 0; i < length; i++) {
+    const n = i / sampleRate;
+    leftChannel[i] = (Math.random() * 2 - 1) * Math.pow(1 - n / duration, decay);
+    rightChannel[i] = (Math.random() * 2 - 1) * Math.pow(1 - n / duration, decay);
+  }
+
+  return impulse;
+}
 
 export function useStretchPlayer({
   videoElement,
@@ -37,6 +61,7 @@ export function useStretchPlayer({
   initialRate = 1,
   initialSemitones = 0,
   initialPosition = 0,
+  initialReverbAmount = 0,
   autoPlay = true,
 }: UseStretchPlayerProps): UseStretchPlayerReturn {
   const [state, setState] = useState<StretchPlayerState>("loading");
@@ -46,6 +71,7 @@ export function useStretchPlayer({
   const [duration, setDuration] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isNativeFallback, setIsNativeFallback] = useState(false);
+  const [reverbAmount, setReverbAmountState] = useState(initialReverbAmount);
 
   const audioContextRef = useRef<AudioContext | null>(null);
   const stretchNodeRef = useRef<any>(null);
@@ -57,6 +83,12 @@ export function useStretchPlayer({
   const durationRef = useRef(0);
   const audioBufferRef = useRef<AudioBuffer | null>(null);
 
+  // Reverb nodes
+  const convolverRef = useRef<ConvolverNode | null>(null);
+  const dryGainRef = useRef<GainNode | null>(null);
+  const wetGainRef = useRef<GainNode | null>(null);
+  const reverbAmountRef = useRef(initialReverbAmount);
+
   // Use refs for values needed in callbacks to avoid stale closures
   const rateRef = useRef(initialRate);
   const semitonesRef = useRef(initialSemitones);
@@ -66,6 +98,7 @@ export function useStretchPlayer({
   rateRef.current = rate;
   semitonesRef.current = semitones;
   isPlayingRef.current = isPlaying;
+  reverbAmountRef.current = reverbAmount;
 
   const cleanup = useCallback(() => {
     console.log("StretchPlayer: cleanup");
@@ -81,6 +114,25 @@ export function useStretchPlayer({
         // Ignore cleanup errors
       }
       stretchNodeRef.current = null;
+    }
+    // Clean up reverb nodes
+    if (convolverRef.current) {
+      try {
+        convolverRef.current.disconnect();
+      } catch (e) {}
+      convolverRef.current = null;
+    }
+    if (dryGainRef.current) {
+      try {
+        dryGainRef.current.disconnect();
+      } catch (e) {}
+      dryGainRef.current = null;
+    }
+    if (wetGainRef.current) {
+      try {
+        wetGainRef.current.disconnect();
+      } catch (e) {}
+      wetGainRef.current = null;
     }
     stretchInitedRef.current = false;
     useNativeFallbackRef.current = false;
@@ -115,7 +167,32 @@ export function useStretchPlayer({
       const SignalsmithStretch = (await import("signalsmith-stretch")).default;
       const stretchNode = await SignalsmithStretch(audioContext);
       stretchNodeRef.current = stretchNode;
-      stretchNode.connect(audioContext.destination);
+
+      // Set up reverb audio graph with ConvolverNode
+      const convolver = audioContext.createConvolver();
+      const dryGain = audioContext.createGain();
+      const wetGain = audioContext.createGain();
+
+      // Generate impulse response for reverb
+      convolver.buffer = generateImpulseResponse(audioContext, 2, 2);
+
+      // Initial mix based on reverbAmount
+      const amount = reverbAmountRef.current;
+      dryGain.gain.value = 1 - amount * 0.5;
+      wetGain.gain.value = amount;
+
+      // Route: stretchNode -> (dry + convolver->wet) -> destination
+      stretchNode.connect(dryGain);
+      stretchNode.connect(convolver);
+      convolver.connect(wetGain);
+      dryGain.connect(audioContext.destination);
+      wetGain.connect(audioContext.destination);
+
+      convolverRef.current = convolver;
+      dryGainRef.current = dryGain;
+      wetGainRef.current = wetGain;
+
+      console.log("StretchPlayer: reverb nodes initialized");
 
       // Add audio buffers
       const channelBuffers: Float32Array[] = [];
@@ -317,6 +394,25 @@ export function useStretchPlayer({
     [videoElement],
   );
 
+  // Set reverb amount (0-1)
+  const setReverbAmount = useCallback((amount: number) => {
+    // Skip in native fallback mode (no Web Audio reverb available)
+    if (useNativeFallbackRef.current) return;
+
+    const clampedAmount = Math.max(0, Math.min(1, amount));
+    setReverbAmountState(clampedAmount);
+    reverbAmountRef.current = clampedAmount;
+
+    // Update gain values if nodes are initialized
+    if (dryGainRef.current && wetGainRef.current) {
+      dryGainRef.current.gain.value = 1 - clampedAmount * 0.5;
+      wetGainRef.current.gain.value = clampedAmount;
+      console.log(
+        `StretchPlayer: reverb set dry=${dryGainRef.current.gain.value.toFixed(2)}, wet=${wetGainRef.current.gain.value.toFixed(2)}`,
+      );
+    }
+  }, []);
+
   // Seek
   const seek = useCallback(
     (timeSeconds: number) => {
@@ -504,12 +600,14 @@ export function useStretchPlayer({
     duration,
     rate,
     semitones,
+    reverbAmount,
     isNativeFallback,
     play,
     pause,
     togglePlayback,
     setRate,
     setSemitones,
+    setReverbAmount,
     seek,
   };
 }

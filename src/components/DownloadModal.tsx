@@ -11,6 +11,7 @@ interface DownloadModalProps {
   onClose: () => void;
   song: Song;
   currentPlaybackRate: number;
+  currentReverbAmount: number;
 }
 
 // Helper to write WAV header
@@ -77,11 +78,33 @@ function audioBufferToWav(buffer: AudioBuffer): Blob {
   return new Blob([wavFile], { type: "audio/wav" });
 }
 
+// Generate impulse response for reverb
+function generateImpulseResponse(
+  context: OfflineAudioContext,
+  duration: number = 2,
+  decay: number = 2,
+): AudioBuffer {
+  const sampleRate = context.sampleRate;
+  const length = sampleRate * duration;
+  const impulse = context.createBuffer(2, length, sampleRate);
+  const leftChannel = impulse.getChannelData(0);
+  const rightChannel = impulse.getChannelData(1);
+
+  for (let i = 0; i < length; i++) {
+    const n = i / sampleRate;
+    leftChannel[i] = (Math.random() * 2 - 1) * Math.pow(1 - n / duration, decay);
+    rightChannel[i] = (Math.random() * 2 - 1) * Math.pow(1 - n / duration, decay);
+  }
+
+  return impulse;
+}
+
 export default function DownloadModal({
   opened,
   onClose,
   song,
   currentPlaybackRate,
+  currentReverbAmount,
 }: DownloadModalProps) {
   const [version, setVersion] = useState<"current" | "original">("current");
   const [isProcessing, setIsProcessing] = useState(false);
@@ -109,7 +132,9 @@ export default function DownloadModal({
     const audioContext = new AudioContext();
     const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
 
-    const duration = audioBuffer.duration / currentPlaybackRate;
+    // Add extra time for reverb tail if reverb is applied
+    const reverbTailTime = currentReverbAmount > 0 ? 2 : 0;
+    const duration = audioBuffer.duration / currentPlaybackRate + reverbTailTime;
     const sampleRate = audioBuffer.sampleRate;
     const offlineCtx = new OfflineAudioContext(
       2,
@@ -121,7 +146,28 @@ export default function DownloadModal({
     const source = offlineCtx.createBufferSource();
     source.buffer = audioBuffer;
     source.playbackRate.value = currentPlaybackRate;
-    source.connect(offlineCtx.destination);
+
+    // Apply reverb if enabled
+    if (currentReverbAmount > 0) {
+      const convolver = offlineCtx.createConvolver();
+      const dryGain = offlineCtx.createGain();
+      const wetGain = offlineCtx.createGain();
+
+      convolver.buffer = generateImpulseResponse(offlineCtx, 2, 2);
+
+      dryGain.gain.value = 1 - currentReverbAmount * 0.5;
+      wetGain.gain.value = currentReverbAmount;
+
+      // Route: source -> (dry + convolver->wet) -> destination
+      source.connect(dryGain);
+      source.connect(convolver);
+      convolver.connect(wetGain);
+      dryGain.connect(offlineCtx.destination);
+      wetGain.connect(offlineCtx.destination);
+    } else {
+      source.connect(offlineCtx.destination);
+    }
+
     source.start(0);
 
     const renderedBuffer = await offlineCtx.startRendering();
@@ -164,6 +210,14 @@ export default function DownloadModal({
     }
   };
 
+  const getSettingsDescription = () => {
+    const parts = [`Speed ${currentPlaybackRate}x`];
+    if (currentReverbAmount > 0) {
+      parts.push(`${Math.round(currentReverbAmount * 100)}% reverb`);
+    }
+    return `${parts.join(", ")} — export as WAV`;
+  };
+
   return (
     <Modal opened={opened} onClose={onClose} title="Download" centered>
       <Stack>
@@ -181,7 +235,7 @@ export default function DownloadModal({
             <Radio
               value="current"
               label="Current settings"
-              description={`Speed ${currentPlaybackRate}x and current pitch — export as WAV`}
+              description={getSettingsDescription()}
             />
             <Radio
               value="original"

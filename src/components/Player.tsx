@@ -86,13 +86,17 @@ export function Player({
   const [isAudioOnly, setIsAudioOnly] = useState(false);
   const [videoAspectRatio, setVideoAspectRatio] = useState<number>(16 / 9);
   const [isRepeat, setIsRepeat] = useState(repeating);
-  const [pitchLockedToSpeed, setPitchLockedToSpeed] = useState(true);
   // Local slider values during drag; only commit on onChangeEnd
   const [speedSliderValue, setSpeedSliderValue] = useState(0.8);
   const [pitchSliderValue, setPitchSliderValue] = useState(0);
 
   // Load saved state
   const savedState = useMemo(() => getVideoState(videoUrl), [videoUrl]);
+
+  // Pitch lock setting - loaded from saved state
+  const [pitchLockedToSpeed, setPitchLockedToSpeed] = useState(
+    savedState?.pitchLockedToSpeed ?? true,
+  );
 
   // Initial rate based on mode
   const getInitialRate = () => {
@@ -138,12 +142,14 @@ export function Player({
     duration,
     rate,
     semitones,
+    reverbAmount,
     isNativeFallback,
     play,
     pause,
     togglePlayback,
     setRate,
     setSemitones,
+    setReverbAmount,
     seek,
   } = useStretchPlayer({
     videoElement,
@@ -151,6 +157,7 @@ export function Player({
     isVideoReady,
     initialRate: getInitialRate(),
     initialSemitones: savedState?.semitones ?? 0,
+    initialReverbAmount: savedState?.reverbAmount ?? 0,
     initialPosition: stateLoaded ? initialStartAt : 0,
   });
 
@@ -230,6 +237,8 @@ export function Player({
       mode: playbackMode,
       rate,
       semitones,
+      reverbAmount,
+      pitchLockedToSpeed,
       isRepeat,
     });
   }, [
@@ -237,6 +246,8 @@ export function Player({
     playbackMode,
     rate,
     semitones,
+    reverbAmount,
+    pitchLockedToSpeed,
     isRepeat,
     videoUrl,
     stateLoaded,
@@ -252,6 +263,8 @@ export function Player({
         mode: playbackMode,
         rate,
         semitones,
+        reverbAmount,
+        pitchLockedToSpeed,
         isRepeat,
       });
     };
@@ -270,7 +283,17 @@ export function Player({
       window.removeEventListener("beforeunload", saveState);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
-  }, [currentTime, playbackMode, rate, semitones, isRepeat, videoUrl, stateLoaded]);
+  }, [
+    currentTime,
+    playbackMode,
+    rate,
+    semitones,
+    reverbAmount,
+    pitchLockedToSpeed,
+    isRepeat,
+    videoUrl,
+    stateLoaded,
+  ]);
 
   // Check Audio Only
   useEffect(() => {
@@ -619,10 +642,13 @@ export function Player({
         pitchSliderValue={pitchSliderValue}
         onPitchChange={setPitchSliderValue}
         onPitchChangeEnd={handleSemitonesChange}
+        reverbAmount={reverbAmount}
+        onReverbChange={setReverbAmount}
         isNativeFallback={isNativeFallback}
         onReset={() => {
           handleRateChange(1);
           setSemitones(0);
+          setReverbAmount(0);
         }}
       />
 
@@ -631,6 +657,7 @@ export function Player({
         onClose={closeDownloadModal}
         song={song}
         currentPlaybackRate={rate}
+        currentReverbAmount={reverbAmount}
       />
 
       <Modal
