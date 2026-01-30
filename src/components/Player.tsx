@@ -49,9 +49,10 @@ import { useStretchPlayer } from "@/hooks/useStretchPlayer";
 import { useToast } from "@/hooks/useToast";
 import { useVideoPlayer } from "@/hooks/useVideoPlayer";
 import { useVideoStatePersistence } from "@/hooks/useVideoStatePersistence";
-import { PlaybackMode, Song } from "@/interfaces";
+import { Media } from "@/interfaces";
 import { getModeFromRate, getVideoState } from "@/lib/videoState";
 import { getFormattedTime } from "@/utils";
+import { getPlatform } from "@/utils";
 import {
   createDynamicTheme,
   getOriginalPlatformUrl,
@@ -61,12 +62,14 @@ import CookiesModal from "./CookiesModal";
 import CustomizePlaybackModal from "./CustomizePlaybackModal";
 import DownloadModal from "./DownloadModal";
 
+type PlaybackMode = "slowed" | "normal" | "speedup" | "custom";
+
 export function Player({
-  song,
+  media,
   repeating,
   initialDominantColor,
 }: {
-  song: Song;
+  media: Media;
   repeating: boolean;
   initialDominantColor?: string;
 }) {
@@ -74,14 +77,11 @@ export function Player({
   const isMobile = useMediaQuery("(max-width: 768px)");
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
-  const videoUrl = song.metadata.id
-    ? song.metadata.platform === "youtube"
-      ? `https://www.youtube.com/watch?v=${song.metadata.id}`
-      : `https://www.tiktok.com/video/${song.metadata.id}`
-    : song.fileUrl;
+  // Use sourceUrl from media state
+  const sourceUrl = media.sourceUrl;
 
   // Load saved state
-  const savedState = useMemo(() => getVideoState(videoUrl), [videoUrl]);
+  const savedState = useMemo(() => getVideoState(sourceUrl), [sourceUrl]);
 
   // State - derive mode from rate
   const initialRate = savedState?.rate ?? 0.8;
@@ -106,7 +106,7 @@ export function Player({
   const [isVolumeHovered, setIsVolumeHovered] = useState(false);
   const previousVolumeRef = useRef(savedState?.volume ?? 1);
 
-  const dominantColor = useDominantColor(song.metadata.coverUrl, initialDominantColor);
+  const dominantColor = useDominantColor(media.metadata.coverUrl, initialDominantColor);
   const { toast, showToast } = useToast();
 
   // Initialize state loaded flag
@@ -116,10 +116,9 @@ export function Player({
 
   // Video player setup
   const { videoRef, videoElement, isVideoReady, onError } = useVideoPlayer({
-    song,
+    media,
     repeating,
-    playbackMode,
-    customPlaybackRate: 1,
+    initialRate: stateLoaded ? initialRate : 1, // Use initialRate
     startAt: stateLoaded ? initialStartAt : 0,
   });
 
@@ -144,7 +143,7 @@ export function Player({
     seek,
   } = useStretchPlayer({
     videoElement,
-    fileUrl: song.fileUrl,
+    fileUrl: media.fileUrl,
     isVideoReady,
     initialRate: initialRate,
     initialSemitones: savedState?.semitones ?? 0,
@@ -200,7 +199,7 @@ export function Player({
   }, [currentTime, duration, seek, showToast]);
 
   useMediaSession({
-    song,
+    media: media, // Same here, will update hook next
     isPlaying,
     currentTime,
     duration,
@@ -213,7 +212,7 @@ export function Player({
 
   // Video state persistence
   useVideoStatePersistence({
-    videoUrl,
+    sourceUrl,
     currentTime,
     rate,
     semitones,
@@ -252,6 +251,13 @@ export function Player({
     videoElement.addEventListener("loadedmetadata", checkAudioOnly);
     return () => videoElement.removeEventListener("loadedmetadata", checkAudioOnly);
   }, [videoElement]);
+
+  // Sync video rate with audio rate
+  useEffect(() => {
+    if (videoElement && Math.abs(videoElement.playbackRate - rate) > 0.01) {
+      videoElement.playbackRate = rate;
+    }
+  }, [videoElement, rate]);
 
   // Modal controls
   const [modalOpened, { open: openModal, close: closeModal }] = useDisclosure(false);
@@ -459,7 +465,7 @@ export function Player({
     ],
   ]);
 
-  const originalPlatformUrl = getOriginalPlatformUrl(song, currentTime);
+  const originalPlatformUrl = getOriginalPlatformUrl(media, currentTime);
   const dynamicTheme = useMemo(
     () => createDynamicTheme(dominantColor, theme),
     [dominantColor, theme],
@@ -497,7 +503,7 @@ export function Player({
       <DownloadModal
         opened={downloadModalOpened}
         onClose={closeDownloadModal}
-        song={song}
+        media={media}
         currentPlaybackRate={rate}
         currentReverbAmount={reverbAmount}
       />
@@ -648,7 +654,7 @@ export function Player({
 
             <video
               ref={videoRef}
-              key={song.fileUrl}
+              key={media.fileUrl}
               style={{
                 width: "100%",
                 height: "100%",
@@ -686,20 +692,20 @@ export function Player({
                 cursor: "pointer",
               }}
             >
-              {song.metadata.coverUrl ? (
+              {media.metadata.coverUrl ? (
                 <Image
                   src={
-                    song.metadata.coverUrl?.replace(
+                    media.metadata.coverUrl?.replace(
                       /(hq|mq|sd)?default/,
                       "maxresdefault",
-                    ) || song.metadata.coverUrl
+                    ) || media.metadata.coverUrl
                   }
                   width="100%"
                   height="100%"
                   radius={theme.radius.md}
                   fit="contain"
                   style={{ userSelect: "none", pointerEvents: "none" }}
-                  alt={song.metadata.title}
+                  alt={media.metadata.title}
                 />
               ) : (
                 <Box
@@ -718,10 +724,10 @@ export function Player({
                 >
                   <IconMusic size={80} style={{ opacity: 0.5 }} />
                   <Text size="xl" weight={600} align="center">
-                    {song.metadata.title}
+                    {media.metadata.title}
                   </Text>
                   <Text size="md" color="dimmed" align="center">
-                    {song.metadata.author}
+                    {media.metadata.author}
                   </Text>
                 </Box>
               )}
@@ -768,7 +774,7 @@ export function Player({
                   {originalPlatformUrl && (
                     <Menu.Item
                       icon={
-                        song.metadata.platform === "youtube" ? (
+                        getPlatform(media.sourceUrl) === "youtube" ? (
                           <SiYoutube size={14} />
                         ) : (
                           <SiTiktok size={14} />
@@ -779,7 +785,8 @@ export function Player({
                       rightSection={<IconExternalLink size={12} />}
                       target="_blank"
                     >
-                      Go to {song.metadata.platform === "youtube" ? "YouTube" : "TikTok"}
+                      Go to{" "}
+                      {getPlatform(media.sourceUrl) === "youtube" ? "YouTube" : "TikTok"}
                     </Menu.Item>
                   )}
                   <Menu.Divider />
@@ -946,7 +953,7 @@ export function Player({
               <Flex ml={{ base: 0, xs: "lg" }}>
                 <MediaQuery smallerThan="xs" styles={{ display: "none" }}>
                   <Image
-                    src={song.metadata.coverUrl}
+                    src={media.metadata.coverUrl}
                     radius="sm"
                     height={38}
                     width={38}
@@ -962,7 +969,7 @@ export function Player({
                 <Box ml="sm">
                   <Flex align="center" gap={6}>
                     <Text size="sm" weight={600} lineClamp={1}>
-                      {song.metadata.title}
+                      {media.metadata.title}
                     </Text>
                     {originalPlatformUrl && (
                       <MediaQuery smallerThan="md" styles={{ display: "none" }}>
@@ -975,7 +982,7 @@ export function Player({
                           color="primary"
                           style={{ opacity: 0.7 }}
                         >
-                          {song.metadata.platform === "youtube" ? (
+                          {getPlatform(media.sourceUrl) === "youtube" ? (
                             <SiYoutube size={16} />
                           ) : (
                             <SiTiktok size={14} />
@@ -985,7 +992,7 @@ export function Player({
                     )}
                   </Flex>
                   <Text size="xs" color="dimmed" lineClamp={1}>
-                    {song.metadata.author}
+                    {media.metadata.author}
                   </Text>
                 </Box>
               </Flex>

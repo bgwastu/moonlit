@@ -3,15 +3,15 @@ import { useRouter } from "next/navigation";
 import { notifications } from "@mantine/notifications";
 import { usePostHog } from "posthog-js/react";
 import { useAppContext } from "@/context/AppContext";
-import { Song } from "@/interfaces";
+import { Media } from "@/interfaces";
 import { isSupportedURL } from "@/utils";
 import { isTikTokURL, isYoutubeURL } from "@/utils";
 import { DownloadState, downloadWithProgress } from "@/utils/downloader";
 
-export function useMediaDownloader(url: string, metadata: Partial<Song["metadata"]>) {
+export function useMediaDownloader(url: string, metadata: Partial<Media["metadata"]>) {
   const router = useRouter();
   const posthog = usePostHog();
-  const { setSong } = useAppContext();
+  const { setMedia } = useAppContext();
 
   const [downloadState, setDownloadState] = useState<DownloadState>({
     status: "idle",
@@ -36,7 +36,7 @@ export function useMediaDownloader(url: string, metadata: Partial<Song["metadata
         return () => {};
       }
 
-      setSong(null);
+      setMedia(null);
       setDownloadState({ status: "idle", percent: 0 });
 
       const abortController = new AbortController();
@@ -49,8 +49,8 @@ export function useMediaDownloader(url: string, metadata: Partial<Song["metadata
         withVideo,
         downloadQuality,
       )
-        .then((downloadedSong: Song) => {
-          setSong(downloadedSong);
+        .then((downloadedMedia: Media) => {
+          setMedia(downloadedMedia);
         })
         .catch((e) => {
           if (e.name === "AbortError") return;
@@ -71,7 +71,7 @@ export function useMediaDownloader(url: string, metadata: Partial<Song["metadata
         abortController.abort();
       };
     },
-    [url, router, posthog, setSong, metadata],
+    [url, router, posthog, setMedia, metadata],
   );
 
   return { downloadState, startDownload };

@@ -25,15 +25,15 @@ import { useAppContext } from "@/context/AppContext";
 import { getDominantColorFromImage, useDominantColor } from "@/hooks/useDominantColor";
 import { useMediaDownloader } from "@/hooks/useMediaDownloader";
 import useNoSleep from "@/hooks/useNoSleep";
-import { HistoryItem, Song } from "@/interfaces";
-import { getTikTokId, getYouTubeId, isYoutubeURL } from "@/utils";
+import { HistoryItem, Media } from "@/interfaces";
+import { getPlatform, getTikTokId, getYouTubeId, isYoutubeURL } from "@/utils";
 import { getMedia } from "@/utils/cache";
 
 interface InitialPlayerProps {
   url?: string;
-  metadata?: Partial<Song["metadata"]>;
+  metadata?: Partial<Media["metadata"]>;
   duration?: number;
-  isLocalFile?: boolean;
+  isLocalFile?: boolean; // Deprecated but kept for compatibility during transition if needed
 }
 
 export default function InitialPlayer({
@@ -43,7 +43,7 @@ export default function InitialPlayer({
   isLocalFile = false,
 }: InitialPlayerProps) {
   const router = useRouter();
-  const { song, history, setHistory } = useAppContext();
+  const { media, history, setHistory } = useAppContext();
   const [isPlayer, setIsPlayer] = useState(false);
   const [noSleepEnabled, noSleepControls] = useNoSleep();
   const [dominantColor, setDominantColor] = useState<string>("rgba(0,0,0,0)");
@@ -55,15 +55,15 @@ export default function InitialPlayer({
   const [quality, setQuality] = useState<"low" | "high">("low");
 
   const downloadStarted = useRef(false);
-  const isLoading = !song;
+  const isLoading = !media;
   const isYouTube = url ? isYoutubeURL(url) : false;
 
-  // Handle local file mode - redirect if no song
+  // Handle local file mode - redirect if no media
   useEffect(() => {
-    if (isLocalFile && (!song || song.metadata.platform)) {
+    if (isLocalFile && (!media || getPlatform(media.sourceUrl) !== "local")) {
       router.replace("/");
     }
-  }, [isLocalFile, song, router]);
+  }, [isLocalFile, media, router]);
 
   // Handle URL-based download
   useEffect(() => {
@@ -114,8 +114,9 @@ export default function InitialPlayer({
   }, [url, duration, router, startDownload, isYouTube, isLocalFile]);
 
   // Extract dominant color from cover
+  // Extract dominant color from cover
   useEffect(() => {
-    const coverUrl = isLocalFile ? song?.metadata.coverUrl : metadata?.coverUrl;
+    const coverUrl = isLocalFile ? media?.metadata.coverUrl : metadata?.coverUrl;
     if (!coverUrl) return;
 
     const img = document.createElement("img");
@@ -125,7 +126,7 @@ export default function InitialPlayer({
       const color = getDominantColorFromImage(img);
       setDominantColor(color);
     };
-  }, [metadata?.coverUrl, song?.metadata.coverUrl, isLocalFile]);
+  }, [metadata?.coverUrl, media?.metadata.coverUrl, isLocalFile]);
 
   const handleGoToPlayer = () => {
     setIsPlayer(true);
@@ -133,14 +134,17 @@ export default function InitialPlayer({
       noSleepControls.enable();
     }
 
-    // Add to history
-    if (song && url) {
+    // Add to history (works for both URL and local files)
+    if (media) {
+      // For local files, videoUrl is no longer used, sourceUrl is the key
+      const historyUrl = url || media.sourceUrl;
+
       setHistory((prev) => {
-        const filtered = prev.filter((item) => item.originalUrl !== url);
+        const filtered = prev.filter((item) => item.sourceUrl !== historyUrl);
         const newItem: HistoryItem = {
-          ...song,
+          ...media,
           playedAt: Date.now(),
-          originalUrl: url,
+          sourceUrl: historyUrl,
         };
         return [newItem, ...filtered].slice(0, 50);
       });
@@ -148,12 +152,12 @@ export default function InitialPlayer({
   };
 
   // Show player
-  if (isPlayer && song) {
+  if (isPlayer && media) {
     const isShortForm = isLocalFile ? false : !isYouTube || url?.includes("/shorts/");
     return (
       <Player
-        key={song.fileUrl}
-        song={song}
+        key={media.fileUrl}
+        media={media}
         repeating={isShortForm}
         initialDominantColor={dominantColor}
       />
@@ -162,7 +166,7 @@ export default function InitialPlayer({
 
   // Local file mode - waiting for user to click play
   if (isLocalFile) {
-    if (!song) return null;
+    if (!media) return null;
 
     return (
       <Container size="xs">
@@ -180,7 +184,7 @@ export default function InitialPlayer({
           </Text>
           <Flex gap="md" align="center">
             <Image
-              src={song.metadata.coverUrl}
+              src={media.metadata.coverUrl}
               radius="sm"
               height={48}
               width={48}
@@ -193,8 +197,8 @@ export default function InitialPlayer({
               alt="cover image"
             />
             <Flex direction="column">
-              <Text weight={600}>{song.metadata.title}</Text>
-              <Text>{song.metadata.author}</Text>
+              <Text weight={600}>{media.metadata.title}</Text>
+              <Text>{media.metadata.author}</Text>
             </Flex>
           </Flex>
           <Button onClick={handleGoToPlayer}>Play</Button>

@@ -1,31 +1,27 @@
+import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { useShallowEffect } from "@mantine/hooks";
 import { notifications } from "@mantine/notifications";
-import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
-import { PlaybackMode, Song } from "@/interfaces";
+import { Media } from "@/interfaces";
 import { getSongLength } from "@/utils";
 import useNoSleep from "./useNoSleep";
 
 interface UseVideoPlayerProps {
-  song: Song;
+  media: Media;
   repeating: boolean;
-  playbackMode: PlaybackMode;
-  customPlaybackRate: number;
+  initialRate: number;
   startAt?: number;
 }
 
 export function useVideoPlayer({
-  song,
+  media,
   repeating,
-  playbackMode,
-  customPlaybackRate,
+  initialRate,
   startAt = 0,
 }: UseVideoPlayerProps) {
   const router = useRouter();
   const videoRef = useRef<HTMLVideoElement>(null);
-  const [videoElement, setVideoElement] = useState<HTMLVideoElement | null>(
-    null,
-  );
+  const [videoElement, setVideoElement] = useState<HTMLVideoElement | null>(null);
   const [isVideoReady, setIsVideoReady] = useState(false);
   const [, forceUpdate] = useState(0);
   const [isSeeking, setIsSeeking] = useState(false);
@@ -48,13 +44,11 @@ export function useVideoPlayer({
       : 0;
 
   // Refs to track latest props for async cleanup/setup
-  const playbackModeRef = useRef(playbackMode);
-  const customPlaybackRateRef = useRef(customPlaybackRate);
+  const initialRateRef = useRef(initialRate);
 
   useEffect(() => {
-    playbackModeRef.current = playbackMode;
-    customPlaybackRateRef.current = customPlaybackRate;
-  }, [playbackMode, customPlaybackRate]);
+    initialRateRef.current = initialRate;
+  }, [initialRate]);
 
   // Setup Video
   useShallowEffect(() => {
@@ -65,15 +59,11 @@ export function useVideoPlayer({
         const video = videoRef.current;
         if (!video || !isMounted) return;
 
-        if (
-          videoElement &&
-          videoElement === video &&
-          video.src === song.fileUrl
-        ) {
+        if (videoElement && videoElement === video && video.src === media.fileUrl) {
           return;
         }
 
-        console.log("Setting up new video:", song.fileUrl);
+        console.log("Setting up new video:", media.fileUrl);
         setVideoElement(video);
 
         // Pitch preservation settings
@@ -81,7 +71,7 @@ export function useVideoPlayer({
         (video as any).mozPreservesPitch = false;
         (video as any).webkitPreservesPitch = false;
 
-        video.src = song.fileUrl;
+        video.src = media.fileUrl;
         video.load();
 
         await new Promise((resolve, reject) => {
@@ -108,19 +98,13 @@ export function useVideoPlayer({
         // Loop initialization
         video.loop = repeating;
 
-        // Calculate rate
-        let rate = 1;
-        const currentMode = playbackModeRef.current;
-        const currentCustomRate = customPlaybackRateRef.current;
-
-        if (currentMode === "slowed") rate = 0.8;
-        else if (currentMode === "speedup") rate = 1.25;
-        else if (currentMode === "custom") rate = currentCustomRate;
-        video.playbackRate = rate;
+        // Apply rate
+        const currentRate = initialRateRef.current;
+        video.playbackRate = currentRate;
 
         // Start time
         const initialTime = startAt || 0;
-        video.currentTime = initialTime * rate;
+        video.currentTime = initialTime * currentRate;
 
         setIsVideoReady(true);
         console.log("Video setup completed");
@@ -139,7 +123,7 @@ export function useVideoPlayer({
     return () => {
       isMounted = false;
     };
-  }, [song.fileUrl]);
+  }, [media.fileUrl]);
 
   // Cleanup Effect on Unmount
   useShallowEffect(() => {
@@ -170,20 +154,7 @@ export function useVideoPlayer({
     return () => videoElement.removeEventListener("ended", handleEnded);
   }, [videoElement, noSleepControls]);
 
-  // Apply playback rate changes
-  useEffect(() => {
-    if (!videoElement) return;
-
-    let rate = 1;
-    if (playbackMode === "slowed") rate = 0.8;
-    else if (playbackMode === "speedup") rate = 1.25;
-    else if (playbackMode === "custom") rate = customPlaybackRate;
-
-    // Skip if rate is already correct
-    if (Math.abs(videoElement.playbackRate - rate) < 0.01) return;
-
-    videoElement.playbackRate = rate;
-  }, [playbackMode, customPlaybackRate, videoElement]);
+  // No longer syncing rate here to avoid circular dependency with useStretchPlayer
 
   const togglePlayer = () => {
     if (!videoElement) {

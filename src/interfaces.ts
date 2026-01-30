@@ -1,22 +1,25 @@
-export interface Song {
+export interface Media {
   fileUrl: string;
-  videoUrl?: string;
+  sourceUrl: string;
   metadata: {
     id: string | null;
     title: string;
     author: string;
     coverUrl: string;
-    platform?: "youtube" | "tiktok";
   };
 }
 
-export interface HistoryItem extends Song {
+export interface HistoryItem extends Media {
   playedAt: number;
-  originalUrl: string;
 }
 
-export interface PlaybackSettings {
-  playbackRate: number;
+export interface State {
+  position: number;
+  rate: number;
+  semitones: number;
+  reverbAmount: number;
+  pitchLockedToSpeed: boolean;
+  isRepeat: boolean;
+  volume: number;
+  lastUpdated: number;
 }
-
-export type PlaybackMode = "slowed" | "normal" | "speedup" | "custom";

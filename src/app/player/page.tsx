@@ -113,7 +113,7 @@ export default async function Page({ searchParams }: { searchParams: SearchParam
       );
     } catch (e) {
       console.error("TikTok metadata fetch error:", e);
-      return <InitialPlayer url={url} metadata={{ platform: "tiktok" }} />;
+      return <InitialPlayer url={url} metadata={{}} />;
     }
   }
 

@@ -1,13 +1,4 @@
-export interface VideoState {
-  position: number;
-  rate: number;
-  semitones: number;
-  reverbAmount: number;
-  pitchLockedToSpeed: boolean;
-  isRepeat: boolean;
-  volume: number;
-  lastUpdated: number;
-}
+import { State } from "@/interfaces";
 
 const STORAGE_KEY_PREFIX = "moonlit:video:";
 const MAX_STORED_VIDEOS = 50;
@@ -41,12 +32,12 @@ export function getVideoStorageKey(url: string): string {
 }
 
 /** Save video playback state to localStorage */
-export function saveVideoState(url: string, state: Partial<VideoState>): void {
+export function saveVideoState(url: string, state: Partial<State>): void {
   try {
     const key = getVideoStorageKey(url);
     const existing = getVideoState(url);
 
-    const newState: VideoState = {
+    const newState: State = {
       position: state.position ?? existing?.position ?? 0,
       rate: state.rate ?? existing?.rate ?? 0.8,
       semitones: state.semitones ?? existing?.semitones ?? 0,
@@ -66,12 +57,12 @@ export function saveVideoState(url: string, state: Partial<VideoState>): void {
 }
 
 /** Get video playback state from localStorage */
-export function getVideoState(url: string): VideoState | null {
+export function getVideoState(url: string): State | null {
   try {
     const key = getVideoStorageKey(url);
     const stored = localStorage.getItem(key);
     if (!stored) return null;
-    return JSON.parse(stored) as VideoState;
+    return JSON.parse(stored) as State;
   } catch {
     return null;
   }

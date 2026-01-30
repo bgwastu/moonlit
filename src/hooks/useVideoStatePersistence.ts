@@ -2,7 +2,7 @@ import { useEffect, useRef } from "react";
 import { saveVideoState } from "@/lib/videoState";
 
 interface UseVideoStatePersistenceProps {
-  videoUrl: string;
+  sourceUrl: string;
   currentTime: number;
   rate: number;
   semitones: number;
@@ -19,7 +19,7 @@ interface UseVideoStatePersistenceProps {
  * Saves periodically (every 5s), on visibility change, and on unmount.
  */
 export function useVideoStatePersistence({
-  videoUrl,
+  sourceUrl,
   currentTime,
   rate,
   semitones,
@@ -39,7 +39,7 @@ export function useVideoStatePersistence({
     if (now - lastSaveRef.current < 5000) return;
     lastSaveRef.current = now;
 
-    saveVideoState(videoUrl, {
+    saveVideoState(sourceUrl, {
       position: currentTime,
       rate,
       semitones,
@@ -56,7 +56,7 @@ export function useVideoStatePersistence({
     pitchLockedToSpeed,
     isRepeat,
     volume,
-    videoUrl,
+    sourceUrl,
     stateLoaded,
     isReady,
   ]);
@@ -64,7 +64,7 @@ export function useVideoStatePersistence({
   useEffect(() => {
     const saveState = () => {
       if (!stateLoaded) return;
-      saveVideoState(videoUrl, {
+      saveVideoState(sourceUrl, {
         position: currentTime,
         rate,
         semitones,
@@ -95,7 +95,7 @@ export function useVideoStatePersistence({
     pitchLockedToSpeed,
     isRepeat,
     volume,
-    videoUrl,
+    sourceUrl,
     stateLoaded,
   ]);
 }

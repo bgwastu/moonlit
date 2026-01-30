@@ -16,56 +16,62 @@ import {
   UnstyledButton,
   useMantineTheme,
 } from "@mantine/core";
+import { notifications } from "@mantine/notifications";
 import { IconHistory, IconPlayerPlay, IconTrash, IconX } from "@tabler/icons-react";
 import { useAppContext } from "@/context/AppContext";
-import { HistoryItem } from "@/interfaces";
-import { getTikTokCreatorAndVideoId, getYouTubeId } from "@/utils";
+import { HistoryItem, Media } from "@/interfaces";
+import { getPlatform, getTikTokCreatorAndVideoId, getYouTubeId, timeAgo } from "@/utils";
+import { getMedia } from "@/utils/cache";
 
 interface HistoryModalProps {
   opened: boolean;
   onClose: () => void;
 }
 
-const timeAgo = (date: number) => {
-  const seconds = Math.floor((Date.now() - date) / 1000);
-  let interval = seconds / 31536000;
-  if (interval > 1) return Math.floor(interval) + "y";
-  interval = seconds / 2592000;
-  if (interval > 1) return Math.floor(interval) + "mo";
-  interval = seconds / 86400;
-  if (interval > 1) return Math.floor(interval) + "d";
-  interval = seconds / 3600;
-  if (interval > 1) return Math.floor(interval) + "h";
-  interval = seconds / 60;
-  if (interval > 1) return Math.floor(interval) + "m";
-  return "now";
-};
-
 export default function HistoryModal({ opened, onClose }: HistoryModalProps) {
-  const { history, setHistory } = useAppContext();
+  const { history, setHistory, setMedia } = useAppContext();
   const router = useRouter();
   const theme = useMantineTheme();
   const [hoveredItem, setHoveredItem] = useState<string | null>(null);
 
-  const handlePlay = (item: HistoryItem) => {
+  const handlePlay = async (item: HistoryItem) => {
     onClose();
-    const url = item.originalUrl;
 
-    if (item.metadata.platform === "tiktok") {
-      const { creator, videoId } = getTikTokCreatorAndVideoId(url);
-      if (creator && videoId) {
-        router.push(`/@${creator}/video/${videoId}`);
-        return;
+    const platform = getPlatform(item.sourceUrl);
+
+    // Check if it's a local file
+    if (platform === "local") {
+      try {
+        const key = item.sourceUrl;
+        if (!key) throw new Error("No source URL found for local file");
+
+        const blob = await getMedia(key);
+        if (!blob) {
+          alert("File not found in storage. It may have been cleared.");
+          return;
+        }
+
+        const blobUrl = URL.createObjectURL(blob);
+        const media: Media = {
+          ...item,
+          fileUrl: blobUrl,
+          sourceUrl: key,
+          metadata: { ...item.metadata },
+        };
+
+        setMedia(media);
+        router.push("/player");
+      } catch (e) {
+        console.error(e);
+        alert("Failed to load local file.");
       }
-    } else if (item.metadata.platform === "youtube") {
-      const id = getYouTubeId(url);
-      if (id) {
-        router.push(`/watch?v=${id}`);
-        return;
-      }
+      return;
     }
 
-    router.push(`/player?url=${encodeURIComponent(url)}`);
+    // For remote files, navigate to the player with the URL
+    // This ensures page.tsx handles it correctly (fetching metadata, etc.)
+    // We use the sourceUrl which should be the full YouTube/TikTok URL
+    router.push(`/player?url=${encodeURIComponent(item.sourceUrl)}`);
   };
 
   const clearHistory = () => {
@@ -76,7 +82,7 @@ export default function HistoryModal({ opened, onClose }: HistoryModalProps) {
 
   const removeItem = (e: React.MouseEvent, url: string) => {
     e.stopPropagation();
-    setHistory((prev) => prev.filter((item) => item.originalUrl !== url));
+    setHistory((prev) => prev.filter((item) => item.sourceUrl !== url));
   };
 
   return (
@@ -123,122 +129,130 @@ export default function HistoryModal({ opened, onClose }: HistoryModalProps) {
           <>
             <Box h="100%" style={{ flex: 1, overflowY: "auto" }}>
               <Stack spacing="xs" pr="xs">
-                {history.map((item) => {
-                  const isHovered = hoveredItem === item.originalUrl;
-                  return (
-                    <UnstyledButton
-                      key={item.originalUrl + item.playedAt}
-                      onClick={() => handlePlay(item)}
-                      onMouseEnter={() => setHoveredItem(item.originalUrl)}
-                      onMouseLeave={() => setHoveredItem(null)}
-                      sx={(theme) => ({
-                        display: "block",
-                        width: "100%",
-                        padding: theme.spacing.sm,
-                        borderRadius: theme.radius.md,
-                        backgroundColor:
-                          theme.colorScheme === "dark"
-                            ? theme.colors.dark[7]
-                            : theme.colors.gray[0],
-                        border: `1px solid ${theme.colorScheme === "dark" ? "transparent" : theme.colors.gray[2]}`,
-                        transition: "all 0.2s ease",
-
-                        "&:hover": {
+                {history
+                  .sort((a, b) => b.playedAt - a.playedAt)
+                  .map((item, index) => {
+                    const itemKey = item.sourceUrl;
+                    const isHovered = hoveredItem === itemKey;
+                    return (
+                      <Box
+                        key={itemKey}
+                        onClick={() => handlePlay(item)}
+                        onMouseEnter={() => setHoveredItem(itemKey)}
+                        onMouseLeave={() => setHoveredItem(null)}
+                        sx={(theme) => ({
+                          cursor: "pointer",
+                          display: "block",
+                          width: "100%",
+                          padding: theme.spacing.sm,
+                          borderRadius: theme.radius.md,
                           backgroundColor:
                             theme.colorScheme === "dark"
-                              ? theme.colors.dark[6]
-                              : theme.white,
-                          transform: "translateY(-2px)",
-                          boxShadow: theme.shadows.sm,
-                        },
-                      })}
-                    >
-                      <Flex
-                        align="center"
-                        gap="sm"
-                        w="100%"
-                        style={{ overflow: "hidden" }}
+                              ? theme.colors.dark[7]
+                              : theme.colors.gray[0],
+                          border: `1px solid ${theme.colorScheme === "dark" ? "transparent" : theme.colors.gray[2]}`,
+                          transition: "all 0.2s ease",
+
+                          "&:hover": {
+                            backgroundColor:
+                              theme.colorScheme === "dark"
+                                ? theme.colors.dark[6]
+                                : theme.white,
+                            transform: "translateY(-2px)",
+                            boxShadow: theme.shadows.sm,
+                          },
+                        })}
                       >
-                        <Box style={{ position: "relative", flexShrink: 0 }}>
-                          <Avatar
-                            src={item.metadata.coverUrl}
-                            size={60}
-                            radius="md"
-                            styles={{ image: { objectFit: "cover" } }}
-                          />
-                          {isHovered && (
-                            <Box
-                              style={{
-                                position: "absolute",
-                                inset: 0,
-                                background: "rgba(0,0,0,0.4)",
-                                borderRadius: theme.radius.md,
-                                display: "flex",
-                                alignItems: "center",
-                                justifyContent: "center",
-                              }}
-                            >
-                              <IconPlayerPlay
-                                size={24}
-                                color="white"
-                                style={{ opacity: 0.9 }}
-                              />
-                            </Box>
-                          )}
-                        </Box>
+                        <Flex
+                          align="center"
+                          gap="sm"
+                          w="100%"
+                          style={{ overflow: "hidden" }}
+                        >
+                          <Box style={{ position: "relative", flexShrink: 0 }}>
+                            <Avatar
+                              src={item.metadata.coverUrl}
+                              size={60}
+                              radius="md"
+                              styles={{ image: { objectFit: "cover" } }}
+                            />
+                            {isHovered && (
+                              <Box
+                                style={{
+                                  position: "absolute",
+                                  inset: 0,
+                                  background: "rgba(0,0,0,0.4)",
+                                  borderRadius: theme.radius.md,
+                                  display: "flex",
+                                  alignItems: "center",
+                                  justifyContent: "center",
+                                }}
+                              >
+                                <IconPlayerPlay
+                                  size={24}
+                                  color="white"
+                                  style={{ opacity: 0.9 }}
+                                />
+                              </Box>
+                            )}
+                          </Box>
 
-                        <Box style={{ flex: 1, minWidth: 0 }}>
-                          <Text size="sm" weight={600} truncate mb={2}>
-                            {item.metadata.title}
-                          </Text>
-                          <Group spacing={6} noWrap>
+                          <Box style={{ flex: 1, minWidth: 0 }}>
+                            <Text size="sm" weight={600} truncate mb={2}>
+                              {item.metadata.title}
+                            </Text>
+                            <Group spacing={6} noWrap>
+                              <Text
+                                size="xs"
+                                color="dimmed"
+                                truncate
+                                style={{ maxWidth: 200 }}
+                              >
+                                {item.metadata.author}
+                              </Text>
+                              <Text size="xs" color="dimmed" style={{ flexShrink: 0 }}>
+                                •
+                              </Text>
+                              <Text
+                                size="xs"
+                                color="dimmed"
+                                transform="capitalize"
+                                truncate
+                              >
+                                {getPlatform(item.sourceUrl)}
+                              </Text>
+                            </Group>
+                          </Box>
+
+                          <Stack align="flex-end" spacing={4} style={{ flexShrink: 0 }}>
                             <Text
                               size="xs"
                               color="dimmed"
-                              truncate
-                              style={{ maxWidth: 200 }}
+                              style={{ whiteSpace: "nowrap" }}
                             >
-                              {item.metadata.author}
+                              {timeAgo(item.playedAt)}
                             </Text>
-                            <Text size="xs" color="dimmed" style={{ flexShrink: 0 }}>
-                              •
-                            </Text>
-                            <Text
-                              size="xs"
-                              color="dimmed"
-                              transform="capitalize"
-                              truncate
-                            >
-                              {item.metadata.platform}
-                            </Text>
-                          </Group>
-                        </Box>
 
-                        <Stack align="flex-end" spacing={4} style={{ flexShrink: 0 }}>
-                          <Text size="xs" color="dimmed" style={{ whiteSpace: "nowrap" }}>
-                            {timeAgo(item.playedAt)}
-                          </Text>
-
-                          <Tooltip label="Remove from history" openDelay={500}>
-                            <ActionIcon
-                              size="sm"
-                              color="red"
-                              variant="subtle"
-                              className="delete-btn"
-                              onClick={(e) => removeItem(e, item.originalUrl)}
-                              style={{
-                                opacity: isHovered ? 1 : 0,
-                                transition: "opacity 0.2s ease",
-                              }}
-                            >
-                              <IconX size={16} />
-                            </ActionIcon>
-                          </Tooltip>
-                        </Stack>
-                      </Flex>
-                    </UnstyledButton>
-                  );
-                })}
+                            <Tooltip label="Remove from history" openDelay={500}>
+                              <ActionIcon
+                                size="sm"
+                                color="red"
+                                variant="subtle"
+                                className="delete-btn"
+                                onClick={(e) => removeItem(e, itemKey!)}
+                                style={{
+                                  opacity: isHovered ? 1 : 0,
+                                  transition: "opacity 0.2s ease",
+                                }}
+                              >
+                                <IconX size={16} />
+                              </ActionIcon>
+                            </Tooltip>
+                          </Stack>
+                        </Flex>
+                      </Box>
+                    );
+                  })}
               </Stack>
             </Box>
 

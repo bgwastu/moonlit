@@ -1,16 +1,10 @@
-import { Song } from "@/interfaces";
+import { Media } from "@/interfaces";
 import { getCookiesToUse } from "@/lib/cookies";
 import { getTikTokId, getYouTubeId, isTikTokURL, isYoutubeURL } from "@/utils";
 import { getMedia, getMeta, setMedia, setMeta } from "@/utils/cache";
 
 export interface DownloadState {
-  status:
-    | "idle"
-    | "fetching"
-    | "downloading"
-    | "processing"
-    | "complete"
-    | "error";
+  status: "idle" | "fetching" | "downloading" | "processing" | "complete" | "error";
   percent: number;
   speed?: string;
   eta?: string;
@@ -19,12 +13,12 @@ export interface DownloadState {
 
 export async function downloadWithProgress(
   url: string,
-  preload: Partial<Song["metadata"]>,
+  preload: Partial<Media["metadata"]>,
   onProgress: (state: DownloadState) => void,
   abortSignal?: AbortSignal,
   videoMode?: boolean,
   quality?: "high" | "low",
-): Promise<Song> {
+): Promise<Media> {
   // For backward compat with YT/TikTok, we can still try to extract IDs
   const isYouTube = isYoutubeURL(url);
   const isTikTok = isTikTokURL(url);
@@ -48,20 +42,17 @@ export async function downloadWithProgress(
     // Check video cache first if videoMode is requested or generic check
     const cachedVideo = await getMedia(videoKey);
     if (cachedVideo) {
-      const storedMeta = await getMeta<Partial<Song["metadata"]>>(
-        `${prefix}:${id}`,
-      );
+      const storedMeta = await getMeta<Partial<Media["metadata"]>>(`${prefix}:${id}`);
       const blobUrl = URL.createObjectURL(cachedVideo);
       onProgress({ status: "complete", percent: 100 });
       return {
         fileUrl: blobUrl,
-        videoUrl: blobUrl,
+        sourceUrl: url,
         metadata: {
           id,
           title: "",
           author: "",
           coverUrl: "",
-          platform: isYouTube ? "youtube" : isTikTok ? "tiktok" : null,
           ...(storedMeta || {}),
           ...(preload || {}),
         },
@@ -71,19 +62,17 @@ export async function downloadWithProgress(
     // Check audio cache
     const cachedAudio = await getMedia(audioKey);
     if (cachedAudio) {
-      const storedMeta = await getMeta<Partial<Song["metadata"]>>(
-        `${prefix}:${id}`,
-      );
+      const storedMeta = await getMeta<Partial<Media["metadata"]>>(`${prefix}:${id}`);
       const audioUrl = URL.createObjectURL(cachedAudio);
       onProgress({ status: "complete", percent: 100 });
       return {
         fileUrl: audioUrl,
+        sourceUrl: url,
         metadata: {
           id,
           title: "",
           author: "",
           coverUrl: "",
-          platform: isYouTube ? "youtube" : isTikTok ? "tiktok" : null,
           ...(storedMeta || {}),
           ...(preload || {}),
         },
@@ -156,9 +145,7 @@ export async function downloadWithProgress(
                     case "progress":
                       onProgress({
                         status:
-                          data.status === "processing"
-                            ? "processing"
-                            : "downloading",
+                          data.status === "processing" ? "processing" : "downloading",
                         percent: data.percent || 0,
                         speed: data.speed,
                         eta: data.eta,
@@ -188,8 +175,7 @@ export async function downloadWithProgress(
                         });
 
                         const res = await fetch(data.downloadUrl);
-                        if (!res.ok)
-                          throw new Error("Failed to retrieve media file");
+                        if (!res.ok) throw new Error("Failed to retrieve media file");
                         blob = await res.blob();
 
                         // Set correct type if provided
@@ -212,17 +198,6 @@ export async function downloadWithProgress(
                       const blobUrl = URL.createObjectURL(blob);
 
                       // Use preload metadata from server-side
-                      const metadata = {
-                        id: id || "unknown",
-                        title: preload.title || "",
-                        author: preload.author || "",
-                        coverUrl: preload.coverUrl || "",
-                        platform: isYouTube
-                          ? ("youtube" as const)
-                          : isTikTok
-                            ? ("tiktok" as const)
-                            : preload.platform,
-                      };
 
                       // Cache the media
                       if (id) {
@@ -230,13 +205,23 @@ export async function downloadWithProgress(
                           ? `${prefix}:${id}:video`
                           : `${prefix}:${id}:audio`;
                         setMedia(cacheKey, blob).catch(() => {});
-                        setMeta(`${prefix}:${id}`, metadata).catch(() => {});
+                        setMeta(`${prefix}:${id}`, {
+                          id: id || "unknown",
+                          title: preload.title || "",
+                          author: preload.author || "",
+                          coverUrl: preload.coverUrl || "",
+                        }).catch(() => {});
                       }
 
                       resolve({
                         fileUrl: blobUrl,
-                        videoUrl: data.videoMode ? blobUrl : undefined,
-                        metadata,
+                        sourceUrl: data.videoMode ? blobUrl : undefined,
+                        metadata: {
+                          id: id || "unknown",
+                          title: preload.title || "",
+                          author: preload.author || "",
+                          coverUrl: preload.coverUrl || "",
+                        },
                       });
                       return;
 
@@ -253,10 +238,7 @@ export async function downloadWithProgress(
                     reject(e);
                     return;
                   }
-                  console.error(
-                    "Failed to parse SSE message or process download:",
-                    e,
-                  );
+                  console.error("Failed to parse SSE message or process download:", e);
                   reject(e);
                   return;
                 }

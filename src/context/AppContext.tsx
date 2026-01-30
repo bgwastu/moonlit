@@ -2,15 +2,15 @@
 
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
 import { MantineThemeOverride } from "@mantine/core";
-import { HistoryItem, Song } from "@/interfaces";
+import { HistoryItem, Media } from "@/interfaces";
 
 const HISTORY_STORAGE_KEY = "moonlit-history";
 const MAX_HISTORY_ITEMS = 50;
 
 interface AppContextValue {
-  // Song state
-  song: Song | null;
-  setSong: (song: Song | null) => void;
+  // Media state
+  media: Media | null;
+  setMedia: (media: Media | null) => void;
 
   // History state (persisted to localStorage)
   history: HistoryItem[];
@@ -32,7 +32,7 @@ const defaultTheme: MantineThemeOverride = {
 const AppContext = createContext<AppContextValue | null>(null);
 
 export function AppProvider({ children }: { children: React.ReactNode }) {
-  const [song, setSong] = useState<Song | null>(null);
+  const [media, setMedia] = useState<Media | null>(null);
   const [history, setHistoryState] = useState<HistoryItem[]>([]);
   const [theme, setTheme] = useState<MantineThemeOverride>(defaultTheme);
   const [isHydrated, setIsHydrated] = useState(false);
@@ -77,8 +77,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   return (
     <AppContext.Provider
       value={{
-        song,
-        setSong,
+        media,
+        setMedia,
         history,
         setHistory,
         clearHistory,
