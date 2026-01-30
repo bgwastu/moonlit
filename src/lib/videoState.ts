@@ -39,7 +39,7 @@ export function saveVideoState(url: string, state: Partial<State>): void {
 
     const newState: State = {
       position: state.position ?? existing?.position ?? 0,
-      rate: state.rate ?? existing?.rate ?? 0.8,
+      rate: state.rate ?? existing?.rate ?? 1,
       semitones: state.semitones ?? existing?.semitones ?? 0,
       reverbAmount: state.reverbAmount ?? existing?.reverbAmount ?? 0,
       pitchLockedToSpeed:

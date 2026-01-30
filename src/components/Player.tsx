@@ -96,7 +96,7 @@ export function Player({ media, repeating }: { media: Media; repeating: boolean 
   const savedState = useMemo(() => getVideoState(sourceUrl), [sourceUrl]);
 
   // State - derive mode from rate
-  const initialRate = savedState?.rate ?? 0.8;
+  const initialRate = savedState?.rate ?? 1;
   const [playbackMode, setPlaybackMode] = useState<PlaybackMode>(
     getModeFromRate(initialRate),
   );
