@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useRef } from "react";
 
-const DOUBLE_TAP_MS = 400;
-const EDGE_FRACTION = 0.2;
-const CLICK_IGNORE_AFTER_TOUCH_MS = 500;
+const DOUBLE_TAP_MS = 300;
+const EDGE_FRACTION = 0.25; // 25% on each side for seek zones
 
 interface UsePlayerTapGesturesOptions {
   onBackward: () => void;
@@ -12,12 +11,22 @@ interface UsePlayerTapGesturesOptions {
   edgeFraction?: number;
 }
 
+type TapZone = "left" | "right" | "center";
+
 /**
  * Listens for tap gestures on the player area:
- * - Single tap (or click on desktop) → onTogglePlayback
- * - Double-tap on left edge → onBackward
- * - Double-tap on right edge → onForward
- * Use for the main video/player container so play/pause and seek gestures are in one place.
+ *
+ * Desktop:
+ * - Single click anywhere → onTogglePlayback
+ *
+ * Mobile:
+ * - Single tap in CENTER zone → onTogglePlayback (immediate)
+ * - Double-tap on LEFT edge → onBackward (seek backward)
+ * - Double-tap on RIGHT edge → onForward (seek forward)
+ *
+ * The hook only listens to events on the containerRef element itself,
+ * not on its children. This allows lyrics and other interactive elements
+ * to remain clickable.
  */
 export function usePlayerTapGestures(
   containerRef: React.RefObject<HTMLElement | null>,
@@ -29,21 +38,11 @@ export function usePlayerTapGestures(
     edgeFraction = EDGE_FRACTION,
   }: UsePlayerTapGesturesOptions,
 ): void {
-  const lastTapRef = useRef<{ time: number; side: "left" | "right" | "center" } | null>(
-    null,
-  );
-  const playPauseTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastEdgeTapRef = useRef<{ time: number; zone: TapZone } | null>(null);
   const touchedRecentlyRef = useRef(false);
 
-  const clearPlayPauseTimeout = useCallback(() => {
-    if (playPauseTimeoutRef.current !== null) {
-      clearTimeout(playPauseTimeoutRef.current);
-      playPauseTimeoutRef.current = null;
-    }
-  }, []);
-
-  const getSide = useCallback(
-    (clientX: number): "left" | "right" | "center" => {
+  const getZone = useCallback(
+    (clientX: number): TapZone => {
       const el = containerRef.current;
       if (!el) return "center";
       const rect = el.getBoundingClientRect();
@@ -58,43 +57,101 @@ export function usePlayerTapGestures(
     [containerRef, edgeFraction],
   );
 
+  // Check if the event target is the container itself or a direct child (video wrapper)
+  const isValidTarget = useCallback(
+    (target: EventTarget | null): boolean => {
+      const el = containerRef.current;
+      if (!el || !target) return false;
+      const targetEl = target as HTMLElement;
+
+      // Accept if target is the container itself
+      if (targetEl === el) return true;
+
+      // Accept if target is a child within the video area (not lyrics panel)
+      // Check if the target has data-tap-target attribute or is a video/canvas element
+      if (
+        targetEl.tagName === "VIDEO" ||
+        targetEl.tagName === "CANVAS" ||
+        targetEl.closest("[data-tap-target]")
+      ) {
+        return true;
+      }
+
+      // Check if the target is inside the container but not in a lyrics panel or interactive element
+      if (el.contains(targetEl)) {
+        // Reject if it's inside an element with onClick or is inherently interactive
+        const isInteractive =
+          targetEl.closest("button, a, [role='button'], [data-no-tap]") !== null;
+        if (isInteractive) return false;
+
+        // Accept if it's a direct descendant up to 3 levels deep (video container area)
+        let parent = targetEl.parentElement;
+        let depth = 0;
+        while (parent && depth < 5) {
+          if (parent === el) return true;
+          parent = parent.parentElement;
+          depth++;
+        }
+      }
+
+      return false;
+    },
+    [containerRef],
+  );
+
   const handleTouchEnd = useCallback(
     (e: TouchEvent) => {
       if (!enabled || !containerRef.current) return;
+      if (!isValidTarget(e.target)) return;
+
       const touch = e.changedTouches?.[0];
       if (!touch) return;
 
+      // Mark that we just handled a touch (to ignore synthetic click)
       touchedRecentlyRef.current = true;
       setTimeout(() => {
         touchedRecentlyRef.current = false;
-      }, CLICK_IGNORE_AFTER_TOUCH_MS);
+      }, 400);
 
-      const side = getSide(touch.clientX);
+      const zone = getZone(touch.clientX);
       const now = Date.now();
-      const prev = lastTapRef.current;
 
-      if (prev && prev.side === side && now - prev.time <= DOUBLE_TAP_MS) {
-        clearPlayPauseTimeout();
-        lastTapRef.current = null;
-        if (side === "left") onBackward();
-        else if (side === "right") onForward();
-        else onTogglePlayback();
+      // CENTER zone: single tap → toggle playback immediately
+      if (zone === "center") {
+        lastEdgeTapRef.current = null;
+        onTogglePlayback();
         return;
       }
 
-      clearPlayPauseTimeout();
-      lastTapRef.current = { time: now, side };
-      playPauseTimeoutRef.current = setTimeout(() => {
-        playPauseTimeoutRef.current = null;
-        lastTapRef.current = null;
-        onTogglePlayback();
-      }, DOUBLE_TAP_MS);
+      // EDGE zones: double-tap to seek
+      const prev = lastEdgeTapRef.current;
+      if (prev && prev.zone === zone && now - prev.time <= DOUBLE_TAP_MS) {
+        // Double tap on same edge
+        lastEdgeTapRef.current = null;
+        if (zone === "left") onBackward();
+        else if (zone === "right") onForward();
+        return;
+      }
+
+      // First tap on edge - record it and wait for potential second tap
+      lastEdgeTapRef.current = { time: now, zone };
+
+      // Clear the edge tap after the double-tap window expires
+      setTimeout(() => {
+        if (
+          lastEdgeTapRef.current &&
+          lastEdgeTapRef.current.time === now &&
+          lastEdgeTapRef.current.zone === zone
+        ) {
+          lastEdgeTapRef.current = null;
+        }
+      }, DOUBLE_TAP_MS + 50);
     },
     [
       enabled,
       containerRef,
-      getSide,
-      clearPlayPauseTimeout,
+      isValidTarget,
+      getZone,
       onBackward,
       onForward,
       onTogglePlayback,
@@ -104,23 +161,26 @@ export function usePlayerTapGestures(
   const handleClick = useCallback(
     (e: MouseEvent) => {
       if (!enabled || !containerRef.current) return;
+      // Ignore if this click follows a touch event (avoid double-firing)
       if (touchedRecentlyRef.current) return;
-      e.preventDefault();
-      e.stopPropagation();
+      if (!isValidTarget(e.target)) return;
+
+      // Desktop: single click toggles playback
       onTogglePlayback();
     },
-    [enabled, containerRef, onTogglePlayback],
+    [enabled, containerRef, isValidTarget, onTogglePlayback],
   );
 
   useEffect(() => {
     const el = containerRef.current;
     if (!el || !enabled) return;
+
     el.addEventListener("touchend", handleTouchEnd, { passive: true });
-    el.addEventListener("click", handleClick, { capture: true });
+    el.addEventListener("click", handleClick);
+
     return () => {
       el.removeEventListener("touchend", handleTouchEnd);
-      el.removeEventListener("click", handleClick, { capture: true });
-      clearPlayPauseTimeout();
+      el.removeEventListener("click", handleClick);
     };
-  }, [containerRef, enabled, handleTouchEnd, handleClick, clearPlayPauseTimeout]);
+  }, [containerRef, enabled, handleTouchEnd, handleClick]);
 }
