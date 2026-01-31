@@ -433,11 +433,10 @@ export function useStretchPlayer({
       try {
         const rt = runtime.current;
 
-        // Setup video element with near-silent volume to keep Media Session active
-        // (fully muted videos get removed from Media Session by browsers)
+        // Video is muted so only Web Audio (stretch → destination) is heard; avoids doubled sound.
+        // Media Session still works because AudioContext outputs to the destination.
         video.src = fileUrl;
-        video.muted = false;
-        video.volume = 0.0001;
+        video.muted = true;
         video.playsInline = true;
         (video as any).preservesPitch = false;
         (video as any).mozPreservesPitch = false;
