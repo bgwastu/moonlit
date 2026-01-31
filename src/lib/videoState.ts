@@ -56,6 +56,8 @@ export function saveVideoState(url: string, state: Partial<State>): void {
         state.showLyrics !== undefined
           ? state.showLyrics
           : (existing?.showLyrics ?? false),
+      liteMode:
+        state.liteMode !== undefined ? state.liteMode : (existing?.liteMode ?? true),
     };
 
     localStorage.setItem(key, JSON.stringify(newState));

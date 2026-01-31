@@ -4,6 +4,8 @@ export type StretchPlayerState = "loading" | "ready" | "error";
 
 interface UseStretchPlayerProps {
   fileUrl: string;
+  /** Lite mode: native video playback only (speed only; no pitch/reverb). Much more stable; default on. */
+  liteMode?: boolean;
   initialRate?: number;
   initialSemitones?: number;
   initialPosition?: number;
@@ -58,6 +60,7 @@ interface PlayerRuntime {
   volume: number;
   reverbAmount: number;
   repeat: boolean;
+  liteMode: boolean;
 
   // Sync
   rafId: number | null;
@@ -97,6 +100,7 @@ function generateImpulseResponse(
 
 export function useStretchPlayer({
   fileUrl,
+  liteMode = false,
   initialRate = 1,
   initialSemitones = 0,
   initialPosition = 0,
@@ -120,6 +124,7 @@ export function useStretchPlayer({
   const [volume, setVolumeState] = useState(initialVolume);
   const [videoElement, setVideoElement] = useState<HTMLVideoElement | null>(null);
   const [isVideoReady, setIsVideoReady] = useState(false);
+  const liteTeardownRef = useRef<(() => void) | null>(null);
 
   // Single runtime ref for all mutable state
   const runtime = useRef<PlayerRuntime>({
@@ -142,14 +147,19 @@ export function useStretchPlayer({
     lastRateChangeMs: 0,
     lastDriftCorrectionMs: 0,
     onEnded,
+    liteMode: false,
   });
 
   // Keep runtime in sync with props
   runtime.current.repeat = isRepeat;
   runtime.current.onEnded = onEnded;
+  runtime.current.liteMode = liteMode;
 
   // Cleanup function
   const cleanup = useCallback(() => {
+    liteTeardownRef.current?.();
+    liteTeardownRef.current = null;
+
     const rt = runtime.current;
 
     if (rt.rafId !== null) {
@@ -261,6 +271,15 @@ export function useStretchPlayer({
     const rt = runtime.current;
     const video = videoRef.current;
 
+    if (rt.liteMode) {
+      if (video) {
+        video.play().catch(() => {});
+        rt.isPlaying = true;
+        setIsPlaying(true);
+      }
+      return;
+    }
+
     if (!rt.audioContext || !rt.stretch) return;
 
     // Resume AudioContext (required for autoplay policies)
@@ -310,6 +329,13 @@ export function useStretchPlayer({
     const rt = runtime.current;
     const video = videoRef.current;
 
+    if (rt.liteMode) {
+      if (video) video.pause();
+      rt.isPlaying = false;
+      setIsPlaying(false);
+      return;
+    }
+
     if (rt.stretch) {
       rt.stretch.schedule({ active: false });
     }
@@ -344,6 +370,11 @@ export function useStretchPlayer({
 
     setCurrentTime(clampedTime);
 
+    if (rt.liteMode) {
+      if (video) video.currentTime = clampedTime;
+      return;
+    }
+
     if (rt.stretch) {
       rt.stretch.schedule({
         input: clampedTime,
@@ -361,10 +392,16 @@ export function useStretchPlayer({
   // Set rate
   const setRate = useCallback((newRate: number) => {
     const rt = runtime.current;
+    const video = videoRef.current;
 
     rt.rate = newRate;
     rt.lastRateChangeMs = performance.now();
     setRateState(newRate);
+
+    if (rt.liteMode) {
+      if (video) video.playbackRate = newRate;
+      return;
+    }
 
     if (rt.stretch) {
       rt.stretch.schedule({
@@ -377,10 +414,9 @@ export function useStretchPlayer({
   // Set semitones
   const setSemitones = useCallback((newSemitones: number) => {
     const rt = runtime.current;
-
+    if (rt.liteMode) return; // no pitch in lite mode
     rt.semitones = newSemitones;
     setSemitonesState(newSemitones);
-
     if (rt.stretch) {
       rt.stretch.schedule({
         rate: rt.rate,
@@ -392,11 +428,10 @@ export function useStretchPlayer({
   // Set reverb
   const setReverbAmount = useCallback((amount: number) => {
     const rt = runtime.current;
+    if (rt.liteMode) return; // no reverb in lite mode
     const clamped = Math.max(0, Math.min(1, amount));
-
     rt.reverbAmount = clamped;
     setReverbAmountState(clamped);
-
     if (rt.dryGain && rt.wetGain) {
       rt.dryGain.gain.value = 1 - clamped * 0.5;
       rt.wetGain.gain.value = clamped;
@@ -406,11 +441,14 @@ export function useStretchPlayer({
   // Set volume
   const setVolume = useCallback((newVolume: number) => {
     const rt = runtime.current;
+    const video = videoRef.current;
     const clamped = Math.max(0, Math.min(1, newVolume));
-
     rt.volume = clamped;
     setVolumeState(clamped);
-
+    if (rt.liteMode && video) {
+      video.volume = clamped;
+      return;
+    }
     if (rt.masterGain) {
       rt.masterGain.gain.value = clamped;
     }
@@ -429,12 +467,91 @@ export function useStretchPlayer({
     const init = async () => {
       cleanup();
       setState("loading");
+      runtime.current.liteMode = liteMode;
 
       try {
         const rt = runtime.current;
 
+        if (liteMode) {
+          // Lite mode: native video playback only (speed only; no pitch/reverb). Much more stable.
+          video.src = fileUrl;
+          video.muted = false;
+          video.volume = initialVolume;
+          video.playsInline = true;
+          (video as any).preservesPitch = false;
+          (video as any).mozPreservesPitch = false;
+          (video as any).webkitPreservesPitch = false;
+          video.load();
+
+          await new Promise<void>((resolve, reject) => {
+            if (video.readyState >= 3) {
+              resolve();
+              return;
+            }
+            const onCanPlay = () => {
+              video.removeEventListener("canplay", onCanPlay);
+              video.removeEventListener("error", onError);
+              resolve();
+            };
+            const onError = (e: Event) => {
+              video.removeEventListener("canplay", onCanPlay);
+              video.removeEventListener("error", onError);
+              reject(e);
+            };
+            video.addEventListener("canplay", onCanPlay);
+            video.addEventListener("error", onError);
+          });
+
+          if (aborted) return;
+
+          rt.duration = video.duration;
+          rt.rate = initialRate;
+          rt.volume = initialVolume;
+          rt.reverbAmount = 0;
+          rt.semitones = 0;
+          setDuration(video.duration);
+          setRateState(initialRate);
+          setVolumeState(initialVolume);
+          setReverbAmountState(0);
+          setSemitonesState(0);
+          setVideoElement(video);
+          setIsVideoReady(true);
+          video.playbackRate = initialRate;
+          video.currentTime = initialPosition;
+          setCurrentTime(initialPosition);
+
+          const onTimeUpdate = () => setCurrentTime(video.currentTime);
+          const onVideoEnded = () => {
+            if (rt.repeat) {
+              video.currentTime = 0;
+              video.play().catch(() => {});
+            } else {
+              rt.isPlaying = false;
+              setIsPlaying(false);
+              setCurrentTime(rt.duration);
+              rt.onEnded?.();
+            }
+          };
+          video.addEventListener("timeupdate", onTimeUpdate);
+          video.addEventListener("ended", onVideoEnded);
+          liteTeardownRef.current = () => {
+            video.removeEventListener("timeupdate", onTimeUpdate);
+            video.removeEventListener("ended", onVideoEnded);
+          };
+
+          setState("ready");
+          if (autoPlay) {
+            setTimeout(() => {
+              video.play().catch(() => {});
+              rt.isPlaying = true;
+              setIsPlaying(true);
+            }, 50);
+          }
+          return;
+        }
+
+        // Full mode: Web Audio (stretch) + muted video for visuals
         // Video is muted so only Web Audio (stretch → destination) is heard; avoids doubled sound.
-        // Media Session still works because AudioContext outputs to the destination.
         video.src = fileUrl;
         video.muted = true;
         video.playsInline = true;
@@ -560,7 +677,17 @@ export function useStretchPlayer({
       aborted = true;
       abortController.abort();
     };
-  }, [fileUrl, cleanup, play, initialRate, initialPosition, autoPlay, onVideoError]);
+  }, [
+    fileUrl,
+    liteMode,
+    cleanup,
+    play,
+    initialRate,
+    initialPosition,
+    initialVolume,
+    autoPlay,
+    onVideoError,
+  ]);
 
   // Visibility change handler
   useEffect(() => {
@@ -568,16 +695,18 @@ export function useStretchPlayer({
       const rt = runtime.current;
       const video = videoRef.current;
 
-      if (document.visibilityState === "visible" && rt.isPlaying && video) {
-        // Resync video to audio when returning from background
-        const audioTime = rt.stretch?.inputTime ?? 0;
-        video.currentTime = audioTime;
-        video.play().catch(() => {});
+      if (document.visibilityState !== "visible" || !rt.isPlaying || !video) return;
 
-        // Restart sync loop if needed
-        if (rt.rafId === null) {
-          rt.rafId = requestAnimationFrame(syncLoop);
-        }
+      if (rt.liteMode) {
+        video.play().catch(() => {});
+        return;
+      }
+      // Resync video to audio when returning from background
+      const audioTime = rt.stretch?.inputTime ?? 0;
+      video.currentTime = audioTime;
+      video.play().catch(() => {});
+      if (rt.rafId === null) {
+        rt.rafId = requestAnimationFrame(syncLoop);
       }
     };
 
@@ -600,7 +729,7 @@ export function useStretchPlayer({
     semitones,
     reverbAmount,
     volume,
-    isNativeFallback: false, // No more native fallback
+    isNativeFallback: liteMode,
     play,
     pause,
     togglePlayback,

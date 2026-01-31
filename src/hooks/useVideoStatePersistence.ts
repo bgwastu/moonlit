@@ -14,6 +14,7 @@ interface UseVideoStatePersistenceProps {
   stateLoaded: boolean;
   videoDisabled: boolean;
   showLyrics: boolean;
+  liteMode: boolean;
 }
 
 /**
@@ -33,6 +34,7 @@ export function useVideoStatePersistence({
   stateLoaded,
   videoDisabled,
   showLyrics,
+  liteMode,
 }: UseVideoStatePersistenceProps): void {
   const lastSaveRef = useRef<number>(0);
 
@@ -53,6 +55,7 @@ export function useVideoStatePersistence({
       volume,
       videoDisabled,
       showLyrics,
+      liteMode,
     });
   }, [
     currentTime,
@@ -67,6 +70,7 @@ export function useVideoStatePersistence({
     isReady,
     videoDisabled,
     showLyrics,
+    liteMode,
   ]);
 
   useEffect(() => {
@@ -82,6 +86,7 @@ export function useVideoStatePersistence({
         volume,
         videoDisabled,
         showLyrics,
+        liteMode,
       });
     };
 
@@ -109,5 +114,6 @@ export function useVideoStatePersistence({
     stateLoaded,
     videoDisabled,
     showLyrics,
+    liteMode,
   ]);
 }
