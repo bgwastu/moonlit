@@ -1,6 +1,6 @@
 # Moonlit
 
-Are you a weirdo who likes to listen to _slowed_, _nightcore_ (or _sped up_, as the new generation calls it) music? Well, you'll probably like this app.
+Are you a weirdo who likes to listen to _slowed_, _nightcore_ music? Well, you'll probably like this app.
 
 Moonlit lets you grab tracks from YouTube or TikTok and tweak their pitch, reverb, and playback speed in real-time. It’s a simple tool for creating your own _slowed_ or _nightcore_ vibes.
 
@@ -27,12 +27,11 @@ https://github.com/user-attachments/assets/a54716fb-35cb-4158-b789-74a74fc359dc
 # Features
 
 - **Customizable Playback**: Change playback speed, enabling "slowed & reverb" or "nightcore" effects.
-- **Pitch Lock & Shifting**: Change the speed without affecting pitch, or shift pitch independently (semitones).
+- **Pitch Lock & Shifting**: Change the speed without affecting pitch, or shift pitch independently (non lite mode).
 - **Reverb Effect**: Add ambiance to your tracks with adjustable reverb.
 - **Lyrics Support**: View synchronized lyrics while listening to your tracks.
 - **Multi-platform support**: Works with YouTube and TikTok.
 - **Client-Side Cookie Management**: Use your own YouTube cookies to bypass restrictions (e.g., age-gated content).
-- **Video Quality Selection**: Choose between high (720p) or low (480p) quality when downloading videos > 10 minutes.
 - **Admin Dashboard**: A dedicated interface to manage system-wide cookies and update the yt-dlp binary.
 - **Export Options**: Download the original media or export your processed remix as a WAV file.
 - **Self-Hostable**: Includes Docker and Docker Compose support for easy deployment.
