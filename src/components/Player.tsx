@@ -193,6 +193,7 @@ export function Player({ media, repeating }: { media: Media; repeating: boolean 
         syncedLyrics: discoveredLyrics.syncedLyrics,
         trackName: discoveredLyrics.trackName,
         artistName: discoveredLyrics.artistName,
+        albumName: discoveredLyrics.albumName,
         offset: 0,
       };
       setLyricsSettings(newSettings);
@@ -218,6 +219,7 @@ export function Player({ media, repeating }: { media: Media; repeating: boolean 
         syncedLyrics: record.syncedLyrics,
         trackName: record.trackName,
         artistName: record.artistName,
+        albumName: record.albumName,
         offset: 0,
       };
       setLyricsSettings(newSettings);
@@ -598,6 +600,7 @@ export function Player({ media, repeating }: { media: Media; repeating: boolean 
         onToggleLyrics={setShowLyrics}
         currentLyricsTrackName={lyricsSettings?.trackName ?? null}
         currentLyricsArtistName={lyricsSettings?.artistName ?? null}
+        currentLyricsAlbumName={lyricsSettings?.albumName ?? null}
         currentOffset={lyricsSettings?.offset ?? 0}
         onOffsetChange={handleLyricsOffsetChange}
         onChangeLyrics={() => setLyricsSearchModalOpened(true)}
