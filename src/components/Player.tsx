@@ -173,12 +173,7 @@ export function Player({ media, repeating }: { media: Media; repeating: boolean 
     initialReverbAmount: savedState?.reverbAmount ?? 0,
     initialVolume: savedState?.volume ?? 1,
     initialPosition: stateLoaded ? initialStartAt : 0,
-    onEnded: () => {
-      if (isRepeat) {
-        seek(0);
-        play();
-      }
-    },
+    isRepeat,
   });
 
   const {

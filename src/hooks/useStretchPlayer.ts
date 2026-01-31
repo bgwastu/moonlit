@@ -12,6 +12,7 @@ interface UseStretchPlayerProps {
   initialReverbAmount?: number;
   initialVolume?: number;
   autoPlay?: boolean;
+  isRepeat?: boolean;
   onEnded?: () => void;
 }
 
@@ -68,6 +69,7 @@ export function useStretchPlayer({
   initialReverbAmount = 0,
   initialVolume = 1,
   autoPlay = true,
+  isRepeat = false,
   onEnded,
 }: UseStretchPlayerProps): UseStretchPlayerReturn {
   const [state, setState] = useState<StretchPlayerState>("loading");
@@ -103,12 +105,14 @@ export function useStretchPlayer({
   const semitonesRef = useRef(initialSemitones);
   const isPlayingRef = useRef(false);
   const onEndedRef = useRef(onEnded);
+  const isRepeatRef = useRef(isRepeat);
 
   // Keep refs in sync
   rateRef.current = rate;
   semitonesRef.current = semitones;
   isPlayingRef.current = isPlaying;
   reverbAmountRef.current = reverbAmount;
+  isRepeatRef.current = isRepeat;
   volumeRef.current = volume;
   onEndedRef.current = onEnded;
 
@@ -548,12 +552,15 @@ export function useStretchPlayer({
 
             // Handle end
             if (time >= durationRef.current - 0.1 && isPlayingRef.current) {
-              if (onEndedRef.current) {
-                onEndedRef.current();
+              if (isRepeatRef.current) {
+                // Loop: seek to beginning and continue
+                videoElement.currentTime = 0;
               } else {
+                // Stop playback
                 videoElement.pause();
                 setIsPlaying(false);
                 isPlayingRef.current = false;
+                if (onEndedRef.current) onEndedRef.current();
               }
             }
             return;
@@ -593,13 +600,22 @@ export function useStretchPlayer({
 
           // Handle end
           if (audioTime >= dur - 0.1 && isPlayingRef.current) {
-            if (onEndedRef.current) {
-              onEndedRef.current();
+            if (isRepeatRef.current) {
+              // Loop: seek to beginning and continue
+              node.schedule({
+                input: 0,
+                rate: rateRef.current,
+                semitones: semitonesRef.current,
+                active: true,
+              });
+              if (videoElement) videoElement.currentTime = 0;
             } else {
+              // Stop playback
               node.schedule({ active: false });
               setIsPlaying(false);
               isPlayingRef.current = false;
               if (videoElement) videoElement.pause();
+              if (onEndedRef.current) onEndedRef.current();
             }
           }
         }, 100);
@@ -666,53 +682,54 @@ export function useStretchPlayer({
     }
   }, [videoElement, state, rate, semitones]);
 
-  // Re-sync state when tab becomes visible again (browser sleep, background tab, etc.)
+  // Re-sync video to audio when tab becomes visible again
   useEffect(() => {
-    const syncFromSource = () => {
+    const handleVisibilityChange = () => {
+      // Only act when returning from background
       if (document.visibilityState !== "visible") return;
+
       const video = videoElement;
       if (!video || durationRef.current <= 0) return;
 
-      if (useNativeFallbackRef.current) {
-        const time = video.currentTime;
-        const playing = !video.paused;
-        setCurrentTime(Math.min(time, durationRef.current));
-        setIsPlaying(playing);
-        isPlayingRef.current = playing;
-        return;
-      }
+      console.log("StretchPlayer: returning from background, syncing video");
 
-      const node = stretchNodeRef.current;
-      if (!node) return;
-      const audioTime = node.inputTime ?? 0;
-      const dur = durationRef.current;
-      setCurrentTime(Math.min(audioTime, dur));
+      // Small delay to let browser stabilize
+      setTimeout(() => {
+        if (useNativeFallbackRef.current) {
+          // Native fallback: video controls audio, just update time state
+          const time = video.currentTime;
+          setCurrentTime(Math.min(time, durationRef.current));
+          // Sync playing state with video
+          const playing = !video.paused;
+          setIsPlaying(playing);
+          isPlayingRef.current = playing;
+          return;
+        }
 
-      // Check if audio was still playing in background
-      const audioWasPlaying = isPlayingRef.current;
+        // Stretch node path: sync video to audio time
+        const node = stretchNodeRef.current;
+        if (!node) return;
 
-      if (video) {
+        const audioTime = node.inputTime ?? 0;
+        const dur = durationRef.current;
+        setCurrentTime(Math.min(audioTime, dur));
+
+        // Sync video time to where audio is
         const drift = Math.abs(video.currentTime - audioTime);
-        if (drift > 0.05) video.currentTime = audioTime;
+        if (drift > 0.05) {
+          video.currentTime = audioTime;
+        }
 
         // Ensure rate is correct
-        const targetRate = useNativeFallbackRef.current
-          ? rateRef.current * Math.pow(2, semitonesRef.current / 12)
-          : rateRef.current;
-        video.playbackRate = targetRate;
+        video.playbackRate = rateRef.current;
 
-        // Resume video if audio was playing in background
-        if (audioWasPlaying) {
+        // Resume video if audio is still playing
+        if (isPlayingRef.current && video.paused) {
           video.play().catch((err) => {
             console.warn("StretchPlayer: could not resume video on visible:", err);
           });
         }
-      }
-    };
-
-    const onVisible = () => {
-      // Small delay to let browser stabilize
-      setTimeout(syncFromSource, 50);
+      }, 50);
     };
 
     const handleVideoPause = () => {
@@ -730,14 +747,14 @@ export function useStretchPlayer({
       }
     };
 
-    document.addEventListener("visibilitychange", onVisible);
-    window.addEventListener("pageshow", onVisible);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    window.addEventListener("pageshow", handleVisibilityChange);
     videoElement?.addEventListener("pause", handleVideoPause);
     videoElement?.addEventListener("play", handleVideoPlay);
 
     return () => {
-      document.removeEventListener("visibilitychange", onVisible);
-      window.removeEventListener("pageshow", onVisible);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener("pageshow", handleVisibilityChange);
       videoElement?.removeEventListener("pause", handleVideoPause);
       videoElement?.removeEventListener("play", handleVideoPlay);
     };
