@@ -182,6 +182,7 @@ export function Player({ media, repeating }: { media: Media; repeating: boolean 
     state: lyricsState,
     error: lyricsError,
     discoveredLyrics,
+    searchResults,
   } = useLyrics({
     trackName: media.metadata.title,
     artistName: media.metadata.artist ?? media.metadata.author,
@@ -596,6 +597,7 @@ export function Player({ media, repeating }: { media: Media; repeating: boolean 
         opened={lyricsSearchModalOpened}
         onClose={() => setLyricsSearchModalOpened(false)}
         initialSearchQuery={media.metadata.title}
+        initialResults={searchResults}
         trackDurationSeconds={duration}
         currentLyricsId={lyricsSettings?.id ?? null}
         onSelectLyrics={handleSelectLyrics}
@@ -778,7 +780,6 @@ export function Player({ media, repeating }: { media: Media; repeating: boolean 
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "center",
-                    backgroundColor: "rgba(0,0,0,0.2)",
                   }}
                 >
                   <Image

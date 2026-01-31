@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Lyric, parseLRC } from "@/lib/lyrics";
+import { Lyric, LyricsSearchRecord, parseLRC } from "@/lib/lyrics";
 
 const LRCLIB_BASE = "https://lrclib.net/api";
 const USER_AGENT = "Moonlit (https://github.com/bgwastu/moonlit)";
@@ -46,6 +46,7 @@ interface UseLyricsReturn {
   state: LyricsState;
   error: string | null;
   discoveredLyrics: DiscoveredLyrics | null;
+  searchResults: LyricsSearchRecord[];
   refetch: () => void;
 }
 
@@ -74,6 +75,7 @@ export function useLyrics({
   const [state, setState] = useState<LyricsState>("idle");
   const [error, setError] = useState<string | null>(null);
   const [discoveredLyrics, setDiscoveredLyrics] = useState<DiscoveredLyrics | null>(null);
+  const [searchResults, setSearchResults] = useState<LyricsSearchRecord[]>([]);
 
   const offsetMs = offsetSeconds * 1000;
 
@@ -82,30 +84,64 @@ export function useLyrics({
       setLyrics([]);
       setState("idle");
       setDiscoveredLyrics(null);
+      setSearchResults([]);
       return;
     }
     setState("loading");
     setError(null);
+
+    const getParams = new URLSearchParams({
+      track_name: trackName.trim(),
+      artist_name: artistName.trim(),
+      album_name: "",
+      duration: String(Math.round(durationSeconds)),
+    });
+
+    const searchParams = new URLSearchParams({
+      q: `${trackName.trim()} ${artistName.trim()}`,
+      track_name: trackName.trim(),
+      artist_name: artistName.trim(),
+    });
+
     try {
-      const params = new URLSearchParams({
-        track_name: trackName.trim(),
-        artist_name: artistName.trim(),
-        album_name: "",
-        duration: String(Math.round(durationSeconds)),
-      });
-      const res = await fetch(`${LRCLIB_BASE}/get?${params}`, {
-        headers: { "Lrclib-Client": USER_AGENT },
-      });
-      if (!res.ok) {
-        if (res.status === 404) {
+      // Run both requests in parallel
+      const [getRes, searchRes] = await Promise.allSettled([
+        fetch(`${LRCLIB_BASE}/get?${getParams}`, {
+          headers: { "Lrclib-Client": USER_AGENT },
+        }),
+        fetch(`${LRCLIB_BASE}/search?${searchParams}`, {
+          headers: { "Lrclib-Client": USER_AGENT },
+        }),
+      ]);
+
+      // -- Handle Search Results --
+      if (searchRes.status === "fulfilled" && searchRes.value.ok) {
+        try {
+          const searchData = (await searchRes.value.json()) as LyricsSearchRecord[];
+          setSearchResults(Array.isArray(searchData) ? searchData : []);
+        } catch {
+          setSearchResults([]);
+        }
+      } else {
+        setSearchResults([]);
+      }
+
+      // -- Handle Direct Get --
+      if (getRes.status === "rejected" || !getRes.value.ok) {
+        if (getRes.status === "fulfilled" && getRes.value.status === 404) {
           setLyrics([]);
           setState("not_found");
           setDiscoveredLyrics(null);
           return;
         }
-        throw new Error(`LRCLib ${res.status}`);
+        throw new Error(
+          getRes.status === "fulfilled"
+            ? `LRCLib ${getRes.value.status}`
+            : "Network error",
+        );
       }
-      const data: LrclibResponse = await res.json();
+
+      const data: LrclibResponse = await getRes.value.json();
       const recordDuration = data.duration ?? 0;
       if (!durationMatches(durationSeconds, recordDuration)) {
         setLyrics([]);
@@ -165,5 +201,5 @@ export function useLyrics({
     fetchLyrics();
   }, [enabled, selectedSyncedLyrics, durationSeconds, offsetMs, fetchLyrics]);
 
-  return { lyrics, state, error, discoveredLyrics, refetch: fetchLyrics };
+  return { lyrics, state, error, discoveredLyrics, searchResults, refetch: fetchLyrics };
 }
