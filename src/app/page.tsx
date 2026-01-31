@@ -8,13 +8,11 @@ import {
   Anchor,
   AppShell,
   Box,
-  Button,
-  Center,
   Container,
+  Divider,
   Flex,
   Footer,
   Group,
-  Paper,
   Stack,
   Text,
   TextInput,
@@ -25,14 +23,13 @@ import {
 } from "@mantine/core";
 import { Dropzone } from "@mantine/dropzone";
 import { useForm } from "@mantine/form";
+import { useMediaQuery } from "@mantine/hooks";
 import { notifications } from "@mantine/notifications";
 import {
   IconArrowRight,
-  IconBrandGithub,
   IconCookie,
   IconHistory,
   IconMusic,
-  IconMusicUp,
   IconTrash,
   IconUpload,
   IconWorld,
@@ -67,6 +64,7 @@ function LocalUpload() {
   const router = useRouter();
   const [, noSleep] = useNoSleep();
   const theme = useMantineTheme();
+  const isMobile = useMediaQuery(`(max-width: ${theme.breakpoints.sm})`);
 
   return (
     <>
@@ -125,7 +123,7 @@ function LocalUpload() {
           const blobUrl = URL.createObjectURL(files[0]);
           const newMedia: Media = {
             fileUrl: blobUrl,
-            sourceUrl: sourceUrl,
+            sourceUrl: sourceUrl, // Use cache key as stable identifier/sourceUrl
             metadata,
           };
 
@@ -136,33 +134,51 @@ function LocalUpload() {
         }}
         onReject={(files) => console.log("rejected files", files)}
         sx={(theme) => ({
-          backgroundColor: theme.colors.dark[6],
-          border: `1px solid ${theme.colors.dark[5]}`,
-          borderRadius: theme.radius.lg,
+          backgroundColor: "rgba(26, 27, 30, 0.3)",
+          backdropFilter: "blur(10px)",
+          border: `1px solid rgba(255, 255, 255, 0.1)`,
+          borderRadius: theme.radius.md,
           padding: 0,
           transition: "all 0.2s ease",
           "&:hover": {
-            backgroundColor: theme.colors.dark[5],
+            backgroundColor: "rgba(26, 27, 30, 0.5)",
             borderColor: theme.colors.violet[5],
           },
         })}
       >
-        <Stack spacing="xs" align="center" justify="center" h={180}>
+        <Stack spacing="xs" align="center" justify="center" h={isMobile ? 140 : 180}>
           <Dropzone.Accept>
-            <IconUpload size="3rem" stroke={1.5} color={theme.colors.violet[4]} />
+            <IconUpload
+              size={isMobile ? "2.5rem" : "3rem"}
+              stroke={1.5}
+              color={theme.colors.violet[4]}
+            />
           </Dropzone.Accept>
           <Dropzone.Reject>
-            <IconTrash size="3rem" stroke={1.5} color={theme.colors.red[5]} />
+            <IconTrash
+              size={isMobile ? "2.5rem" : "3rem"}
+              stroke={1.5}
+              color={theme.colors.red[5]}
+            />
           </Dropzone.Reject>
           <Dropzone.Idle>
-            <IconMusic size="3rem" stroke={1.5} color={theme.colors.dark[2]} />
+            <IconMusic
+              size={isMobile ? "2.5rem" : "3rem"}
+              stroke={1.5}
+              color={theme.colors.dark[2]}
+            />
           </Dropzone.Idle>
 
           <Box>
-            <Text size="lg" align="center" weight={500} color="dimmed">
+            <Text
+              size={isMobile ? "md" : "lg"}
+              align="center"
+              weight={500}
+              color="dimmed"
+            >
               Drop local file here
             </Text>
-            <Text size="sm" color="dimmed" align="center" mt={4}>
+            <Text size={isMobile ? "xs" : "sm"} color="dimmed" align="center" mt={4}>
               Supports MP3, WAV, MP4
             </Text>
           </Box>
@@ -172,9 +188,17 @@ function LocalUpload() {
   );
 }
 
-function YoutubeUpload({ onOpenCookies }: { onOpenCookies: () => void }) {
+function YoutubeUpload({
+  onOpenCookies,
+  onLoadingStart,
+}: {
+  onOpenCookies: () => void;
+  onLoadingStart: (loading: boolean) => void;
+}) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
+  const theme = useMantineTheme();
+  const isMobile = useMediaQuery(`(max-width: ${theme.breakpoints.sm})`);
   const form = useForm({
     initialValues: {
       url: "",
@@ -186,6 +210,7 @@ function YoutubeUpload({ onOpenCookies }: { onOpenCookies: () => void }) {
 
   async function onSubmit(url: string) {
     setLoading(true);
+    onLoadingStart(true);
 
     if (isTikTokURL(url)) {
       const { creator, videoId } = getTikTokCreatorAndVideoId(url);
@@ -209,6 +234,7 @@ function YoutubeUpload({ onOpenCookies }: { onOpenCookies: () => void }) {
           throw new Error("Could not parse TikTok URL. Please try again.");
         } catch (error) {
           setLoading(false);
+          onLoadingStart(false);
           notifications.show({
             title: "Error",
             message: `${(error as Error).message || "Failed to load TikTok video"}. You can try downloading it manually and uploading it to Moonlit.`,
@@ -222,6 +248,7 @@ function YoutubeUpload({ onOpenCookies }: { onOpenCookies: () => void }) {
       const id = getYouTubeId(url);
       if (!id) {
         setLoading(false);
+        onLoadingStart(false);
         notifications.show({
           title: "Error",
           message: "Invalid URL",
@@ -231,6 +258,7 @@ function YoutubeUpload({ onOpenCookies }: { onOpenCookies: () => void }) {
       router.push("/watch?v=" + id);
     } else {
       setLoading(false);
+      onLoadingStart(false);
       notifications.show({
         title: "Error",
         message: "Unsupported URL",
@@ -244,35 +272,38 @@ function YoutubeUpload({ onOpenCookies }: { onOpenCookies: () => void }) {
         <TextInput
           icon={
             form.values.url.includes("youtube") ? (
-              <SiYoutube size={20} />
+              <SiYoutube size={isMobile ? 18 : 20} />
             ) : form.values.url.includes("tiktok") ? (
-              <SiTiktok size={20} />
+              <SiTiktok size={isMobile ? 18 : 20} />
             ) : (
-              <IconWorld size={20} />
+              <IconWorld size={isMobile ? 18 : 20} />
             )
           }
-          placeholder="Paste YouTube or TikTok URL..."
-          size="xl"
+          placeholder="YouTube or TikTok URL..."
+          size={isMobile ? "md" : "xl"}
           radius="md"
           variant="filled"
           rightSection={
             <ActionIcon
-              size="lg"
+              size={isMobile ? "md" : "lg"}
               variant="filled"
               color="violet"
               loading={loading}
               onClick={() => form.onSubmit((values) => onSubmit(values.url))()}
               radius="md"
             >
-              <IconArrowRight size={20} />
+              <IconArrowRight size={isMobile ? 18 : 20} />
             </ActionIcon>
           }
-          rightSectionWidth={52}
+          rightSectionWidth={isMobile ? 42 : 52}
           styles={(theme) => ({
             input: {
-              backgroundColor: theme.colors.dark[6],
+              backgroundColor: "rgba(26, 27, 30, 0.3)",
+              backdropFilter: "blur(10px)",
+              border: `1px solid rgba(255, 255, 255, 0.1)`,
               "&:focus": {
-                backgroundColor: theme.colors.dark[5],
+                backgroundColor: "rgba(26, 27, 30, 0.5)",
+                borderColor: theme.colors.violet[5],
               },
             },
           })}
@@ -285,27 +316,39 @@ function YoutubeUpload({ onOpenCookies }: { onOpenCookies: () => void }) {
 
 function FooterSection() {
   return (
-    <Footer height={60} p="md" sx={{ borderTop: "none" }}>
+    <Footer height={60} p="md" sx={{ borderTop: "none", backgroundColor: "transparent" }}>
       <Container size="md">
         <Flex justify="center" align="center" gap="xs">
-          <Text color="dimmed" size="sm">
-            Moonlit
-          </Text>
-          <Text color="dark.6" size="sm">
-            •
-          </Text>
           <Anchor
             href="https://github.com/bgwastu/moonlit"
             target="_blank"
             color="dimmed"
             size="sm"
+            sx={{ "&:hover": { textDecoration: "underline" } }}
           >
             GitHub
           </Anchor>
           <Text color="dark.6" size="sm">
             •
           </Text>
-          <Anchor href="mailto:bagas@wastu.net" color="dimmed" size="sm">
+          <Anchor
+            href="https://github.com/bgwastu/moonlit/issues"
+            target="_blank"
+            color="dimmed"
+            size="sm"
+            sx={{ "&:hover": { textDecoration: "underline" } }}
+          >
+            Report Bugs
+          </Anchor>
+          <Text color="dark.6" size="sm">
+            •
+          </Text>
+          <Anchor
+            href="mailto:bagas@wastu.net?subject=Moonlit%20Feedback&body=Hi%20Bagas%2C%0A%0AI%20have%20some%20feedback%20for%20Moonlit%3A%0A"
+            color="dimmed"
+            size="sm"
+            sx={{ "&:hover": { textDecoration: "underline" } }}
+          >
             Feedback
           </Anchor>
         </Flex>
@@ -327,9 +370,9 @@ function Header({
     <Box py="lg">
       <Container size="md">
         <Flex justify="space-between" align="center">
-          <Flex align="center" gap="sm">
-            <Icon size={24} />
-            <Text fw={700} size="lg" style={{ userSelect: "none" }}>
+          <Flex align="center" gap={12}>
+            <Icon size={18} />
+            <Text fz={rem(20)} fw="bold" lts={rem(0.2)} style={{ userSelect: "none" }}>
               Moonlit
             </Text>
           </Flex>
@@ -377,11 +420,30 @@ export default function UploadPage() {
   const [cookiesOpened, setCookiesOpened] = useState(false);
   const [historyOpened, setHistoryOpened] = useState(false);
   const [resetOpened, setResetOpened] = useState(false);
+  const [globalLoading, setGlobalLoading] = useState(false);
 
   return (
     <>
+      <style global jsx>{`
+        @keyframes gradient {
+          0% {
+            background-position: 0% 0%;
+          }
+          50% {
+            background-position: 100% 100%;
+          }
+          100% {
+            background-position: 0% 0%;
+          }
+        }
+      `}</style>
+      <LoadingOverlay visible={globalLoading} message="Loading video..." />
       <CookiesModal opened={cookiesOpened} onClose={() => setCookiesOpened(false)} />
-      <HistoryModal opened={historyOpened} onClose={() => setHistoryOpened(false)} />
+      <HistoryModal
+        opened={historyOpened}
+        onClose={() => setHistoryOpened(false)}
+        onLoadingStart={setGlobalLoading}
+      />
       <ResetModal opened={resetOpened} onClose={() => setResetOpened(false)} />
 
       <AppShell
@@ -390,7 +452,9 @@ export default function UploadPage() {
         styles={{
           main: {
             background:
-              "linear-gradient(180deg, rgba(26,27,30,0) 0%, rgba(26,27,30,1) 100%)", // Very subtle fade if anything, or just transparent
+              "radial-gradient(circle at 50% 120%, rgba(120, 50, 220, 0.45) 0%, rgba(20, 20, 30, 0) 50%), radial-gradient(circle at 50% -20%, rgba(120, 50, 220, 0.25) 0%, #1A1B1E 60%)",
+            backgroundSize: "300% 300%",
+            animation: "gradient 10s ease infinite",
           },
         }}
       >
@@ -413,10 +477,30 @@ export default function UploadPage() {
               <Stack spacing={40}>
                 {/* Hero Text */}
                 <Stack spacing="xs" align="center" ta="center">
-                  <Title order={1} size={42} fw={800} color="white">
+                  <Title
+                    order={1}
+                    size={rem(42)}
+                    fw={800}
+                    color="white"
+                    sx={(theme) => ({
+                      [theme.fn.smallerThan("sm")]: {
+                        fontSize: rem(32),
+                      },
+                    })}
+                  >
                     Play it your way.
                   </Title>
-                  <Text size="lg" c="dimmed" maw={400} mx="auto">
+                  <Text
+                    size="lg"
+                    c="dimmed"
+                    maw={400}
+                    mx="auto"
+                    sx={(theme) => ({
+                      [theme.fn.smallerThan("sm")]: {
+                        fontSize: theme.fontSizes.md,
+                      },
+                    })}
+                  >
                     Transform your music with real-time slowed + reverb and nightcore
                     effects.
                   </Text>
@@ -424,13 +508,23 @@ export default function UploadPage() {
 
                 {/* Main Action Area */}
                 <Stack spacing="lg">
-                  <YoutubeUpload onOpenCookies={() => setCookiesOpened(true)} />
+                  <YoutubeUpload
+                    onOpenCookies={() => setCookiesOpened(true)}
+                    onLoadingStart={setGlobalLoading}
+                  />
 
-                  <Center>
-                    <Text size="sm" c="dimmed" fw={500}>
-                      OR
-                    </Text>
-                  </Center>
+                  <Divider
+                    label="OR"
+                    labelPosition="center"
+                    color="rgba(255, 255, 255, 0.8)"
+                    styles={{
+                      label: {
+                        color: "rgba(255, 255, 255, 0.5)",
+                        "&::before": { borderTopColor: "rgba(255, 255, 255, 0.1)" },
+                        "&::after": { borderTopColor: "rgba(255, 255, 255, 0.1)" },
+                      },
+                    }}
+                  />
 
                   <LocalUpload />
                 </Stack>
