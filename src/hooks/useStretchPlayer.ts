@@ -63,14 +63,16 @@ interface PlayerRuntime {
   rafId: number | null;
   lastUiUpdateMs: number;
   lastRateChangeMs: number;
+  lastDriftCorrectionMs: number;
 
   // Callbacks
   onEnded?: () => void;
 }
 
-const DRIFT_THRESHOLD = 0.1; // seconds
+const DRIFT_THRESHOLD = 0.25; // seconds - allow some drift before correcting
 const UI_UPDATE_INTERVAL = 100; // ms - throttle React updates
-const RATE_CHANGE_GRACE_PERIOD = 200; // ms - skip drift correction after rate change
+const RATE_CHANGE_GRACE_PERIOD = 300; // ms - skip drift correction after rate change
+const DRIFT_CORRECTION_INTERVAL = 500; // ms - minimum time between drift corrections
 
 function generateImpulseResponse(
   context: AudioContext,
@@ -138,6 +140,7 @@ export function useStretchPlayer({
     rafId: null,
     lastUiUpdateMs: 0,
     lastRateChangeMs: 0,
+    lastDriftCorrectionMs: 0,
     onEnded,
   });
 
@@ -205,16 +208,21 @@ export function useStretchPlayer({
     // Sync video to audio (video is visual slave)
     // Skip drift correction briefly after rate changes to avoid visual jumps
     const timeSinceRateChange = now - rt.lastRateChangeMs;
+    const timeSinceDriftCorrection = now - rt.lastDriftCorrectionMs;
     if (video && !video.seeking) {
-      // Sync playback rate first
+      // Sync playback rate (only when different)
       if (Math.abs(video.playbackRate - rt.rate) > 0.01) {
         video.playbackRate = rt.rate;
       }
-      // Only correct drift if enough time has passed since rate change
-      if (timeSinceRateChange > RATE_CHANGE_GRACE_PERIOD) {
+      // Only correct drift if enough time has passed since rate change AND last correction
+      if (
+        timeSinceRateChange > RATE_CHANGE_GRACE_PERIOD &&
+        timeSinceDriftCorrection > DRIFT_CORRECTION_INTERVAL
+      ) {
         const drift = Math.abs(video.currentTime - audioTime);
         if (drift > DRIFT_THRESHOLD) {
           video.currentTime = audioTime;
+          rt.lastDriftCorrectionMs = now;
         }
       }
       // Ensure video is playing (needed for initial start and visibility restore)
@@ -262,6 +270,19 @@ export function useStretchPlayer({
 
     const inputTime = rt.stretch.inputTime ?? 0;
 
+    // Set grace period to prevent immediate drift correction
+    rt.lastRateChangeMs = performance.now();
+
+    // Prepare video BEFORE starting audio to minimize desync
+    if (video) {
+      // Set rate and position before playing to avoid flicker
+      video.playbackRate = rt.rate;
+      if (Math.abs(video.currentTime - inputTime) > DRIFT_THRESHOLD) {
+        video.currentTime = inputTime;
+      }
+    }
+
+    // Start audio
     rt.stretch.schedule({
       active: true,
       input: inputTime,
@@ -272,20 +293,9 @@ export function useStretchPlayer({
     rt.isPlaying = true;
     setIsPlaying(true);
 
-    // Set grace period to prevent immediate drift correction
-    rt.lastRateChangeMs = performance.now();
-
-    // Resume video - sync position if needed, then set rate to resume
-    if (video) {
-      if (Math.abs(video.currentTime - inputTime) > DRIFT_THRESHOLD) {
-        video.currentTime = inputTime;
-      }
-      // Set playback rate to resume (from frozen state where rate was 0)
-      video.playbackRate = rt.rate;
-      // Ensure video is playing
-      if (video.paused) {
-        video.play().catch(() => {});
-      }
+    // Start video after audio is scheduled
+    if (video && video.paused) {
+      video.play().catch(() => {});
     }
 
     // Start sync loop
@@ -307,9 +317,8 @@ export function useStretchPlayer({
     rt.isPlaying = false;
     setIsPlaying(false);
 
-    // Freeze video by setting playbackRate to 0 (avoids flicker from pause())
     if (video) {
-      video.playbackRate = 0;
+      video.pause();
     }
 
     if (rt.rafId !== null) {
@@ -424,9 +433,11 @@ export function useStretchPlayer({
       try {
         const rt = runtime.current;
 
-        // Setup video element (muted - audio comes from stretch)
+        // Setup video element with near-silent volume to keep Media Session active
+        // (fully muted videos get removed from Media Session by browsers)
         video.src = fileUrl;
-        video.muted = true;
+        video.muted = false;
+        video.volume = 0.0001;
         video.playsInline = true;
         (video as any).preservesPitch = false;
         (video as any).mozPreservesPitch = false;

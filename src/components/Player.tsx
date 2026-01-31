@@ -276,6 +276,7 @@ export function Player({ media, repeating }: { media: Media; repeating: boolean 
     isPlaying,
     currentTime,
     duration,
+    rate,
     onPlay: play,
     onPause: pause,
     onSeekBackward: handleBackward,
