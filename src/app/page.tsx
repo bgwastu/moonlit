@@ -7,29 +7,34 @@ import {
   ActionIcon,
   Anchor,
   AppShell,
+  Box,
   Button,
+  Center,
   Container,
-  Divider,
   Flex,
   Footer,
-  Modal,
+  Group,
+  Paper,
   Stack,
   Text,
   TextInput,
+  Title,
   Tooltip,
   rem,
+  useMantineTheme,
 } from "@mantine/core";
 import { Dropzone } from "@mantine/dropzone";
 import { useForm } from "@mantine/form";
 import { notifications } from "@mantine/notifications";
 import {
+  IconArrowRight,
   IconBrandGithub,
   IconCookie,
   IconHistory,
-  IconMusicCheck,
-  IconMusicPlus,
-  IconMusicX,
+  IconMusic,
+  IconMusicUp,
   IconTrash,
+  IconUpload,
   IconWorld,
 } from "@tabler/icons-react";
 import parse from "id3-parser";
@@ -37,20 +42,20 @@ import { convertFileToBuffer } from "id3-parser/lib/util";
 import { usePostHog } from "posthog-js/react";
 import CookiesModal from "@/components/CookiesModal";
 import HistoryModal from "@/components/HistoryModal";
+import Icon from "@/components/Icon";
 import LoadingOverlay from "@/components/LoadingOverlay";
 import ResetModal from "@/components/ResetModal";
 import { useAppContext } from "@/context/AppContext";
 import useNoSleep from "@/hooks/useNoSleep";
 import type { Media } from "@/interfaces";
 import { getCookiesToUse } from "@/lib/cookies";
-import Icon from "../components/Icon";
 import {
   getTikTokCreatorAndVideoId,
   getYouTubeId,
   isSupportedURL,
   isTikTokURL,
   isYoutubeURL,
-} from "../utils";
+} from "@/utils";
 
 function LocalUpload() {
   const [loading, setLoading] = useState<{ status: boolean; message: string | null }>({
@@ -61,6 +66,7 @@ function LocalUpload() {
   const posthog = usePostHog();
   const router = useRouter();
   const [, noSleep] = useNoSleep();
+  const theme = useMantineTheme();
 
   return (
     <>
@@ -78,7 +84,7 @@ function LocalUpload() {
 
           // Generate stable ID for local file
           const fileId = `local-${Date.now()}`;
-          const sourceUrl = `local:${fileId}:video`; // Storing as "video" generic media
+          const sourceUrl = `local:${fileId}:video`;
 
           // 1. Save Blob to Cache
           const { setMedia: cacheSetMedia, setMeta } = await import("@/utils/cache");
@@ -119,7 +125,7 @@ function LocalUpload() {
           const blobUrl = URL.createObjectURL(files[0]);
           const newMedia: Media = {
             fileUrl: blobUrl,
-            sourceUrl: sourceUrl, // Use cache key as stable identifier/sourceUrl
+            sourceUrl: sourceUrl,
             metadata,
           };
 
@@ -129,27 +135,38 @@ function LocalUpload() {
           noSleep.enable();
         }}
         onReject={(files) => console.log("rejected files", files)}
+        sx={(theme) => ({
+          backgroundColor: theme.colors.dark[6],
+          border: `1px solid ${theme.colors.dark[5]}`,
+          borderRadius: theme.radius.lg,
+          padding: 0,
+          transition: "all 0.2s ease",
+          "&:hover": {
+            backgroundColor: theme.colors.dark[5],
+            borderColor: theme.colors.violet[5],
+          },
+        })}
       >
-        <Flex align="center" justify="center" gap="sm" mih={220} h="100%">
+        <Stack spacing="xs" align="center" justify="center" h={180}>
           <Dropzone.Accept>
-            <IconMusicCheck size="3.2rem" stroke={1.5} />
+            <IconUpload size="3rem" stroke={1.5} color={theme.colors.violet[4]} />
           </Dropzone.Accept>
           <Dropzone.Reject>
-            <IconMusicX size="3.2rem" stroke={1.5} />
+            <IconTrash size="3rem" stroke={1.5} color={theme.colors.red[5]} />
           </Dropzone.Reject>
           <Dropzone.Idle>
-            <IconMusicPlus size="3.2rem" stroke={1.5} />
+            <IconMusic size="3rem" stroke={1.5} color={theme.colors.dark[2]} />
           </Dropzone.Idle>
 
-          <div>
-            <Text size="xl" inline>
-              Drag music here or click to select files
+          <Box>
+            <Text size="lg" align="center" weight={500} color="dimmed">
+              Drop local file here
             </Text>
-            <Text size="sm" color="dimmed" inline mt={7}>
-              Upload a music/video file to play with custom effects
+            <Text size="sm" color="dimmed" align="center" mt={4}>
+              Supports MP3, WAV, MP4
             </Text>
-          </div>
-        </Flex>
+          </Box>
+        </Stack>
       </Dropzone>
     </>
   );
@@ -223,7 +240,7 @@ function YoutubeUpload({ onOpenCookies }: { onOpenCookies: () => void }) {
 
   return (
     <form onSubmit={form.onSubmit((values) => onSubmit(values.url))}>
-      <Flex direction="column" gap="md">
+      <Stack spacing="md">
         <TextInput
           icon={
             form.values.url.includes("youtube") ? (
@@ -231,45 +248,128 @@ function YoutubeUpload({ onOpenCookies }: { onOpenCookies: () => void }) {
             ) : form.values.url.includes("tiktok") ? (
               <SiTiktok size={20} />
             ) : (
-              <IconWorld />
+              <IconWorld size={20} />
             )
           }
-          placeholder="YouTube or TikTok URL"
-          size="lg"
-          type="url"
+          placeholder="Paste YouTube or TikTok URL..."
+          size="xl"
+          radius="md"
+          variant="filled"
+          rightSection={
+            <ActionIcon
+              size="lg"
+              variant="filled"
+              color="violet"
+              loading={loading}
+              onClick={() => form.onSubmit((values) => onSubmit(values.url))()}
+              radius="md"
+            >
+              <IconArrowRight size={20} />
+            </ActionIcon>
+          }
+          rightSectionWidth={52}
+          styles={(theme) => ({
+            input: {
+              backgroundColor: theme.colors.dark[6],
+              "&:focus": {
+                backgroundColor: theme.colors.dark[5],
+              },
+            },
+          })}
           {...form.getInputProps("url")}
         />
-        <Button size="lg" type="submit" loading={loading}>
-          Download & Play
-        </Button>
-      </Flex>
+      </Stack>
     </form>
   );
 }
 
 function FooterSection() {
   return (
-    <Footer height={60} p="md">
-      <Container size="lg">
-        <Flex justify="space-between" align="center">
+    <Footer height={60} p="md" sx={{ borderTop: "none" }}>
+      <Container size="md">
+        <Flex justify="center" align="center" gap="xs">
           <Text color="dimmed" size="sm">
-            Have any feedback? Email:{" "}
-            <Anchor href="mailto:bagas@wastu.net">bagas@wastu.net</Anchor>
+            Moonlit
           </Text>
-          <ActionIcon
-            variant="subtle"
-            color="gray"
-            size="lg"
-            component="a"
+          <Text color="dark.6" size="sm">
+            •
+          </Text>
+          <Anchor
             href="https://github.com/bgwastu/moonlit"
             target="_blank"
-            rel="noopener noreferrer"
+            color="dimmed"
+            size="sm"
           >
-            <IconBrandGithub size={18} />
-          </ActionIcon>
+            GitHub
+          </Anchor>
+          <Text color="dark.6" size="sm">
+            •
+          </Text>
+          <Anchor href="mailto:bagas@wastu.net" color="dimmed" size="sm">
+            Feedback
+          </Anchor>
         </Flex>
       </Container>
     </Footer>
+  );
+}
+
+function Header({
+  setCookiesOpened,
+  setHistoryOpened,
+  setResetOpened,
+}: {
+  setCookiesOpened: (o: boolean) => void;
+  setHistoryOpened: (o: boolean) => void;
+  setResetOpened: (o: boolean) => void;
+}) {
+  return (
+    <Box py="lg">
+      <Container size="md">
+        <Flex justify="space-between" align="center">
+          <Flex align="center" gap="sm">
+            <Icon size={24} />
+            <Text fw={700} size="lg" style={{ userSelect: "none" }}>
+              Moonlit
+            </Text>
+          </Flex>
+
+          <Group spacing="xs">
+            {/* Icons */}
+            <Tooltip label="Cookies Settings" position="bottom" withArrow>
+              <ActionIcon
+                variant="subtle"
+                color="gray"
+                size="lg"
+                onClick={() => setCookiesOpened(true)}
+              >
+                <IconCookie size={20} />
+              </ActionIcon>
+            </Tooltip>
+            <Tooltip label="History" position="bottom" withArrow>
+              <ActionIcon
+                variant="subtle"
+                color="gray"
+                size="lg"
+                onClick={() => setHistoryOpened(true)}
+              >
+                <IconHistory size={20} />
+              </ActionIcon>
+            </Tooltip>
+            <Tooltip label="Reset Data" position="bottom" withArrow>
+              <ActionIcon
+                variant="subtle"
+                color="red"
+                size="lg"
+                onClick={() => setResetOpened(true)}
+              >
+                <IconTrash size={20} />
+              </ActionIcon>
+            </Tooltip>
+          </Group>
+        </Flex>
+      </Container>
+    </Box>
   );
 }
 
@@ -284,60 +384,60 @@ export default function UploadPage() {
       <HistoryModal opened={historyOpened} onClose={() => setHistoryOpened(false)} />
       <ResetModal opened={resetOpened} onClose={() => setResetOpened(false)} />
 
-      <AppShell footer={<FooterSection />} mt={28}>
-        <Container size="sm">
-          <Flex direction="column" gap={28}>
-            <Stack align="center" my={12}>
-              <Flex gap={6} align="center" justify="center" w="100%">
-                <Flex gap={12} align="center">
-                  <Icon size={24} />
-                  <Text
-                    fz={rem(28)}
-                    fw="bold"
-                    lts={rem(0.2)}
-                    style={{ userSelect: "none" }}
-                  >
-                    Moonlit
+      <AppShell
+        footer={<FooterSection />}
+        padding={0}
+        styles={{
+          main: {
+            background:
+              "linear-gradient(180deg, rgba(26,27,30,0) 0%, rgba(26,27,30,1) 100%)", // Very subtle fade if anything, or just transparent
+          },
+        }}
+      >
+        <Stack spacing={0} h="100%">
+          <Header
+            setCookiesOpened={setCookiesOpened}
+            setHistoryOpened={setHistoryOpened}
+            setResetOpened={setResetOpened}
+          />
+
+          <Box
+            style={{
+              flex: 1,
+              display: "flex",
+              flexDirection: "column",
+              justifyContent: "center",
+            }}
+          >
+            <Container size="xs" w="100%">
+              <Stack spacing={40}>
+                {/* Hero Text */}
+                <Stack spacing="xs" align="center" ta="center">
+                  <Title order={1} size={42} fw={800} color="white">
+                    Play it your way.
+                  </Title>
+                  <Text size="lg" c="dimmed" maw={400} mx="auto">
+                    Transform your music with real-time slowed + reverb and nightcore
+                    effects.
                   </Text>
-                </Flex>
-                <Tooltip label="Cookies Settings" position="bottom">
-                  <ActionIcon
-                    variant="subtle"
-                    color="violet"
-                    size="lg"
-                    onClick={() => setCookiesOpened(true)}
-                    ml="xs"
-                  >
-                    <IconCookie size={20} />
-                  </ActionIcon>
-                </Tooltip>
-                <Tooltip label="History" position="bottom">
-                  <ActionIcon
-                    variant="subtle"
-                    color="violet"
-                    size="lg"
-                    onClick={() => setHistoryOpened(true)}
-                  >
-                    <IconHistory size={20} />
-                  </ActionIcon>
-                </Tooltip>
-                <Tooltip label="Reset Data" position="bottom">
-                  <ActionIcon
-                    variant="subtle"
-                    color="red"
-                    size="lg"
-                    onClick={() => setResetOpened(true)}
-                  >
-                    <IconTrash size={20} />
-                  </ActionIcon>
-                </Tooltip>
-              </Flex>
-            </Stack>
-            <YoutubeUpload onOpenCookies={() => setCookiesOpened(true)} />
-            <Divider label="OR" labelPosition="center" />
-            <LocalUpload />
-          </Flex>
-        </Container>
+                </Stack>
+
+                {/* Main Action Area */}
+                <Stack spacing="lg">
+                  <YoutubeUpload onOpenCookies={() => setCookiesOpened(true)} />
+
+                  <Center>
+                    <Text size="sm" c="dimmed" fw={500}>
+                      OR
+                    </Text>
+                  </Center>
+
+                  <LocalUpload />
+                </Stack>
+              </Stack>
+            </Container>
+          </Box>
+        </Stack>
       </AppShell>
     </>
   );
