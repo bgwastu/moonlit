@@ -23,6 +23,7 @@ interface LyricsSearchModalProps {
   opened: boolean;
   onClose: () => void;
   initialSearchQuery: string;
+  initialResults?: LyricsSearchRecord[];
   trackDurationSeconds: number;
   currentLyricsId: number | null;
   onSelectLyrics: (lyrics: LyricsSearchRecord) => void;
@@ -32,6 +33,7 @@ export default function LyricsSearchModal({
   opened,
   onClose,
   initialSearchQuery,
+  initialResults = [],
   trackDurationSeconds,
   currentLyricsId,
   onSelectLyrics,
@@ -39,7 +41,17 @@ export default function LyricsSearchModal({
   const theme = useMantineTheme();
   const primaryColor = theme.colors[theme.primaryColor]?.[6] ?? theme.colors.blue[6];
   const [searchQuery, setSearchQuery] = useState(initialSearchQuery);
-  const { results, state, error, search } = useLyricsSearch();
+  const {
+    results: hookResults,
+    state: hookState,
+    error: hookError,
+    search,
+  } = useLyricsSearch();
+
+  // Unified state that can come from props (initial) or search hook
+  const results = hookState === "ready" ? hookResults : initialResults;
+  const state = hookState === "idle" && initialResults.length > 0 ? "ready" : hookState;
+  const error = hookState === "error" ? hookError : null;
 
   useEffect(() => {
     if (opened) {
