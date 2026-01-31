@@ -12,15 +12,13 @@ interface UseStretchPlayerProps {
   autoPlay?: boolean;
   isRepeat?: boolean;
   onEnded?: () => void;
-  onVideoError?: (e: any) => void;
+  onVideoError?: (e: unknown) => void;
 }
 
 interface UseStretchPlayerReturn {
-  // Video element
   videoRef: React.RefObject<HTMLVideoElement>;
   videoElement: HTMLVideoElement | null;
   isVideoReady: boolean;
-  // State
   state: StretchPlayerState;
   isPlaying: boolean;
   currentTime: number;
@@ -30,7 +28,6 @@ interface UseStretchPlayerReturn {
   reverbAmount: number;
   volume: number;
   isNativeFallback: boolean;
-  // Controls
   play: () => void;
   pause: () => void;
   togglePlayback: () => void;
@@ -41,24 +38,54 @@ interface UseStretchPlayerReturn {
   seek: (timeSeconds: number) => void;
 }
 
-const FETCH_TIMEOUT_MS = 30000;
+// All mutable runtime state in one ref to avoid stale closures
+interface PlayerRuntime {
+  audioContext: AudioContext | null;
+  stretch: any | null;
+  buffer: AudioBuffer | null;
 
-// Generate impulse response for reverb
+  // Audio graph nodes
+  convolver: ConvolverNode | null;
+  dryGain: GainNode | null;
+  wetGain: GainNode | null;
+  masterGain: GainNode | null;
+
+  // Playback state
+  isPlaying: boolean;
+  duration: number;
+  rate: number;
+  semitones: number;
+  volume: number;
+  reverbAmount: number;
+  repeat: boolean;
+
+  // Sync
+  rafId: number | null;
+  lastUiUpdateMs: number;
+
+  // Callbacks
+  onEnded?: () => void;
+}
+
+const DRIFT_THRESHOLD = 0.1; // seconds
+const UI_UPDATE_INTERVAL = 100; // ms - throttle React updates
+
 function generateImpulseResponse(
-  context: AudioContext | OfflineAudioContext,
-  duration: number = 2,
-  decay: number = 2,
+  context: AudioContext,
+  duration = 2,
+  decay = 2,
 ): AudioBuffer {
   const sampleRate = context.sampleRate;
   const length = sampleRate * duration;
   const impulse = context.createBuffer(2, length, sampleRate);
-  const leftChannel = impulse.getChannelData(0);
-  const rightChannel = impulse.getChannelData(1);
+  const left = impulse.getChannelData(0);
+  const right = impulse.getChannelData(1);
 
   for (let i = 0; i < length; i++) {
     const n = i / sampleRate;
-    leftChannel[i] = (Math.random() * 2 - 1) * Math.pow(1 - n / duration, decay);
-    rightChannel[i] = (Math.random() * 2 - 1) * Math.pow(1 - n / duration, decay);
+    const envelope = Math.pow(1 - n / duration, decay);
+    left[i] = (Math.random() * 2 - 1) * envelope;
+    right[i] = (Math.random() * 2 - 1) * envelope;
   }
 
   return impulse;
@@ -76,774 +103,467 @@ export function useStretchPlayer({
   onEnded,
   onVideoError,
 }: UseStretchPlayerProps): UseStretchPlayerReturn {
-  // Video element state (managed internally)
   const videoRef = useRef<HTMLVideoElement>(null);
+
+  // UI state (React renders)
+  const [state, setState] = useState<StretchPlayerState>("loading");
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0);
+  const [rate, setRateState] = useState(initialRate);
+  const [semitones, setSemitonesState] = useState(initialSemitones);
+  const [reverbAmount, setReverbAmountState] = useState(initialReverbAmount);
+  const [volume, setVolumeState] = useState(initialVolume);
   const [videoElement, setVideoElement] = useState<HTMLVideoElement | null>(null);
   const [isVideoReady, setIsVideoReady] = useState(false);
 
-  // Audio processing state
-  const [state, setState] = useState<StretchPlayerState>("loading");
-  const [rate, setRateState] = useState(initialRate);
-  const [semitones, setSemitonesState] = useState(initialSemitones);
-  const [currentTime, setCurrentTime] = useState(0);
-  const [duration, setDuration] = useState(0);
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [isNativeFallback, setIsNativeFallback] = useState(false);
-  const [reverbAmount, setReverbAmountState] = useState(initialReverbAmount);
-  const [volume, setVolumeState] = useState(initialVolume);
+  // Single runtime ref for all mutable state
+  const runtime = useRef<PlayerRuntime>({
+    audioContext: null,
+    stretch: null,
+    buffer: null,
+    convolver: null,
+    dryGain: null,
+    wetGain: null,
+    masterGain: null,
+    isPlaying: false,
+    duration: 0,
+    rate: initialRate,
+    semitones: initialSemitones,
+    volume: initialVolume,
+    reverbAmount: initialReverbAmount,
+    repeat: isRepeat,
+    rafId: null,
+    lastUiUpdateMs: 0,
+    onEnded,
+  });
 
-  const audioContextRef = useRef<AudioContext | null>(null);
-  const stretchNodeRef = useRef<any>(null);
-  const timeUpdateIdRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const fileUrlRef = useRef(fileUrl);
-  const initStartedRef = useRef(false);
-  const stretchInitedRef = useRef(false);
-  const useNativeFallbackRef = useRef(false);
-  const durationRef = useRef(0);
-  const audioBufferRef = useRef<AudioBuffer | null>(null);
+  // Keep runtime in sync with props
+  runtime.current.repeat = isRepeat;
+  runtime.current.onEnded = onEnded;
 
-  // Reverb nodes
-  const convolverRef = useRef<ConvolverNode | null>(null);
-  const dryGainRef = useRef<GainNode | null>(null);
-  const wetGainRef = useRef<GainNode | null>(null);
-  const masterGainRef = useRef<GainNode | null>(null);
-  const reverbAmountRef = useRef(initialReverbAmount);
-  const volumeRef = useRef(initialVolume);
+  // Cleanup function
+  const cleanup = useCallback(() => {
+    const rt = runtime.current;
 
-  // Use refs for values needed in callbacks to avoid stale closures
-  const rateRef = useRef(initialRate);
-  const semitonesRef = useRef(initialSemitones);
-  const isPlayingRef = useRef(false);
-  const onEndedRef = useRef(onEnded);
-  const isRepeatRef = useRef(isRepeat);
+    if (rt.rafId !== null) {
+      cancelAnimationFrame(rt.rafId);
+      rt.rafId = null;
+    }
 
-  // Keep refs in sync
-  rateRef.current = rate;
-  semitonesRef.current = semitones;
-  isPlayingRef.current = isPlaying;
-  reverbAmountRef.current = reverbAmount;
-  isRepeatRef.current = isRepeat;
-  volumeRef.current = volume;
-  onEndedRef.current = onEnded;
+    if (rt.stretch) {
+      try {
+        rt.stretch.stop();
+        rt.stretch.disconnect();
+      } catch {}
+      rt.stretch = null;
+    }
 
-  // Video setup effect - manages the video element
-  useEffect(() => {
+    [rt.convolver, rt.dryGain, rt.wetGain, rt.masterGain].forEach((node) => {
+      if (node) {
+        try {
+          node.disconnect();
+        } catch {}
+      }
+    });
+    rt.convolver = null;
+    rt.dryGain = null;
+    rt.wetGain = null;
+    rt.masterGain = null;
+
+    if (rt.audioContext && rt.audioContext.state !== "closed") {
+      rt.audioContext.close().catch(() => {});
+      rt.audioContext = null;
+    }
+
+    rt.buffer = null;
+    rt.isPlaying = false;
+  }, []);
+
+  // rAF sync loop - runs only while playing
+  const syncLoop = useCallback(() => {
+    const rt = runtime.current;
     const video = videoRef.current;
-    if (!video || !fileUrl) return;
 
-    // Skip if already set up with same source
-    if (videoElement === video && video.src.includes(fileUrl.split("/").pop() || "")) {
+    if (!rt.isPlaying || !rt.stretch) {
+      rt.rafId = null;
       return;
     }
 
-    let isMounted = true;
+    const audioTime = rt.stretch.inputTime ?? 0;
+    const now = performance.now();
 
-    const setupVideo = async () => {
-      try {
-        console.log("StretchPlayer: Setting up video:", fileUrl);
-        setVideoElement(video);
-        setIsVideoReady(false);
+    // Throttle UI updates
+    if (now - rt.lastUiUpdateMs > UI_UPDATE_INTERVAL) {
+      setCurrentTime(Math.min(audioTime, rt.duration));
+      rt.lastUiUpdateMs = now;
+    }
 
-        // Disable pitch preservation
-        (video as any).preservesPitch = false;
-        (video as any).mozPreservesPitch = false;
-        (video as any).webkitPreservesPitch = false;
+    // Sync video to audio (video is visual slave)
+    if (video && !video.seeking) {
+      const drift = Math.abs(video.currentTime - audioTime);
+      if (drift > DRIFT_THRESHOLD) {
+        video.currentTime = audioTime;
+      }
+      // Keep video playing
+      if (video.paused && document.visibilityState === "visible") {
+        video.play().catch(() => {});
+      }
+    }
 
-        video.src = fileUrl;
-        video.load();
-
-        await new Promise<void>((resolve, reject) => {
-          const onCanPlay = () => {
-            video.removeEventListener("canplay", onCanPlay);
-            video.removeEventListener("error", onError);
-            resolve();
-          };
-
-          const onError = (e: Event) => {
-            video.removeEventListener("canplay", onCanPlay);
-            video.removeEventListener("error", onError);
-            reject(e);
-          };
-
-          if (video.readyState >= 3) {
-            resolve();
-          } else {
-            video.addEventListener("canplay", onCanPlay);
-            video.addEventListener("error", onError);
-          }
+    // Handle end/repeat
+    if (audioTime >= rt.duration - 0.05) {
+      if (rt.repeat) {
+        rt.stretch.schedule({
+          input: 0,
+          rate: rt.rate,
+          semitones: rt.semitones,
+          active: true,
         });
-
-        if (!isMounted) return;
-
-        // Apply initial settings
-        video.playbackRate = initialRate;
-        video.currentTime = initialPosition;
-
-        setIsVideoReady(true);
-        console.log("StretchPlayer: Video ready");
-      } catch (e) {
-        console.error("StretchPlayer: Video setup failed:", e);
-        if (onVideoError) onVideoError(e);
+        if (video) video.currentTime = 0;
+      } else {
+        rt.stretch.schedule({ active: false });
+        rt.isPlaying = false;
+        setIsPlaying(false);
+        setCurrentTime(rt.duration);
+        if (video) video.pause();
+        rt.onEnded?.();
+        rt.rafId = null;
+        return;
       }
-    };
+    }
 
-    setupVideo();
+    rt.rafId = requestAnimationFrame(syncLoop);
+  }, []);
 
-    return () => {
-      isMounted = false;
-    };
-  }, [fileUrl]); // Only re-run when fileUrl changes
+  // Play
+  const play = useCallback(async () => {
+    const rt = runtime.current;
+    const video = videoRef.current;
 
-  const cleanup = useCallback(() => {
-    console.log("StretchPlayer: cleanup");
-    if (timeUpdateIdRef.current) {
-      clearInterval(timeUpdateIdRef.current);
-      timeUpdateIdRef.current = null;
+    if (!rt.audioContext || !rt.stretch) return;
+
+    // Resume AudioContext (required for autoplay policies)
+    if (rt.audioContext.state === "suspended") {
+      await rt.audioContext.resume();
     }
-    if (stretchNodeRef.current) {
-      try {
-        stretchNodeRef.current.stop();
-        stretchNodeRef.current.disconnect();
-      } catch (e) {
-        // Ignore cleanup errors
-      }
-      stretchNodeRef.current = null;
+
+    const inputTime = rt.stretch.inputTime ?? 0;
+
+    rt.stretch.schedule({
+      active: true,
+      input: inputTime,
+      rate: rt.rate,
+      semitones: rt.semitones,
+    });
+
+    rt.isPlaying = true;
+    setIsPlaying(true);
+
+    // Start video (muted, visual only)
+    if (video) {
+      video.currentTime = inputTime;
+      video.playbackRate = rt.rate;
+      video.play().catch(() => {});
     }
-    // Clean up reverb nodes
-    if (convolverRef.current) {
-      try {
-        convolverRef.current.disconnect();
-      } catch (e) {}
-      convolverRef.current = null;
+
+    // Start sync loop
+    if (rt.rafId === null) {
+      rt.lastUiUpdateMs = 0;
+      rt.rafId = requestAnimationFrame(syncLoop);
     }
-    if (dryGainRef.current) {
-      try {
-        dryGainRef.current.disconnect();
-      } catch (e) {}
-      dryGainRef.current = null;
+  }, [syncLoop]);
+
+  // Pause
+  const pause = useCallback(() => {
+    const rt = runtime.current;
+    const video = videoRef.current;
+
+    if (rt.stretch) {
+      rt.stretch.schedule({ active: false });
     }
-    if (wetGainRef.current) {
-      try {
-        wetGainRef.current.disconnect();
-      } catch (e) {}
-      wetGainRef.current = null;
+
+    rt.isPlaying = false;
+    setIsPlaying(false);
+
+    if (video) {
+      video.pause();
     }
-    if (masterGainRef.current) {
-      try {
-        masterGainRef.current.disconnect();
-      } catch (e) {}
-      masterGainRef.current = null;
-    }
-    stretchInitedRef.current = false;
-    useNativeFallbackRef.current = false;
-    audioBufferRef.current = null;
-    initStartedRef.current = false;
-    if (audioContextRef.current && audioContextRef.current.state !== "closed") {
-      audioContextRef.current.close().catch(() => {});
-      audioContextRef.current = null;
+
+    if (rt.rafId !== null) {
+      cancelAnimationFrame(rt.rafId);
+      rt.rafId = null;
     }
   }, []);
 
-  // Initialize stretch node - called on first play() with user gesture
-  const initStretch = useCallback(async (): Promise<boolean> => {
-    const audioContext = audioContextRef.current;
-    const audioBuffer = audioBufferRef.current;
-    if (!audioContext || !audioBuffer) {
-      console.log("StretchPlayer: initStretch - no context or buffer");
-      return false;
-    }
-
-    // Check if AudioWorklet is available
-    if (!audioContext.audioWorklet) {
-      console.warn("StretchPlayer: AudioWorklet not available, using native fallback");
-      return false;
-    }
-
-    try {
-      // Resume context first (required for user gesture on iOS)
-      if (audioContext.state === "suspended") {
-        await audioContext.resume();
-      }
-
-      const SignalsmithStretch = (await import("signalsmith-stretch")).default;
-      const stretchNode = await SignalsmithStretch(audioContext);
-      stretchNodeRef.current = stretchNode;
-
-      // Set up reverb audio graph with ConvolverNode and master volume
-      const convolver = audioContext.createConvolver();
-      const dryGain = audioContext.createGain();
-      const wetGain = audioContext.createGain();
-      const masterGain = audioContext.createGain();
-
-      // Generate impulse response for reverb
-      convolver.buffer = generateImpulseResponse(audioContext, 2, 2);
-
-      // Initial mix based on reverbAmount
-      const amount = reverbAmountRef.current;
-      dryGain.gain.value = 1 - amount * 0.5;
-      wetGain.gain.value = amount;
-      masterGain.gain.value = volumeRef.current;
-
-      // Route: stretchNode -> (dry + convolver->wet) -> masterGain -> destination
-      stretchNode.connect(dryGain);
-      stretchNode.connect(convolver);
-      convolver.connect(wetGain);
-      dryGain.connect(masterGain);
-      wetGain.connect(masterGain);
-      masterGain.connect(audioContext.destination);
-
-      convolverRef.current = convolver;
-      dryGainRef.current = dryGain;
-      wetGainRef.current = wetGain;
-      masterGainRef.current = masterGain;
-
-      console.log("StretchPlayer: reverb nodes initialized");
-
-      // Add audio buffers
-      const channelBuffers: Float32Array[] = [];
-      for (let c = 0; c < audioBuffer.numberOfChannels; c++) {
-        channelBuffers.push(audioBuffer.getChannelData(c));
-      }
-      await stretchNode.addBuffers(channelBuffers);
-
-      // Mute video element (audio comes from stretch node)
-      if (videoElement) {
-        videoElement.muted = true;
-      }
-
-      // Set initial position
-      stretchNode.schedule({
-        active: false,
-        input: currentTime || 0,
-        rate: rateRef.current,
-        semitones: semitonesRef.current,
-        loopStart: 0,
-        loopEnd: audioBuffer.duration,
-      });
-
-      console.log("StretchPlayer: stretch node initialized");
-      return true;
-    } catch (err) {
-      console.error("StretchPlayer: stretch init failed:", err);
-      return false;
-    }
-  }, [videoElement, currentTime]);
-
-  // Setup native fallback (video plays audio directly with playbackRate)
-  const setupNativeFallback = useCallback(() => {
-    if (!videoElement) return;
-
-    console.log("StretchPlayer: using native fallback");
-    useNativeFallbackRef.current = true;
-    setIsNativeFallback(true);
-
-    // Unmute video (audio comes from video element)
-    videoElement.muted = false;
-
-    // Disable pitch preservation for proper slowed/sped up effect
-    (videoElement as any).preservesPitch = false;
-    (videoElement as any).mozPreservesPitch = false;
-    (videoElement as any).webkitPreservesPitch = false;
-
-    // Apply current rate (semitones is folded into rate for native)
-    const effectiveRate = rateRef.current * Math.pow(2, semitonesRef.current / 12);
-    videoElement.playbackRate = effectiveRate;
-  }, [videoElement]);
-
-  // Play function - initializes stretch on first call (user gesture)
-  const play = useCallback(async () => {
-    const audioContext = audioContextRef.current;
-    if (!audioContext) {
-      console.log("StretchPlayer: play - no context");
-      return;
-    }
-
-    // Resume context if suspended (iOS requirement)
-    if (audioContext.state === "suspended") {
-      await audioContext.resume();
-    }
-
-    // Initialize stretch node on first play (needs user gesture on iOS)
-    if (!stretchInitedRef.current) {
-      setState("loading");
-      const success = await initStretch();
-      if (!success) {
-        setupNativeFallback();
-      }
-      stretchInitedRef.current = true;
-      setState("ready");
-    }
-
-    // Native fallback path
-    if (useNativeFallbackRef.current && videoElement) {
-      const effectiveRate = rateRef.current * Math.pow(2, semitonesRef.current / 12);
-      videoElement.playbackRate = effectiveRate;
-      videoElement.play().catch(() => {});
-      setIsPlaying(true);
-      isPlayingRef.current = true;
-      return;
-    }
-
-    // Stretch node path
-    const stretchNode = stretchNodeRef.current;
-    if (!stretchNode) {
-      console.log("StretchPlayer: play - no stretch node");
-      return;
-    }
-
-    const inputTime = stretchNode.inputTime || 0;
-    stretchNode.schedule({
-      active: true,
-      input: inputTime,
-      rate: rateRef.current,
-      semitones: semitonesRef.current,
-    });
-
-    // Sync video
-    if (videoElement) {
-      videoElement.currentTime = inputTime;
-      videoElement.playbackRate = rateRef.current;
-      videoElement.play().catch(() => {});
-    }
-
-    setIsPlaying(true);
-    isPlayingRef.current = true;
-    console.log("StretchPlayer: playing at", inputTime);
-  }, [videoElement, initStretch, setupNativeFallback]);
-
-  // Pause function
-  const pause = useCallback(() => {
-    // Native fallback path
-    if (useNativeFallbackRef.current && videoElement) {
-      videoElement.pause();
-      setIsPlaying(false);
-      isPlayingRef.current = false;
-      return;
-    }
-
-    // Stretch node path
-    const stretchNode = stretchNodeRef.current;
-    if (stretchNode) {
-      stretchNode.schedule({ active: false });
-    }
-
-    if (videoElement) {
-      videoElement.pause();
-    }
-
-    setIsPlaying(false);
-    isPlayingRef.current = false;
-    console.log("StretchPlayer: paused");
-  }, [videoElement]);
-
-  // Toggle playback
+  // Toggle
   const togglePlayback = useCallback(() => {
-    if (isPlayingRef.current) {
+    if (runtime.current.isPlaying) {
       pause();
     } else {
       play();
     }
   }, [play, pause]);
 
-  // Set rate
-  const setRate = useCallback(
-    (newRate: number) => {
-      setRateState(newRate);
-      rateRef.current = newRate;
+  // Seek
+  const seek = useCallback((timeSeconds: number) => {
+    const rt = runtime.current;
+    const video = videoRef.current;
+    const clampedTime = Math.max(0, Math.min(timeSeconds, rt.duration));
 
-      // Native fallback: combine rate and semitones
-      if (useNativeFallbackRef.current && videoElement) {
-        const effectiveRate = newRate * Math.pow(2, semitonesRef.current / 12);
-        videoElement.playbackRate = effectiveRate;
-        return;
-      }
+    setCurrentTime(clampedTime);
 
-      // Stretch node path
-      const stretchNode = stretchNodeRef.current;
-      if (stretchNode) {
-        stretchNode.schedule({
-          rate: newRate,
-          semitones: semitonesRef.current,
-        });
-      }
+    if (rt.stretch) {
+      rt.stretch.schedule({
+        input: clampedTime,
+        rate: rt.rate,
+        semitones: rt.semitones,
+        active: rt.isPlaying,
+      });
+    }
 
-      if (videoElement) {
-        videoElement.playbackRate = newRate;
-      }
-    },
-    [videoElement],
-  );
-
-  // Set semitones
-  const setSemitones = useCallback(
-    (newSemitones: number) => {
-      setSemitonesState(newSemitones);
-      semitonesRef.current = newSemitones;
-
-      // Native fallback: combine rate and semitones
-      if (useNativeFallbackRef.current && videoElement) {
-        const effectiveRate = rateRef.current * Math.pow(2, newSemitones / 12);
-        videoElement.playbackRate = effectiveRate;
-        return;
-      }
-
-      // Stretch node path
-      const stretchNode = stretchNodeRef.current;
-      if (stretchNode) {
-        stretchNode.schedule({
-          rate: rateRef.current,
-          semitones: newSemitones,
-        });
-      }
-    },
-    [videoElement],
-  );
-
-  // Set reverb amount (0-1)
-  const setReverbAmount = useCallback((amount: number) => {
-    // Skip in native fallback mode (no Web Audio reverb available)
-    if (useNativeFallbackRef.current) return;
-
-    const clampedAmount = Math.max(0, Math.min(1, amount));
-    setReverbAmountState(clampedAmount);
-    reverbAmountRef.current = clampedAmount;
-
-    // Update gain values if nodes are initialized
-    if (dryGainRef.current && wetGainRef.current) {
-      dryGainRef.current.gain.value = 1 - clampedAmount * 0.5;
-      wetGainRef.current.gain.value = clampedAmount;
-      console.log(
-        `StretchPlayer: reverb set dry=${dryGainRef.current.gain.value.toFixed(2)}, wet=${wetGainRef.current.gain.value.toFixed(2)}`,
-      );
+    if (video) {
+      video.currentTime = clampedTime;
     }
   }, []);
 
-  // Set volume (0-1)
-  const setVolume = useCallback(
-    (newVolume: number) => {
-      const clampedVolume = Math.max(0, Math.min(1, newVolume));
-      setVolumeState(clampedVolume);
-      volumeRef.current = clampedVolume;
+  // Set rate
+  const setRate = useCallback((newRate: number) => {
+    const rt = runtime.current;
+    const video = videoRef.current;
 
-      // Native fallback: use video.volume
-      if (useNativeFallbackRef.current && videoElement) {
-        videoElement.volume = clampedVolume;
-        return;
-      }
+    rt.rate = newRate;
+    setRateState(newRate);
 
-      // Stretch node path: update master gain
-      if (masterGainRef.current) {
-        masterGainRef.current.gain.value = clampedVolume;
-      }
-    },
-    [videoElement],
-  );
+    if (rt.stretch) {
+      rt.stretch.schedule({
+        rate: newRate,
+        semitones: rt.semitones,
+      });
+    }
 
-  // Seek
-  const seek = useCallback(
-    (timeSeconds: number) => {
-      const clampedTime = Math.max(0, Math.min(timeSeconds, durationRef.current));
-      setCurrentTime(clampedTime);
+    if (video) {
+      video.playbackRate = newRate;
+    }
+  }, []);
 
-      // Native fallback path
-      if (useNativeFallbackRef.current && videoElement) {
-        videoElement.currentTime = clampedTime;
-        return;
-      }
+  // Set semitones
+  const setSemitones = useCallback((newSemitones: number) => {
+    const rt = runtime.current;
 
-      // Stretch node path
-      const stretchNode = stretchNodeRef.current;
-      if (stretchNode) {
-        stretchNode.schedule({
-          input: clampedTime,
-          rate: rateRef.current,
-          semitones: semitonesRef.current,
-          active: isPlayingRef.current,
-        });
-      }
+    rt.semitones = newSemitones;
+    setSemitonesState(newSemitones);
 
-      if (videoElement) {
-        videoElement.currentTime = clampedTime;
-      }
-    },
-    [videoElement],
-  );
+    if (rt.stretch) {
+      rt.stretch.schedule({
+        rate: rt.rate,
+        semitones: newSemitones,
+      });
+    }
+  }, []);
 
-  // Initial load: context + fetch + decode (stretch node is deferred to play())
-  // Re-run when context was cleared (e.g. hot reload) so we don't get stuck with no context
+  // Set reverb
+  const setReverbAmount = useCallback((amount: number) => {
+    const rt = runtime.current;
+    const clamped = Math.max(0, Math.min(1, amount));
+
+    rt.reverbAmount = clamped;
+    setReverbAmountState(clamped);
+
+    if (rt.dryGain && rt.wetGain) {
+      rt.dryGain.gain.value = 1 - clamped * 0.5;
+      rt.wetGain.gain.value = clamped;
+    }
+  }, []);
+
+  // Set volume
+  const setVolume = useCallback((newVolume: number) => {
+    const rt = runtime.current;
+    const clamped = Math.max(0, Math.min(1, newVolume));
+
+    rt.volume = clamped;
+    setVolumeState(clamped);
+
+    if (rt.masterGain) {
+      rt.masterGain.gain.value = clamped;
+    }
+  }, []);
+
+  // Initialize: load audio + setup stretch node
   useEffect(() => {
-    if (!isVideoReady || !videoElement || !fileUrl) {
-      return;
-    }
-    if (initStartedRef.current && audioContextRef.current !== null) {
-      return;
-    }
-    initStartedRef.current = true;
+    if (!fileUrl) return;
 
+    const video = videoRef.current;
+    if (!video) return;
+
+    let aborted = false;
     const abortController = new AbortController();
 
-    const load = async () => {
-      console.log("StretchPlayer: loading...");
+    const init = async () => {
+      cleanup();
       setState("loading");
 
       try {
-        cleanup();
-        initStartedRef.current = true;
+        const rt = runtime.current;
+
+        // Setup video element (muted - audio comes from stretch)
+        video.src = fileUrl;
+        video.muted = true;
+        video.playsInline = true;
+        (video as any).preservesPitch = false;
+        (video as any).mozPreservesPitch = false;
+        (video as any).webkitPreservesPitch = false;
+        video.load();
+
+        // Wait for video to be ready
+        await new Promise<void>((resolve, reject) => {
+          if (video.readyState >= 3) {
+            resolve();
+            return;
+          }
+          const onCanPlay = () => {
+            video.removeEventListener("canplay", onCanPlay);
+            video.removeEventListener("error", onError);
+            resolve();
+          };
+          const onError = (e: Event) => {
+            video.removeEventListener("canplay", onCanPlay);
+            video.removeEventListener("error", onError);
+            reject(e);
+          };
+          video.addEventListener("canplay", onCanPlay);
+          video.addEventListener("error", onError);
+        });
+
+        if (aborted) return;
+
+        setVideoElement(video);
+        setIsVideoReady(true);
+        video.playbackRate = initialRate;
 
         // Create AudioContext
-        const audioContext = new (
-          window.AudioContext ||
-          (window as unknown as { webkitAudioContext: typeof AudioContext })
-            .webkitAudioContext
-        )();
-        audioContextRef.current = audioContext;
+        const AudioContextClass =
+          window.AudioContext || (window as any).webkitAudioContext;
+        const audioContext = new AudioContextClass();
+        rt.audioContext = audioContext;
 
-        // Fetch with timeout
-        const timeoutId = setTimeout(() => abortController.abort(), FETCH_TIMEOUT_MS);
-        console.log("StretchPlayer: fetching audio...");
+        // Fetch and decode audio
         const response = await fetch(fileUrl, { signal: abortController.signal });
-        clearTimeout(timeoutId);
+        if (!response.ok) throw new Error(`Fetch failed: ${response.status}`);
 
-        if (!response.ok) {
-          throw new Error(`Fetch failed: ${response.status}`);
-        }
-
-        console.log("StretchPlayer: decoding audio...");
         const arrayBuffer = await response.arrayBuffer();
         const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
 
-        audioBufferRef.current = audioBuffer;
-        durationRef.current = audioBuffer.duration;
+        if (aborted) return;
+
+        rt.buffer = audioBuffer;
+        rt.duration = audioBuffer.duration;
         setDuration(audioBuffer.duration);
 
+        // Create signalsmith-stretch node
+        const SignalsmithStretch = (await import("signalsmith-stretch")).default;
+        const stretch = await SignalsmithStretch(audioContext);
+        rt.stretch = stretch;
+
+        // Add audio buffers
+        const channelBuffers: Float32Array[] = [];
+        for (let c = 0; c < audioBuffer.numberOfChannels; c++) {
+          channelBuffers.push(audioBuffer.getChannelData(c));
+        }
+        await stretch.addBuffers(channelBuffers);
+
+        // Setup audio graph: stretch -> dry/wet -> master -> destination
+        const convolver = audioContext.createConvolver();
+        const dryGain = audioContext.createGain();
+        const wetGain = audioContext.createGain();
+        const masterGain = audioContext.createGain();
+
+        convolver.buffer = generateImpulseResponse(audioContext, 2, 2);
+
+        dryGain.gain.value = 1 - rt.reverbAmount * 0.5;
+        wetGain.gain.value = rt.reverbAmount;
+        masterGain.gain.value = rt.volume;
+
+        stretch.connect(dryGain);
+        stretch.connect(convolver);
+        convolver.connect(wetGain);
+        dryGain.connect(masterGain);
+        wetGain.connect(masterGain);
+        masterGain.connect(audioContext.destination);
+
+        rt.convolver = convolver;
+        rt.dryGain = dryGain;
+        rt.wetGain = wetGain;
+        rt.masterGain = masterGain;
+
+        // Set initial position
+        stretch.schedule({
+          active: false,
+          input: initialPosition,
+          rate: rt.rate,
+          semitones: rt.semitones,
+          loopStart: 0,
+          loopEnd: audioBuffer.duration,
+        });
+
         if (initialPosition > 0) {
+          video.currentTime = initialPosition;
           setCurrentTime(initialPosition);
-          videoElement.currentTime = initialPosition;
         }
 
-        // Start polling for time updates
-        timeUpdateIdRef.current = setInterval(() => {
-          // Native fallback: use video time
-          if (useNativeFallbackRef.current && videoElement) {
-            const time = videoElement.currentTime;
-            setCurrentTime(Math.min(time, durationRef.current));
-
-            // Handle end
-            if (time >= durationRef.current - 0.1 && isPlayingRef.current) {
-              if (isRepeatRef.current) {
-                // Loop: seek to beginning and continue
-                videoElement.currentTime = 0;
-              } else {
-                // Stop playback
-                videoElement.pause();
-                setIsPlaying(false);
-                isPlayingRef.current = false;
-                if (onEndedRef.current) onEndedRef.current();
-              }
-            }
-            return;
-          }
-
-          // Stretch node: use inputTime
-          const node = stretchNodeRef.current;
-          if (!node) return;
-
-          const audioTime = node.inputTime || 0;
-          const dur = durationRef.current;
-          setCurrentTime(Math.min(audioTime, dur));
-
-          // Sync video to audio
-          if (videoElement) {
-            // Keep playback rate in sync (browsers might reset it in background)
-            const targetRate = useNativeFallbackRef.current
-              ? rateRef.current * Math.pow(2, semitonesRef.current / 12)
-              : rateRef.current;
-            if (Math.abs(videoElement.playbackRate - targetRate) > 0.01) {
-              videoElement.playbackRate = targetRate;
-            }
-
-            if (isPlayingRef.current && !videoElement.seeking) {
-              const drift = Math.abs(videoElement.currentTime - audioTime);
-              // Tighter sync threshold (0.15s) and check if it's lagging
-              if (drift > 0.15) {
-                videoElement.currentTime = audioTime;
-              }
-
-              // Ensure video is playing if we think it should be
-              if (videoElement.paused && document.visibilityState === "visible") {
-                videoElement.play().catch(() => {});
-              }
-            }
-          }
-
-          // Handle end
-          if (audioTime >= dur - 0.1 && isPlayingRef.current) {
-            if (isRepeatRef.current) {
-              // Loop: seek to beginning and continue
-              node.schedule({
-                input: 0,
-                rate: rateRef.current,
-                semitones: semitonesRef.current,
-                active: true,
-              });
-              if (videoElement) videoElement.currentTime = 0;
-            } else {
-              // Stop playback
-              node.schedule({ active: false });
-              setIsPlaying(false);
-              isPlayingRef.current = false;
-              if (videoElement) videoElement.pause();
-              if (onEndedRef.current) onEndedRef.current();
-            }
-          }
-        }, 100);
-
-        console.log("StretchPlayer: ready (stretch init deferred to play)");
         setState("ready");
 
-        // Auto-play if enabled (user just clicked play in UnifiedPlayer)
+        // Auto-play if requested
         if (autoPlay) {
-          // Small delay to ensure UI is rendered
-          setTimeout(() => {
-            play();
-          }, 100);
+          setTimeout(() => play(), 50);
         }
       } catch (error) {
-        const err = error as Error;
-        if (err.name === "AbortError") {
-          console.error("StretchPlayer: fetch timeout");
-        } else {
-          console.error("StretchPlayer: load failed:", err?.name, err?.message, err);
+        if (!aborted) {
+          console.error("StretchPlayer: init failed:", error);
+          setState("error");
+          onVideoError?.(error);
         }
-        initStartedRef.current = false;
-        cleanup();
-        setState("error");
       }
     };
 
-    load();
+    init();
 
     return () => {
+      aborted = true;
       abortController.abort();
     };
-  }, [isVideoReady, videoElement, fileUrl, initialPosition, autoPlay, cleanup, play]);
+  }, [fileUrl, cleanup, play, initialRate, initialPosition, autoPlay, onVideoError]);
+
+  // Visibility change handler
+  useEffect(() => {
+    const handleVisibility = () => {
+      const rt = runtime.current;
+      const video = videoRef.current;
+
+      if (document.visibilityState === "visible" && rt.isPlaying && video) {
+        // Resync video to audio when returning from background
+        const audioTime = rt.stretch?.inputTime ?? 0;
+        video.currentTime = audioTime;
+        video.play().catch(() => {});
+
+        // Restart sync loop if needed
+        if (rt.rafId === null) {
+          rt.rafId = requestAnimationFrame(syncLoop);
+        }
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibility);
+    return () => document.removeEventListener("visibilitychange", handleVisibility);
+  }, [syncLoop]);
 
   // Cleanup on unmount
-  useEffect(() => {
-    return () => {
-      cleanup();
-    };
-  }, [cleanup]);
-
-  // Reset when file URL changes
-  useEffect(() => {
-    if (fileUrl !== fileUrlRef.current) {
-      console.log("StretchPlayer: file changed, resetting");
-      fileUrlRef.current = fileUrl;
-      initStartedRef.current = false;
-      stretchInitedRef.current = false;
-      cleanup();
-      setState("loading");
-      setCurrentTime(0);
-      setIsPlaying(false);
-    }
-  }, [fileUrl, cleanup]);
-
-  // Keep video playback rate in sync
-  useEffect(() => {
-    if (!videoElement || state !== "ready") return;
-    if (useNativeFallbackRef.current) {
-      const effectiveRate = rate * Math.pow(2, semitones / 12);
-      videoElement.playbackRate = effectiveRate;
-    } else {
-      videoElement.playbackRate = rate;
-    }
-  }, [videoElement, state, rate, semitones]);
-
-  // Re-sync video to audio when tab becomes visible again
-  useEffect(() => {
-    const handleVisibilityChange = () => {
-      // Only act when returning from background
-      if (document.visibilityState !== "visible") return;
-
-      const video = videoElement;
-      if (!video || durationRef.current <= 0) return;
-
-      console.log("StretchPlayer: returning from background, syncing video");
-
-      // Small delay to let browser stabilize
-      setTimeout(() => {
-        if (useNativeFallbackRef.current) {
-          // Native fallback: video controls audio, just update time state
-          const time = video.currentTime;
-          setCurrentTime(Math.min(time, durationRef.current));
-          // Sync playing state with video
-          const playing = !video.paused;
-          setIsPlaying(playing);
-          isPlayingRef.current = playing;
-          return;
-        }
-
-        // Stretch node path: sync video to audio time
-        const node = stretchNodeRef.current;
-        if (!node) return;
-
-        const audioTime = node.inputTime ?? 0;
-        const dur = durationRef.current;
-        setCurrentTime(Math.min(audioTime, dur));
-
-        // Sync video time to where audio is
-        const drift = Math.abs(video.currentTime - audioTime);
-        if (drift > 0.05) {
-          video.currentTime = audioTime;
-        }
-
-        // Ensure rate is correct
-        video.playbackRate = rateRef.current;
-
-        // Resume video if audio is still playing
-        if (isPlayingRef.current && video.paused) {
-          video.play().catch((err) => {
-            console.warn("StretchPlayer: could not resume video on visible:", err);
-          });
-        }
-      }, 50);
-    };
-
-    const handleVideoPause = () => {
-      // If the video was paused by the system (not by us), sync our state
-      if (isPlayingRef.current && document.visibilityState === "visible") {
-        console.log("StretchPlayer: video paused by system/user-gesture, syncing state");
-        pause();
-      }
-    };
-
-    const handleVideoPlay = () => {
-      if (!isPlayingRef.current && document.visibilityState === "visible") {
-        console.log("StretchPlayer: video played by system/user-gesture, syncing state");
-        play();
-      }
-    };
-
-    document.addEventListener("visibilitychange", handleVisibilityChange);
-    window.addEventListener("pageshow", handleVisibilityChange);
-    videoElement?.addEventListener("pause", handleVideoPause);
-    videoElement?.addEventListener("play", handleVideoPlay);
-
-    return () => {
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
-      window.removeEventListener("pageshow", handleVisibilityChange);
-      videoElement?.removeEventListener("pause", handleVideoPause);
-      videoElement?.removeEventListener("play", handleVideoPlay);
-    };
-  }, [videoElement, play, pause]);
+  useEffect(() => cleanup, [cleanup]);
 
   return {
-    // Video element
     videoRef,
     videoElement,
     isVideoReady,
-    // State
     state,
     isPlaying,
     currentTime,
@@ -852,8 +572,7 @@ export function useStretchPlayer({
     semitones,
     reverbAmount,
     volume,
-    isNativeFallback,
-    // Controls
+    isNativeFallback: false, // No more native fallback
     play,
     pause,
     togglePlayback,
