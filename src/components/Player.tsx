@@ -41,6 +41,8 @@ import {
   IconRepeatOff,
   IconRewindBackward5,
   IconRewindForward5,
+  IconVideo,
+  IconVideoOff,
   IconVolume,
   IconVolume2,
   IconVolume3,
@@ -114,6 +116,7 @@ export function Player({ media, repeating }: { media: Media; repeating: boolean 
   const [pitchLockedToSpeed, setPitchLockedToSpeed] = useState(
     savedState?.pitchLockedToSpeed ?? true,
   );
+  const [videoDisabled, setVideoDisabled] = useState(savedState?.videoDisabled ?? false);
 
   // Volume UI state (actual volume is managed by useStretchPlayer)
   const [isMuted, setIsMuted] = useState(false);
@@ -121,7 +124,7 @@ export function Player({ media, repeating }: { media: Media; repeating: boolean 
   const previousVolumeRef = useRef(savedState?.volume ?? 1);
   const pitchLockedToSpeedRef = useRef(pitchLockedToSpeed);
 
-  const [showLyrics, setShowLyrics] = useState(false);
+  const [showLyrics, setShowLyrics] = useState(savedState?.showLyrics ?? false);
   const [lyricsSettings, setLyricsSettings] = useState<LyricsSettings | null>(
     savedState?.lyrics ?? null,
   );
@@ -295,6 +298,8 @@ export function Player({ media, repeating }: { media: Media; repeating: boolean 
     volume,
     isReady,
     stateLoaded,
+    videoDisabled,
+    showLyrics,
   });
 
   // Keep ref in sync so rate-change handler always sees current lock state
@@ -751,6 +756,44 @@ export function Player({ media, repeating }: { media: Media; repeating: boolean 
                 />
               )}
 
+              {/* Album Art (when video disabled) */}
+              {!isAudioOnly && videoDisabled && (
+                <Box
+                  style={{
+                    position: "relative",
+                    width: "auto",
+                    height: "auto",
+                    maxWidth: isMobile ? "100vw" : "60vw",
+                    maxHeight: "60vh",
+                    aspectRatio: "1/1",
+                    borderRadius: theme.radius.md,
+                    margin: isMobile ? "10px" : 0,
+                    // Hide when lyrics are open (same optimization as video)
+                    opacity: isMobile && showLyrics ? 0 : 1,
+                    pointerEvents: isMobile && showLyrics ? "none" : "auto",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    backgroundColor: "rgba(0,0,0,0.2)",
+                  }}
+                >
+                  <Image
+                    src={
+                      media.metadata.coverUrl?.replace(
+                        /(?<!maxres)(hq|mq|sd)?default/,
+                        "maxresdefault",
+                      ) || media.metadata.coverUrl
+                    }
+                    width="100%"
+                    height="100%"
+                    radius={theme.radius.md}
+                    fit="contain"
+                    style={{ userSelect: "none", pointerEvents: "none" }}
+                    alt={media.metadata.title}
+                  />
+                </Box>
+              )}
+
               {/* Video Container - single element for both layouts */}
               {!isAudioOnly && (
                 <Box
@@ -766,6 +809,8 @@ export function Player({ media, repeating }: { media: Media; repeating: boolean 
                     // Hide video on mobile when lyrics are open (perf optimization)
                     opacity: isMobile && showLyrics ? 0 : 1,
                     pointerEvents: isMobile && showLyrics ? "none" : "auto",
+                    // Hide when disabled
+                    display: videoDisabled ? "none" : "block",
                   }}
                 >
                   <video
@@ -1034,6 +1079,25 @@ export function Player({ media, repeating }: { media: Media; repeating: boolean 
                   >
                     Lyrics
                   </Menu.Item>
+                  {!isAudioOnly && (
+                    <Menu.Item
+                      icon={
+                        videoDisabled ? (
+                          <IconVideo size={14} />
+                        ) : (
+                          <IconVideoOff size={14} />
+                        )
+                      }
+                      onClick={() => setVideoDisabled((prev) => !prev)}
+                      rightSection={
+                        <Text size="xs" color="dimmed">
+                          {videoDisabled ? "Off" : "On"}
+                        </Text>
+                      }
+                    >
+                      Video
+                    </Menu.Item>
+                  )}
                   <Menu.Divider />
                   <Menu.Label>Settings</Menu.Label>
                   <Menu.Item icon={<IconCookie size={14} />} onClick={openCookiesModal}>

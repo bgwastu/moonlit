@@ -48,6 +48,14 @@ export function saveVideoState(url: string, state: Partial<State>): void {
       volume: state.volume ?? existing?.volume ?? 1,
       lastUpdated: Date.now(),
       lyrics: state.lyrics !== undefined ? state.lyrics : (existing?.lyrics ?? null),
+      videoDisabled:
+        state.videoDisabled !== undefined
+          ? state.videoDisabled
+          : (existing?.videoDisabled ?? false),
+      showLyrics:
+        state.showLyrics !== undefined
+          ? state.showLyrics
+          : (existing?.showLyrics ?? false),
     };
 
     localStorage.setItem(key, JSON.stringify(newState));
