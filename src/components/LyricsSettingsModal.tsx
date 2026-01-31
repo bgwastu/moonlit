@@ -20,6 +20,7 @@ interface LyricsSettingsModalProps {
   onToggleLyrics: (enabled: boolean) => void;
   currentLyricsTrackName: string | null;
   currentLyricsArtistName: string | null;
+  currentLyricsAlbumName?: string | null;
   currentOffset: number;
   onOffsetChange: (offset: number) => void;
   onChangeLyrics: () => void;
@@ -32,6 +33,7 @@ export default function LyricsSettingsModal({
   onToggleLyrics,
   currentLyricsTrackName,
   currentLyricsArtistName,
+  currentLyricsAlbumName,
   currentOffset,
   onOffsetChange,
   onChangeLyrics,
@@ -88,9 +90,10 @@ export default function LyricsSettingsModal({
                   <Text size="sm" fw={600} lineClamp={1}>
                     {currentLyricsTrackName}
                   </Text>
-                  {currentLyricsArtistName && (
+                  {(currentLyricsArtistName || currentLyricsAlbumName) && (
                     <Text size="xs" c="dimmed" lineClamp={1}>
                       {currentLyricsArtistName}
+                      {currentLyricsAlbumName && ` · ${currentLyricsAlbumName}`}
                     </Text>
                   )}
                 </Box>

@@ -37,6 +37,7 @@ export interface DiscoveredLyrics {
   id: number;
   trackName: string;
   artistName: string;
+  albumName?: string;
   syncedLyrics: string;
 }
 
@@ -130,6 +131,7 @@ export function useLyrics({
           id: data.id,
           trackName: data.trackName ?? trackName,
           artistName: data.artistName ?? artistName,
+          albumName: data.albumName,
           syncedLyrics: synced,
         });
       } else {

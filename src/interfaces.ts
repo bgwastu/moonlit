@@ -22,6 +22,7 @@ export interface LyricsSettings {
   syncedLyrics: string | null;
   trackName: string | null;
   artistName: string | null;
+  albumName?: string | null;
   offset: number; // in seconds, +/- to shift timing
 }
 
