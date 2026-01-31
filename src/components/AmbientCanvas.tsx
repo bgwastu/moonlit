@@ -6,26 +6,42 @@ interface AmbientCanvasProps {
   videoElement: HTMLVideoElement | null;
   isAudioOnly: boolean;
   isPlaying: boolean;
+  imageUrl?: string | null;
 }
 
-/**
- * Canvas-based ambient glow behind the video.
- * Full-screen layer so the blur has no visible edges.
- */
 export default function AmbientCanvas({
   videoElement,
   isAudioOnly,
   isPlaying,
+  imageUrl,
 }: AmbientCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const rafRef = useRef<number>();
+  const imageRef = useRef<HTMLImageElement | null>(null);
 
   useEffect(() => {
-    if (!videoElement || !canvasRef.current || isAudioOnly) return;
+    if (!canvasRef.current || isAudioOnly) return;
 
     const canvas = canvasRef.current;
     const ctx = canvas.getContext("2d", { alpha: false });
     if (!ctx) return;
+
+    if (imageUrl) {
+      if (rafRef.current) {
+        cancelAnimationFrame(rafRef.current);
+        rafRef.current = undefined;
+      }
+      const img = new Image();
+      img.crossOrigin = "anonymous";
+      img.onload = () => {
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      };
+      img.src = imageUrl;
+      imageRef.current = img;
+      return;
+    }
+
+    if (!videoElement) return;
 
     const draw = () => {
       if (videoElement && !videoElement.paused && !videoElement.ended) {
@@ -38,7 +54,7 @@ export default function AmbientCanvas({
     return () => {
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
     };
-  }, [videoElement, isAudioOnly, isPlaying]);
+  }, [videoElement, isAudioOnly, isPlaying, imageUrl]);
 
   if (isAudioOnly) return null;
 

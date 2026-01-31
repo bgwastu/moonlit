@@ -740,6 +740,7 @@ export function Player({ media, repeating }: { media: Media; repeating: boolean 
                   videoElement={videoElement}
                   isAudioOnly={isAudioOnly}
                   isPlaying={isPlaying}
+                  imageUrl={videoDisabled ? media.metadata.coverUrl : null}
                 />
               )}
 
