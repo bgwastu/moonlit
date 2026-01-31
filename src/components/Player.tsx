@@ -102,8 +102,9 @@ export function Player({ media, repeating }: { media: Media; repeating: boolean 
 
   // State - derive mode from rate
   const initialRate = savedState?.rate ?? 1;
+  const initialSemitones = savedState?.semitones ?? 0;
   const [playbackMode, setPlaybackMode] = useState<PlaybackMode>(
-    getModeFromRate(initialRate),
+    getModeFromRate(initialRate, initialSemitones),
   );
   const initialStartAt = savedState?.position ?? 0;
   const [stateLoaded, setStateLoaded] = useState(false);
@@ -357,8 +358,9 @@ export function Player({ media, repeating }: { media: Media; repeating: boolean 
     (value: number) => {
       setIsSeeking(false);
       seek(value);
+      play(value); // Always resume after seeking, force start at seek time
     },
-    [seek],
+    [seek, play],
   );
 
   const handleTogglePlayer = useCallback(() => {
@@ -379,22 +381,17 @@ export function Player({ media, repeating }: { media: Media; repeating: boolean 
   const handleRateChange = useCallback(
     (newRate: number) => {
       setRate(newRate);
+      let effectiveSemitones = semitones;
+
       if (pitchLockedToSpeedRef.current) {
-        const syncedSemitones = getSemitonesFromRate(newRate);
-        setSemitones(syncedSemitones);
+        effectiveSemitones = getSemitonesFromRate(newRate);
+        setSemitones(effectiveSemitones);
       }
-      // Update mode based on rate
-      if (Math.abs(newRate - 0.8) < 0.01) {
-        setPlaybackMode("slowed");
-      } else if (Math.abs(newRate - 1) < 0.01) {
-        setPlaybackMode("normal");
-      } else if (Math.abs(newRate - 1.25) < 0.01) {
-        setPlaybackMode("speedup");
-      } else {
-        setPlaybackMode("custom");
-      }
+
+      // Update mode based on rate AND pitch
+      setPlaybackMode(getModeFromRate(newRate, effectiveSemitones));
     },
-    [setRate, setSemitones],
+    [setRate, setSemitones, semitones],
   );
 
   const handleSemitonesChange = useCallback(
@@ -410,9 +407,12 @@ export function Player({ media, repeating }: { media: Media; repeating: boolean 
       if (locked) {
         const syncedSemitones = getSemitonesFromRate(rate);
         setSemitones(syncedSemitones);
+        setPlaybackMode(getModeFromRate(rate, syncedSemitones));
+      } else {
+        setPlaybackMode(getModeFromRate(rate, semitones));
       }
     },
-    [rate, setSemitones],
+    [rate, semitones, setSemitones],
   );
 
   const handlePlaybackModeChange = useCallback(

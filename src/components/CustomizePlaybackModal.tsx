@@ -110,9 +110,9 @@ export default function CustomizePlaybackModal({
             }}
             marks={[
               { value: 0.5, label: "0.5x" },
-              { value: 0.8, label: "Slow" },
+              { value: 0.8, label: "Slowed" },
               { value: 1, label: "1x" },
-              { value: 1.25, label: "Fast" },
+              { value: 1.25, label: "Speed Up" },
               { value: 1.5, label: "1.5x" },
             ]}
             value={speedSliderValue}

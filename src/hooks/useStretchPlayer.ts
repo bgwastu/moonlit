@@ -30,7 +30,7 @@ interface UseStretchPlayerReturn {
   reverbAmount: number;
   volume: number;
   isNativeFallback: boolean;
-  play: () => void;
+  play: (startTime?: number) => void;
   pause: () => void;
   togglePlayback: () => void;
   setRate: (rate: number) => void;
@@ -267,62 +267,68 @@ export function useStretchPlayer({
   }, []);
 
   // Play
-  const play = useCallback(async () => {
-    const rt = runtime.current;
-    const video = videoRef.current;
+  const play = useCallback(
+    async (startTime?: number) => {
+      const rt = runtime.current;
+      const video = videoRef.current;
 
-    if (rt.liteMode) {
+      if (rt.liteMode) {
+        if (video) {
+          video.play().catch(() => {});
+          rt.isPlaying = true;
+          setIsPlaying(true);
+        }
+        return;
+      }
+
+      if (!rt.audioContext || !rt.stretch) return;
+
+      // Resume AudioContext (required for autoplay policies)
+      if (rt.audioContext.state === "suspended") {
+        await rt.audioContext.resume();
+      }
+
+      const inputTime = startTime ?? rt.stretch.inputTime ?? 0;
+
+      // Set grace period to prevent immediate drift correction
+      rt.lastRateChangeMs = performance.now();
+
+      // Prepare video BEFORE starting audio to minimize desync
       if (video) {
+        // Set rate and position before playing to avoid flicker
+        video.playbackRate = rt.rate;
+        if (
+          startTime !== undefined ||
+          Math.abs(video.currentTime - inputTime) > DRIFT_THRESHOLD
+        ) {
+          video.currentTime = inputTime;
+        }
+      }
+
+      // Start audio
+      rt.stretch.schedule({
+        active: true,
+        input: inputTime,
+        rate: rt.rate,
+        semitones: rt.semitones,
+      });
+
+      rt.isPlaying = true;
+      setIsPlaying(true);
+
+      // Start video after audio is scheduled
+      if (video && video.paused) {
         video.play().catch(() => {});
-        rt.isPlaying = true;
-        setIsPlaying(true);
       }
-      return;
-    }
 
-    if (!rt.audioContext || !rt.stretch) return;
-
-    // Resume AudioContext (required for autoplay policies)
-    if (rt.audioContext.state === "suspended") {
-      await rt.audioContext.resume();
-    }
-
-    const inputTime = rt.stretch.inputTime ?? 0;
-
-    // Set grace period to prevent immediate drift correction
-    rt.lastRateChangeMs = performance.now();
-
-    // Prepare video BEFORE starting audio to minimize desync
-    if (video) {
-      // Set rate and position before playing to avoid flicker
-      video.playbackRate = rt.rate;
-      if (Math.abs(video.currentTime - inputTime) > DRIFT_THRESHOLD) {
-        video.currentTime = inputTime;
+      // Start sync loop
+      if (rt.rafId === null) {
+        rt.lastUiUpdateMs = 0;
+        rt.rafId = requestAnimationFrame(syncLoop);
       }
-    }
-
-    // Start audio
-    rt.stretch.schedule({
-      active: true,
-      input: inputTime,
-      rate: rt.rate,
-      semitones: rt.semitones,
-    });
-
-    rt.isPlaying = true;
-    setIsPlaying(true);
-
-    // Start video after audio is scheduled
-    if (video && video.paused) {
-      video.play().catch(() => {});
-    }
-
-    // Start sync loop
-    if (rt.rafId === null) {
-      rt.lastUiUpdateMs = 0;
-      rt.rafId = requestAnimationFrame(syncLoop);
-    }
-  }, [syncLoop]);
+    },
+    [syncLoop],
+  );
 
   // Pause
   const pause = useCallback(() => {

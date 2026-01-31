@@ -1,4 +1,5 @@
 import { State } from "@/interfaces";
+import { getSemitonesFromRate } from "@/utils/player";
 
 const STORAGE_KEY_PREFIX = "moonlit:video:";
 const MAX_STORED_VIDEOS = 50;
@@ -6,10 +7,20 @@ const MAX_STORED_VIDEOS = 50;
 /** Derive playback mode from rate value */
 export function getModeFromRate(
   rate: number,
+  semitones: number = 0, // Default for backward compatibility
 ): "slowed" | "normal" | "speedup" | "custom" {
-  if (Math.abs(rate - 0.8) < 0.01) return "slowed";
-  if (Math.abs(rate - 1) < 0.01) return "normal";
-  if (Math.abs(rate - 1.25) < 0.01) return "speedup";
+  // Normal: rate ~ 1.0
+  if (Math.abs(rate - 1) < 0.01 && Math.abs(semitones) < 0.1) return "normal";
+
+  // Check if pitch is synced to speed
+  const targetSemitones = getSemitonesFromRate(rate);
+  const isSynced = Math.abs(semitones - targetSemitones) < 0.1;
+
+  if (isSynced) {
+    if (Math.abs(rate - 0.8) < 0.01) return "slowed";
+    if (Math.abs(rate - 1.25) < 0.01) return "speedup";
+  }
+
   return "custom";
 }
 
