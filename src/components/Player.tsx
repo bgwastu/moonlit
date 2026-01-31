@@ -1052,6 +1052,7 @@ export function Player({ media, repeating }: { media: Media; repeating: boolean 
             step={1}
             radius={0}
             mb={-3}
+            mr={6}
             showLabelOnHover={false}
             size="xs"
             pr={0.3}
