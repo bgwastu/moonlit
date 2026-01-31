@@ -7,6 +7,7 @@ interface UseMediaSessionProps {
   isPlaying: boolean;
   currentTime: number;
   duration: number;
+  rate: number;
   onPlay: () => void;
   onPause: () => void;
   onSeekBackward: () => void;
@@ -23,6 +24,7 @@ export function useMediaSession({
   isPlaying,
   currentTime,
   duration,
+  rate,
   onPlay,
   onPause,
   onSeekBackward,
@@ -85,25 +87,22 @@ export function useMediaSession({
     };
   }, [media, onPlay, onPause, onSeekBackward, onSeekForward, onSeek]);
 
-  // Update playback state
+  // Update playback state and position state together
   useEffect(() => {
     if (!("mediaSession" in navigator)) return;
     navigator.mediaSession.playbackState = isPlaying ? "playing" : "paused";
-  }, [isPlaying]);
 
-  // Update position state
-  useEffect(() => {
-    if (!("mediaSession" in navigator) || !("setPositionState" in navigator.mediaSession))
-      return;
-
-    try {
-      navigator.mediaSession.setPositionState({
-        duration: Math.max(0, duration),
-        playbackRate: 1.0,
-        position: Math.max(0, Math.min(currentTime, duration)),
-      });
-    } catch (e) {
-      console.error("Error setting position state:", e);
+    // Also update position state with correct rate (0 when paused)
+    if ("setPositionState" in navigator.mediaSession) {
+      try {
+        navigator.mediaSession.setPositionState({
+          duration: Math.max(0, duration),
+          playbackRate: isPlaying ? rate : 0,
+          position: Math.max(0, Math.min(currentTime, duration)),
+        });
+      } catch (e) {
+        console.error("Error setting position state:", e);
+      }
     }
-  }, [currentTime, duration]);
+  }, [isPlaying, currentTime, duration, rate]);
 }
