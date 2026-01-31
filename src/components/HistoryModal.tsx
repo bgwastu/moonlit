@@ -13,10 +13,8 @@ import {
   Stack,
   Text,
   Tooltip,
-  UnstyledButton,
   useMantineTheme,
 } from "@mantine/core";
-import { notifications } from "@mantine/notifications";
 import { IconHistory, IconPlayerPlay, IconTrash, IconX } from "@tabler/icons-react";
 import { useAppContext } from "@/context/AppContext";
 import { HistoryItem, Media } from "@/interfaces";
@@ -26,9 +24,14 @@ import { getMedia } from "@/utils/cache";
 interface HistoryModalProps {
   opened: boolean;
   onClose: () => void;
+  onLoadingStart: (loading: boolean) => void;
 }
 
-export default function HistoryModal({ opened, onClose }: HistoryModalProps) {
+export default function HistoryModal({
+  opened,
+  onClose,
+  onLoadingStart,
+}: HistoryModalProps) {
   const { history, setHistory, setMedia } = useAppContext();
   const router = useRouter();
   const theme = useMantineTheme();
@@ -36,6 +39,7 @@ export default function HistoryModal({ opened, onClose }: HistoryModalProps) {
 
   const handlePlay = async (item: HistoryItem) => {
     onClose();
+    onLoadingStart(true);
 
     const platform = getPlatform(item.sourceUrl);
 
@@ -48,6 +52,7 @@ export default function HistoryModal({ opened, onClose }: HistoryModalProps) {
         const blob = await getMedia(key);
         if (!blob) {
           alert("File not found in storage. It may have been cleared.");
+          onLoadingStart(false);
           return;
         }
 
@@ -64,6 +69,7 @@ export default function HistoryModal({ opened, onClose }: HistoryModalProps) {
       } catch (e) {
         console.error(e);
         alert("Failed to load local file.");
+        onLoadingStart(false);
       }
       return;
     }
@@ -85,6 +91,7 @@ export default function HistoryModal({ opened, onClose }: HistoryModalProps) {
 
     // Fallback - shouldn't normally reach here
     console.warn("Could not parse URL for history item:", item.sourceUrl);
+    onLoadingStart(false);
   };
 
   const clearHistory = () => {
