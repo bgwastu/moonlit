@@ -8,7 +8,7 @@ export const metadata: Metadata = {
     template: "%s | Moonlit",
   },
   description:
-    "Transform your music experience with customizable playback speed. Play YouTube and TikTok videos with slowed or nightcore effects in real-time.",
+    "Transform your music with real-time slowed + reverb and nightcore effects.",
   applicationName: "Moonlit",
   keywords: [
     "slowed music",
@@ -32,7 +32,7 @@ export const metadata: Metadata = {
   openGraph: {
     title: "Moonlit - Slowed & Nightcore Music Player",
     description:
-      "Transform your music experience with customizable playback speed. Play YouTube and TikTok videos with slowed or nightcore effects in real-time.",
+      "Transform your music with real-time slowed + reverb and nightcore effects.",
     url: "https://moonlit.wastu.net",
     siteName: "Moonlit",
     type: "website",
@@ -60,11 +60,7 @@ export const metadata: Metadata = {
   },
 };
 
-export default function RootLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
       <body style={{ margin: 0 }}>
