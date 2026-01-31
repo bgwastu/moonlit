@@ -55,7 +55,6 @@ import { useMediaSession } from "@/hooks/useMediaSession";
 import { usePlayerTapGestures } from "@/hooks/usePlayerTapGestures";
 import { useStretchPlayer } from "@/hooks/useStretchPlayer";
 import { useToast } from "@/hooks/useToast";
-import { useVideoPlayer } from "@/hooks/useVideoPlayer";
 import { useVideoStatePersistence } from "@/hooks/useVideoStatePersistence";
 import { Media } from "@/interfaces";
 import { LyricsSettings } from "@/interfaces";
@@ -137,16 +136,13 @@ export function Player({ media, repeating }: { media: Media; repeating: boolean 
     setStateLoaded(true);
   }, []);
 
-  // Video player setup
-  const { videoRef, videoElement, isVideoReady, onError } = useVideoPlayer({
-    media,
-    repeating,
-    initialRate: stateLoaded ? initialRate : 1, // Use initialRate
-    startAt: stateLoaded ? initialStartAt : 0,
-  });
-
-  // Stretch player (audio processing)
+  // Unified player (video + audio processing)
   const {
+    // Video
+    videoRef,
+    videoElement,
+    isVideoReady,
+    // State
     state: stretchState,
     isPlaying,
     currentTime,
@@ -156,6 +152,7 @@ export function Player({ media, repeating }: { media: Media; repeating: boolean 
     reverbAmount,
     volume,
     isNativeFallback,
+    // Controls
     play,
     pause,
     togglePlayback,
@@ -165,9 +162,7 @@ export function Player({ media, repeating }: { media: Media; repeating: boolean 
     setVolume,
     seek,
   } = useStretchPlayer({
-    videoElement,
     fileUrl: media.fileUrl,
-    isVideoReady,
     initialRate: initialRate,
     initialSemitones: savedState?.semitones ?? 0,
     initialReverbAmount: savedState?.reverbAmount ?? 0,
@@ -769,7 +764,6 @@ export function Player({ media, repeating }: { media: Media; repeating: boolean 
                 preload="metadata"
                 muted
                 crossOrigin="anonymous"
-                onError={onError}
               />
             </Box>
 
@@ -884,7 +878,9 @@ export function Player({ media, repeating }: { media: Media; repeating: boolean 
                 flexDirection: "column",
                 overflow: "hidden",
                 transform: showLyrics ? "translateX(0)" : "translateX(100%)",
-                transition: "transform 0.35s cubic-bezier(0.32, 0.72, 0, 1)",
+                opacity: showLyrics ? 1 : 0,
+                transition:
+                  "transform 0.35s cubic-bezier(0.32, 0.72, 0, 1), opacity 0.25s ease-out 0.1s",
                 pointerEvents: showLyrics ? "auto" : "none",
                 backgroundColor: "transparent",
               }}

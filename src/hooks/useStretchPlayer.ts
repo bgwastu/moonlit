@@ -3,9 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 export type StretchPlayerState = "loading" | "ready" | "error";
 
 interface UseStretchPlayerProps {
-  videoElement: HTMLVideoElement | null;
   fileUrl: string;
-  isVideoReady: boolean;
   initialRate?: number;
   initialSemitones?: number;
   initialPosition?: number;
@@ -14,9 +12,15 @@ interface UseStretchPlayerProps {
   autoPlay?: boolean;
   isRepeat?: boolean;
   onEnded?: () => void;
+  onVideoError?: (e: any) => void;
 }
 
 interface UseStretchPlayerReturn {
+  // Video element
+  videoRef: React.RefObject<HTMLVideoElement>;
+  videoElement: HTMLVideoElement | null;
+  isVideoReady: boolean;
+  // State
   state: StretchPlayerState;
   isPlaying: boolean;
   currentTime: number;
@@ -26,6 +30,7 @@ interface UseStretchPlayerReturn {
   reverbAmount: number;
   volume: number;
   isNativeFallback: boolean;
+  // Controls
   play: () => void;
   pause: () => void;
   togglePlayback: () => void;
@@ -60,9 +65,7 @@ function generateImpulseResponse(
 }
 
 export function useStretchPlayer({
-  videoElement,
   fileUrl,
-  isVideoReady,
   initialRate = 1,
   initialSemitones = 0,
   initialPosition = 0,
@@ -71,7 +74,14 @@ export function useStretchPlayer({
   autoPlay = true,
   isRepeat = false,
   onEnded,
+  onVideoError,
 }: UseStretchPlayerProps): UseStretchPlayerReturn {
+  // Video element state (managed internally)
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const [videoElement, setVideoElement] = useState<HTMLVideoElement | null>(null);
+  const [isVideoReady, setIsVideoReady] = useState(false);
+
+  // Audio processing state
   const [state, setState] = useState<StretchPlayerState>("loading");
   const [rate, setRateState] = useState(initialRate);
   const [semitones, setSemitonesState] = useState(initialSemitones);
@@ -115,6 +125,74 @@ export function useStretchPlayer({
   isRepeatRef.current = isRepeat;
   volumeRef.current = volume;
   onEndedRef.current = onEnded;
+
+  // Video setup effect - manages the video element
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video || !fileUrl) return;
+
+    // Skip if already set up with same source
+    if (videoElement === video && video.src.includes(fileUrl.split("/").pop() || "")) {
+      return;
+    }
+
+    let isMounted = true;
+
+    const setupVideo = async () => {
+      try {
+        console.log("StretchPlayer: Setting up video:", fileUrl);
+        setVideoElement(video);
+        setIsVideoReady(false);
+
+        // Disable pitch preservation
+        (video as any).preservesPitch = false;
+        (video as any).mozPreservesPitch = false;
+        (video as any).webkitPreservesPitch = false;
+
+        video.src = fileUrl;
+        video.load();
+
+        await new Promise<void>((resolve, reject) => {
+          const onCanPlay = () => {
+            video.removeEventListener("canplay", onCanPlay);
+            video.removeEventListener("error", onError);
+            resolve();
+          };
+
+          const onError = (e: Event) => {
+            video.removeEventListener("canplay", onCanPlay);
+            video.removeEventListener("error", onError);
+            reject(e);
+          };
+
+          if (video.readyState >= 3) {
+            resolve();
+          } else {
+            video.addEventListener("canplay", onCanPlay);
+            video.addEventListener("error", onError);
+          }
+        });
+
+        if (!isMounted) return;
+
+        // Apply initial settings
+        video.playbackRate = initialRate;
+        video.currentTime = initialPosition;
+
+        setIsVideoReady(true);
+        console.log("StretchPlayer: Video ready");
+      } catch (e) {
+        console.error("StretchPlayer: Video setup failed:", e);
+        if (onVideoError) onVideoError(e);
+      }
+    };
+
+    setupVideo();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [fileUrl]); // Only re-run when fileUrl changes
 
   const cleanup = useCallback(() => {
     console.log("StretchPlayer: cleanup");
@@ -761,6 +839,11 @@ export function useStretchPlayer({
   }, [videoElement, play, pause]);
 
   return {
+    // Video element
+    videoRef,
+    videoElement,
+    isVideoReady,
+    // State
     state,
     isPlaying,
     currentTime,
@@ -770,6 +853,7 @@ export function useStretchPlayer({
     reverbAmount,
     volume,
     isNativeFallback,
+    // Controls
     play,
     pause,
     togglePlayback,
