@@ -665,6 +665,8 @@ export function Player({ media, repeating }: { media: Media; repeating: boolean 
             alignItems: "center",
             justifyContent: "center",
             overflow: "hidden",
+            userSelect: "none",
+            WebkitUserSelect: "none",
           }}
         >
           {/* Main layout container */}
@@ -691,6 +693,9 @@ export function Player({ media, repeating }: { media: Media; repeating: boolean 
                 justifyContent: "center",
                 flexShrink: 0,
                 cursor: "pointer",
+                userSelect: "none",
+                WebkitUserSelect: "none",
+                WebkitTouchCallout: "none",
               }}
             >
               {/* Toast overlay - centered on video */}
@@ -734,6 +739,15 @@ export function Player({ media, repeating }: { media: Media; repeating: boolean 
                 </Transition>
               </Box>
 
+              {/* Ambient background - always visible */}
+              {!isAudioOnly && (
+                <AmbientCanvas
+                  videoElement={videoElement}
+                  isAudioOnly={isAudioOnly}
+                  isPlaying={isPlaying}
+                />
+              )}
+
               {/* Video Container - single element for both layouts */}
               {!isAudioOnly && (
                 <Box
@@ -746,13 +760,11 @@ export function Player({ media, repeating }: { media: Media; repeating: boolean 
                     aspectRatio: `${videoAspectRatio}`,
                     borderRadius: theme.radius.md,
                     margin: isMobile ? "10px" : 0,
+                    // Hide video on mobile when lyrics are open (perf optimization)
+                    opacity: isMobile && showLyrics ? 0 : 1,
+                    pointerEvents: isMobile && showLyrics ? "none" : "auto",
                   }}
                 >
-                  <AmbientCanvas
-                    videoElement={videoElement}
-                    isAudioOnly={isAudioOnly}
-                    isPlaying={isPlaying}
-                  />
                   <video
                     ref={videoRef}
                     key={media.fileUrl}
@@ -927,6 +939,8 @@ export function Player({ media, repeating }: { media: Media; repeating: boolean 
                 backgroundColor: theme.colors.dark[6],
                 borderRadius: theme.radius.sm,
                 fontVariantNumeric: "tabular-nums",
+                userSelect: "none",
+                WebkitUserSelect: "none",
               }}
             >
               {`${getFormattedTime(isSeeking ? seekPosition : currentTime)} / ${getFormattedTime(duration)}`}
@@ -1175,6 +1189,11 @@ export function Player({ media, repeating }: { media: Media; repeating: boolean 
                       </Center>
                     }
                     alt="cover image"
+                    style={{
+                      userSelect: "none",
+                      WebkitUserSelect: "none",
+                      pointerEvents: "none",
+                    }}
                   />
                 </MediaQuery>
                 <Box ml="sm">
