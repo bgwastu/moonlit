@@ -798,46 +798,53 @@ export function Player({ media, repeating }: { media: Media; repeating: boolean 
                 </Box>
               )}
 
-              {/* Video Container - single element for both layouts */}
-              {!isAudioOnly && (
-                <Box
+              {/* Video element - always mounted for playback/seek; hidden when audio-only */}
+              <Box
+                style={{
+                  position: isAudioOnly ? "absolute" : "relative",
+                  width: isAudioOnly ? 0 : "auto",
+                  height: isAudioOnly ? 0 : "auto",
+                  maxWidth: isAudioOnly ? 0 : isMobile ? "calc(100vw - 20px)" : "60vw",
+                  maxHeight: isAudioOnly ? 0 : "60vh",
+                  aspectRatio: isAudioOnly ? undefined : `${videoAspectRatio}`,
+                  borderRadius: theme.radius.md,
+                  margin: isMobile ? 10 : 0,
+                  overflow: "hidden",
+                  opacity: isAudioOnly
+                    ? 0
+                    : videoDisabled
+                      ? 0
+                      : isMobile && showLyrics
+                        ? 0
+                        : 1,
+                  pointerEvents: isAudioOnly
+                    ? "none"
+                    : isMobile && showLyrics
+                      ? "none"
+                      : "auto",
+                  display: isAudioOnly ? "block" : videoDisabled ? "none" : "block",
+                }}
+              >
+                <video
+                  ref={videoRef}
+                  key={media.fileUrl}
                   style={{
-                    position: "relative",
-                    width: "auto",
-                    height: "auto",
-                    maxWidth: isMobile ? "calc(100vw - 20px)" : "60vw",
-                    maxHeight: "60vh",
-                    aspectRatio: `${videoAspectRatio}`,
+                    width: "100%",
+                    height: "100%",
+                    objectFit: "cover",
+                    display: "block",
+                    userSelect: "none",
                     borderRadius: theme.radius.md,
-                    margin: isMobile ? 10 : 0,
-                    // Hide video on mobile when lyrics are open (perf optimization)
-                    opacity: isMobile && showLyrics ? 0 : 1,
-                    pointerEvents: isMobile && showLyrics ? "none" : "auto",
-                    // Hide when disabled
-                    display: videoDisabled ? "none" : "block",
+                    cursor: "pointer",
+                    pointerEvents: "none",
                   }}
-                >
-                  <video
-                    ref={videoRef}
-                    key={media.fileUrl}
-                    style={{
-                      width: "100%",
-                      height: "100%",
-                      objectFit: "cover",
-                      display: "block",
-                      userSelect: "none",
-                      borderRadius: theme.radius.md,
-                      cursor: "pointer",
-                      pointerEvents: "none",
-                    }}
-                    playsInline
-                    controls={false}
-                    preload="metadata"
-                    muted
-                    crossOrigin="anonymous"
-                  />
-                </Box>
-              )}
+                  playsInline
+                  controls={false}
+                  preload="metadata"
+                  muted
+                  crossOrigin="anonymous"
+                />
+              </Box>
 
               {/* Audio Only Display */}
               {isAudioOnly && (
@@ -1099,45 +1106,45 @@ export function Player({ media, repeating }: { media: Media; repeating: boolean 
             </Flex>
           </Flex>
 
-          <Slider
-            value={isSeeking ? seekPosition : currentTime}
-            onChange={handleSliderChange}
-            onChangeEnd={handleSeekChange}
-            min={0}
-            step={1}
-            radius={0}
-            mb={-3}
-            mr={6}
-            showLabelOnHover={false}
-            size="xs"
-            pr={0.3}
-            sx={{
-              "&:hover": {
-                ".mantine-Slider-track": {
-                  height: 6,
+          <Box style={{ paddingRight: 8 }}>
+            <Slider
+              value={isSeeking ? seekPosition : currentTime}
+              onChange={handleSliderChange}
+              onChangeEnd={handleSeekChange}
+              min={0}
+              step={1}
+              radius={0}
+              mb={-3}
+              showLabelOnHover={false}
+              size="xs"
+              sx={{
+                "&:hover": {
+                  ".mantine-Slider-track": {
+                    height: 6,
+                  },
+                  ".mantine-Slider-thumb": {
+                    opacity: 1,
+                    width: 15,
+                    height: 15,
+                  },
                 },
-                ".mantine-Slider-thumb": {
-                  opacity: 1,
-                  width: 15,
-                  height: 15,
+              }}
+              styles={{
+                thumb: {
+                  borderWidth: 0,
+                  opacity: 0,
+                  width: 0,
+                  height: 0,
+                  transition: "opacity 0.15s, width 0.15s, height 0.15s",
                 },
-              },
-            }}
-            styles={{
-              thumb: {
-                borderWidth: 0,
-                opacity: 0,
-                width: 0,
-                height: 0,
-                transition: "opacity 0.15s, width 0.15s, height 0.15s",
-              },
-              track: {
-                transition: "height 0.15s",
-              },
-            }}
-            label={(v) => (currentTime >= duration - 5 ? null : getFormattedTime(v))}
-            max={duration}
-          />
+                track: {
+                  transition: "height 0.15s",
+                },
+              }}
+              label={(v) => (currentTime >= duration - 5 ? null : getFormattedTime(v))}
+              max={duration}
+            />
+          </Box>
 
           <Box style={{ backgroundColor: theme.colors.dark[6] }}>
             <Flex gap="sm" px="xs" py="xs" align="center">
