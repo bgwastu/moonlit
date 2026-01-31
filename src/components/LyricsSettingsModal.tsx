@@ -49,6 +49,7 @@ export default function LyricsSettingsModal({
       title="Lyrics Settings"
       size="md"
       centered
+      keepMounted
       styles={{
         title: { fontWeight: 600 },
       }}
