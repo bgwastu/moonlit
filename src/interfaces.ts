@@ -36,4 +36,8 @@ export interface State {
   volume: number;
   lastUpdated: number;
   lyrics?: LyricsSettings | null;
+  /** When true, video is hidden and album art is shown instead */
+  videoDisabled?: boolean;
+  /** Whether lyrics should be shown */
+  showLyrics?: boolean;
 }
