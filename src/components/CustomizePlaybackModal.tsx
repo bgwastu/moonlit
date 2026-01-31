@@ -1,12 +1,15 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Alert, Button, Flex, Modal, Slider, Stack, Switch, Text } from "@mantine/core";
-import { IconInfoCircle, IconLock, IconLockOpen } from "@tabler/icons-react";
+import { Button, Flex, Modal, Slider, Stack, Switch, Text } from "@mantine/core";
+import { IconLock, IconLockOpen } from "@tabler/icons-react";
 
 export interface CustomizePlaybackModalProps {
   opened: boolean;
   onClose: () => void;
+  /** Lite mode: native playback only (speed); no pitch/reverb. Much more stable. */
+  liteMode: boolean;
+  onLiteModeChange: (enabled: boolean) => void;
   pitchLockedToSpeed: boolean;
   onLockToggle: (locked: boolean) => void;
   rate: number;
@@ -15,13 +18,14 @@ export interface CustomizePlaybackModalProps {
   onPitchChangeEnd: (value: number) => void;
   reverbAmount: number;
   onReverbChange: (value: number) => void;
-  isNativeFallback?: boolean;
   onReset: () => void;
 }
 
 export default function CustomizePlaybackModal({
   opened,
   onClose,
+  liteMode,
+  onLiteModeChange,
   pitchLockedToSpeed,
   onLockToggle,
   rate,
@@ -30,7 +34,6 @@ export default function CustomizePlaybackModal({
   onPitchChangeEnd,
   reverbAmount,
   onReverbChange,
-  isNativeFallback = false,
   onReset,
 }: CustomizePlaybackModalProps) {
   const [speedSliderValue, setSpeedSliderValue] = useState(rate);
@@ -44,8 +47,7 @@ export default function CustomizePlaybackModal({
     }
   }, [opened, rate, semitones]);
 
-  // In native fallback mode (Safari), pitch is always locked to speed
-  const effectiveLocked = isNativeFallback || pitchLockedToSpeed;
+  const effectiveLocked = pitchLockedToSpeed;
   return (
     <Modal
       opened={opened}
@@ -55,29 +57,43 @@ export default function CustomizePlaybackModal({
       keepMounted
     >
       <Stack>
-        {isNativeFallback && (
-          <Alert icon={<IconInfoCircle size={16} />} color="blue" mb="md">
-            On Safari/iOS, pitch and reverb controls are limited for compatibility.
-          </Alert>
-        )}
-        <Flex align="center" justify="space-between" mb="sm" gap="md" wrap="wrap">
-          <Flex align="center" gap="xs">
-            {effectiveLocked ? (
-              <IconLock size={18} style={{ opacity: 0.8 }} />
-            ) : (
-              <IconLockOpen size={18} style={{ opacity: 0.8 }} />
-            )}
+        <Flex align="center" justify="space-between" mb="md" gap="md" wrap="wrap">
+          <Flex direction="column" gap={2}>
             <Text size="sm" fw={500}>
-              Lock pitch to speed
+              Lite mode
+            </Text>
+            <Text size="xs" c="dimmed">
+              Much more stable. Disables custom pitch and reverb.
             </Text>
           </Flex>
           <Switch
             size="md"
-            checked={effectiveLocked}
-            disabled={isNativeFallback}
-            onChange={(e) => onLockToggle(e.currentTarget.checked)}
+            checked={liteMode}
+            onChange={(e) => onLiteModeChange(e.currentTarget.checked)}
           />
         </Flex>
+
+        {!liteMode && (
+          <>
+            <Flex align="center" justify="space-between" mb="sm" gap="md" wrap="wrap">
+              <Flex align="center" gap="xs">
+                {effectiveLocked ? (
+                  <IconLock size={18} style={{ opacity: 0.8 }} />
+                ) : (
+                  <IconLockOpen size={18} style={{ opacity: 0.8 }} />
+                )}
+                <Text size="sm" fw={500}>
+                  Lock pitch to speed
+                </Text>
+              </Flex>
+              <Switch
+                size="md"
+                checked={effectiveLocked}
+                onChange={(e) => onLockToggle(e.currentTarget.checked)}
+              />
+            </Flex>
+          </>
+        )}
 
         <Flex direction="column" mb={22} gap={2}>
           <Text size="sm">Speed: {speedSliderValue.toFixed(2)}x</Text>
@@ -105,69 +121,65 @@ export default function CustomizePlaybackModal({
           />
         </Flex>
 
-        <Flex direction="column" mb={22} gap={2}>
-          <Text size="sm">
-            Pitch: {(effectiveLocked ? semitones : pitchSliderValue) >= 0 ? "+" : ""}
-            {(effectiveLocked ? semitones : pitchSliderValue).toFixed(1)} semitones
-            {effectiveLocked && (
-              <Text component="span" size="xs" c="dimmed" ml={6}>
-                (synced to speed)
+        {!liteMode && (
+          <>
+            <Flex direction="column" mb={22} gap={2}>
+              <Text size="sm">
+                Pitch: {(effectiveLocked ? semitones : pitchSliderValue) >= 0 ? "+" : ""}
+                {(effectiveLocked ? semitones : pitchSliderValue).toFixed(1)} semitones
+                {effectiveLocked && (
+                  <Text component="span" size="xs" c="dimmed" ml={6}>
+                    (synced to speed)
+                  </Text>
+                )}
               </Text>
-            )}
-          </Text>
-          <Slider
-            min={-12}
-            max={12}
-            step={0.1}
-            thumbSize={20}
-            disabled={effectiveLocked}
-            styles={{
-              thumb: { borderWidth: 0 },
-            }}
-            marks={[
-              { value: -12, label: "-12" },
-              { value: -6, label: "-6" },
-              { value: 0, label: "0" },
-              { value: 6, label: "+6" },
-              { value: 12, label: "+12" },
-            ]}
-            label={(v) => `${v >= 0 ? "+" : ""}${v.toFixed(1)}`}
-            value={effectiveLocked ? semitones : pitchSliderValue}
-            onChange={effectiveLocked ? () => {} : setPitchSliderValue}
-            onChangeEnd={(v) => onPitchChangeEnd(v)}
-          />
-        </Flex>
+              <Slider
+                min={-12}
+                max={12}
+                step={0.1}
+                thumbSize={20}
+                disabled={effectiveLocked}
+                styles={{
+                  thumb: { borderWidth: 0 },
+                }}
+                marks={[
+                  { value: -12, label: "-12" },
+                  { value: -6, label: "-6" },
+                  { value: 0, label: "0" },
+                  { value: 6, label: "+6" },
+                  { value: 12, label: "+12" },
+                ]}
+                label={(v) => `${v >= 0 ? "+" : ""}${v.toFixed(1)}`}
+                value={effectiveLocked ? semitones : pitchSliderValue}
+                onChange={effectiveLocked ? () => {} : setPitchSliderValue}
+                onChangeEnd={(v) => onPitchChangeEnd(v)}
+              />
+            </Flex>
 
-        <Flex direction="column" mb={22} gap={2}>
-          <Text size="sm">
-            Reverb: {Math.round(reverbAmount * 100)}%
-            {isNativeFallback && (
-              <Text component="span" size="xs" c="dimmed" ml={6}>
-                (not available)
-              </Text>
-            )}
-          </Text>
-          <Slider
-            min={0}
-            max={1}
-            step={0.01}
-            thumbSize={20}
-            disabled={isNativeFallback}
-            styles={{
-              thumb: { borderWidth: 0 },
-            }}
-            marks={[
-              { value: 0, label: "0" },
-              { value: 0.25, label: "25" },
-              { value: 0.5, label: "50" },
-              { value: 0.75, label: "75" },
-              { value: 1, label: "100" },
-            ]}
-            label={(v) => `${Math.round(v * 100)}%`}
-            value={reverbAmount}
-            onChange={onReverbChange}
-          />
-        </Flex>
+            <Flex direction="column" mb={22} gap={2}>
+              <Text size="sm">Reverb: {Math.round(reverbAmount * 100)}%</Text>
+              <Slider
+                min={0}
+                max={1}
+                step={0.01}
+                thumbSize={20}
+                styles={{
+                  thumb: { borderWidth: 0 },
+                }}
+                marks={[
+                  { value: 0, label: "0" },
+                  { value: 0.25, label: "25" },
+                  { value: 0.5, label: "50" },
+                  { value: 0.75, label: "75" },
+                  { value: 1, label: "100" },
+                ]}
+                label={(v) => `${Math.round(v * 100)}%`}
+                value={reverbAmount}
+                onChange={onReverbChange}
+              />
+            </Flex>
+          </>
+        )}
 
         <Button variant="light" onClick={onReset}>
           Reset to Default

@@ -115,6 +115,12 @@ export function Player({ media, repeating }: { media: Media; repeating: boolean 
   );
   const [videoDisabled, setVideoDisabled] = useState(savedState?.videoDisabled ?? false);
 
+  // Lite mode: native playback only (much more stable); default on for everyone
+  const [liteMode, setLiteMode] = useState(() => savedState?.liteMode ?? true);
+  useEffect(() => {
+    setLiteMode(savedState?.liteMode ?? true);
+  }, [sourceUrl, savedState?.liteMode]);
+
   // Volume UI state (actual volume is managed by useStretchPlayer)
   const [isMuted, setIsMuted] = useState(false);
   const [isVolumeHovered, setIsVolumeHovered] = useState(false);
@@ -151,7 +157,6 @@ export function Player({ media, repeating }: { media: Media; repeating: boolean 
     semitones,
     reverbAmount,
     volume,
-    isNativeFallback,
     // Controls
     play,
     pause,
@@ -163,6 +168,7 @@ export function Player({ media, repeating }: { media: Media; repeating: boolean 
     seek,
   } = useStretchPlayer({
     fileUrl: media.fileUrl,
+    liteMode,
     initialRate: initialRate,
     initialSemitones: savedState?.semitones ?? 0,
     initialReverbAmount: savedState?.reverbAmount ?? 0,
@@ -248,6 +254,14 @@ export function Player({ media, repeating }: { media: Media; repeating: boolean 
     !isPlaying &&
     !isRepeat;
 
+  const handleLiteModeChange = useCallback(
+    (enabled: boolean) => {
+      setLiteMode(enabled);
+      saveVideoState(sourceUrl, { liteMode: enabled });
+    },
+    [sourceUrl],
+  );
+
   // Media session (browser controls)
   const handleBackward = useCallback(() => {
     const newTime = Math.max(0, currentTime - 5);
@@ -298,6 +312,7 @@ export function Player({ media, repeating }: { media: Media; repeating: boolean 
     stateLoaded,
     videoDisabled,
     showLyrics,
+    liteMode,
   });
 
   // Keep ref in sync so rate-change handler always sees current lock state
@@ -551,6 +566,8 @@ export function Player({ media, repeating }: { media: Media; repeating: boolean 
       <CustomizePlaybackModal
         opened={modalOpened}
         onClose={closeModal}
+        liteMode={liteMode}
+        onLiteModeChange={handleLiteModeChange}
         pitchLockedToSpeed={pitchLockedToSpeed}
         onLockToggle={handleLockToggle}
         rate={rate}
@@ -559,7 +576,6 @@ export function Player({ media, repeating }: { media: Media; repeating: boolean 
         onPitchChangeEnd={handleSemitonesChange}
         reverbAmount={reverbAmount}
         onReverbChange={setReverbAmount}
-        isNativeFallback={isNativeFallback}
         onReset={() => {
           handleRateChange(1);
           setSemitones(0);

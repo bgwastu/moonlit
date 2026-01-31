@@ -40,4 +40,6 @@ export interface State {
   videoDisabled?: boolean;
   /** Whether lyrics should be shown */
   showLyrics?: boolean;
+  /** Lite mode: native video playback only (no pitch/reverb), much more stable; default on */
+  liteMode?: boolean;
 }
