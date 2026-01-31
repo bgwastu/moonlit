@@ -22,10 +22,8 @@ import {
 import { useDisclosure, useHotkeys, useMediaQuery } from "@mantine/hooks";
 import {
   IconAdjustments,
-  IconBug,
   IconChevronsLeft,
   IconChevronsRight,
-  IconCookie,
   IconDownload,
   IconExternalLink,
   IconFileMusic,
@@ -70,7 +68,6 @@ import {
   getSemitonesFromRate,
   getYouTubeMusicUrl,
 } from "@/utils/player";
-import CookiesModal from "./CookiesModal";
 import CustomizePlaybackModal from "./CustomizePlaybackModal";
 import DownloadModal from "./DownloadModal";
 import LyricsPanel from "./LyricsPanel";
@@ -334,8 +331,6 @@ export function Player({ media, repeating }: { media: Media; repeating: boolean 
 
   // Modal controls
   const [modalOpened, { open: openModal, close: closeModal }] = useDisclosure(false);
-  const [cookiesModalOpened, { open: openCookiesModal, close: closeCookiesModal }] =
-    useDisclosure(false);
   const [downloadModalOpened, { open: openDownloadModal, close: closeDownloadModal }] =
     useDisclosure(false);
 
@@ -586,8 +581,6 @@ export function Player({ media, repeating }: { media: Media; repeating: boolean 
         currentSemitones={semitones}
         currentReverbAmount={reverbAmount}
       />
-
-      <CookiesModal opened={cookiesModalOpened} onClose={closeCookiesModal} />
 
       <LyricsSearchModal
         opened={lyricsSearchModalOpened}
@@ -1051,15 +1044,6 @@ export function Player({ media, repeating }: { media: Media; repeating: boolean 
                   >
                     Download
                   </Menu.Item>
-                  <Menu.Item
-                    icon={<IconBug size={14} />}
-                    component="a"
-                    href="https://github.com/bgwastu/moonlit/issues"
-                    rightSection={<IconExternalLink size={12} />}
-                    target="_blank"
-                  >
-                    Report Bug
-                  </Menu.Item>
                   <Menu.Divider />
                   <Menu.Label>Display</Menu.Label>
                   <Menu.Item
@@ -1099,11 +1083,6 @@ export function Player({ media, repeating }: { media: Media; repeating: boolean 
                       Video
                     </Menu.Item>
                   )}
-                  <Menu.Divider />
-                  <Menu.Label>Settings</Menu.Label>
-                  <Menu.Item icon={<IconCookie size={14} />} onClick={openCookiesModal}>
-                    Cookies Settings
-                  </Menu.Item>
                 </Menu.Dropdown>
               </Menu>
             </Flex>
