@@ -62,6 +62,7 @@ interface PlayerRuntime {
   // Sync
   rafId: number | null;
   lastUiUpdateMs: number;
+  lastRateChangeMs: number;
 
   // Callbacks
   onEnded?: () => void;
@@ -69,6 +70,7 @@ interface PlayerRuntime {
 
 const DRIFT_THRESHOLD = 0.1; // seconds
 const UI_UPDATE_INTERVAL = 100; // ms - throttle React updates
+const RATE_CHANGE_GRACE_PERIOD = 200; // ms - skip drift correction after rate change
 
 function generateImpulseResponse(
   context: AudioContext,
@@ -135,6 +137,7 @@ export function useStretchPlayer({
     repeat: isRepeat,
     rafId: null,
     lastUiUpdateMs: 0,
+    lastRateChangeMs: 0,
     onEnded,
   });
 
@@ -200,12 +203,21 @@ export function useStretchPlayer({
     }
 
     // Sync video to audio (video is visual slave)
+    // Skip drift correction briefly after rate changes to avoid visual jumps
+    const timeSinceRateChange = now - rt.lastRateChangeMs;
     if (video && !video.seeking) {
-      const drift = Math.abs(video.currentTime - audioTime);
-      if (drift > DRIFT_THRESHOLD) {
-        video.currentTime = audioTime;
+      // Sync playback rate first
+      if (Math.abs(video.playbackRate - rt.rate) > 0.01) {
+        video.playbackRate = rt.rate;
       }
-      // Keep video playing
+      // Only correct drift if enough time has passed since rate change
+      if (timeSinceRateChange > RATE_CHANGE_GRACE_PERIOD) {
+        const drift = Math.abs(video.currentTime - audioTime);
+        if (drift > DRIFT_THRESHOLD) {
+          video.currentTime = audioTime;
+        }
+      }
+      // Ensure video is playing (needed for initial start and visibility restore)
       if (video.paused && document.visibilityState === "visible") {
         video.play().catch(() => {});
       }
@@ -260,11 +272,20 @@ export function useStretchPlayer({
     rt.isPlaying = true;
     setIsPlaying(true);
 
-    // Start video (muted, visual only)
+    // Set grace period to prevent immediate drift correction
+    rt.lastRateChangeMs = performance.now();
+
+    // Resume video - sync position if needed, then set rate to resume
     if (video) {
-      video.currentTime = inputTime;
+      if (Math.abs(video.currentTime - inputTime) > DRIFT_THRESHOLD) {
+        video.currentTime = inputTime;
+      }
+      // Set playback rate to resume (from frozen state where rate was 0)
       video.playbackRate = rt.rate;
-      video.play().catch(() => {});
+      // Ensure video is playing
+      if (video.paused) {
+        video.play().catch(() => {});
+      }
     }
 
     // Start sync loop
@@ -286,8 +307,9 @@ export function useStretchPlayer({
     rt.isPlaying = false;
     setIsPlaying(false);
 
+    // Freeze video by setting playbackRate to 0 (avoids flicker from pause())
     if (video) {
-      video.pause();
+      video.playbackRate = 0;
     }
 
     if (rt.rafId !== null) {
@@ -330,9 +352,9 @@ export function useStretchPlayer({
   // Set rate
   const setRate = useCallback((newRate: number) => {
     const rt = runtime.current;
-    const video = videoRef.current;
 
     rt.rate = newRate;
+    rt.lastRateChangeMs = performance.now();
     setRateState(newRate);
 
     if (rt.stretch) {
@@ -340,10 +362,6 @@ export function useStretchPlayer({
         rate: newRate,
         semitones: rt.semitones,
       });
-    }
-
-    if (video) {
-      video.playbackRate = newRate;
     }
   }, []);
 

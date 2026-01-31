@@ -322,13 +322,6 @@ export function Player({ media, repeating }: { media: Media; repeating: boolean 
     return () => videoElement.removeEventListener("loadedmetadata", sync);
   }, [videoElement]);
 
-  // Sync video rate with audio rate
-  useEffect(() => {
-    if (videoElement && Math.abs(videoElement.playbackRate - rate) > 0.01) {
-      videoElement.playbackRate = rate;
-    }
-  }, [videoElement, rate]);
-
   // Modal controls
   const [modalOpened, { open: openModal, close: closeModal }] = useDisclosure(false);
   const [downloadModalOpened, { open: openDownloadModal, close: closeDownloadModal }] =
