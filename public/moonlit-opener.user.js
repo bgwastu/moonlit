@@ -1,10 +1,11 @@
 // ==UserScript==
 // @name         Open in Moonlit
 // @namespace    http://tampermonkey.net/
-// @version      1.6
+// @version      1.7
 // @description  Adds a draggable floating button to open the current video in Moonlit
 // @author       Moonlit
 // @match        *://www.youtube.com/*
+// @match        *://m.youtube.com/*
 // @match        *://music.youtube.com/*
 // @match        *://www.tiktok.com/*
 // @icon         https://moonlit.wastu.net/favicon.ico
@@ -268,9 +269,23 @@
       if (!hasMoved) openInMoonlit();
     });
 
+    function isFullscreen() {
+      return !!(
+        document.fullscreenElement ||
+        document.webkitFullscreenElement ||
+        document.mozFullScreenElement ||
+        document.msFullscreenElement
+      );
+    }
+
     // --- Visibility Logic ---
     function checkVisibility() {
       if (isHiddenForSession) {
+        container.style.display = "none";
+        return;
+      }
+
+      if (isFullscreen()) {
         container.style.display = "none";
         return;
       }
@@ -285,6 +300,10 @@
 
       container.style.display = shouldShow ? "flex" : "none";
     }
+
+    // --- Fullscreen: hide button when video is fullscreen ---
+    document.addEventListener("fullscreenchange", checkVisibility);
+    document.addEventListener("webkitfullscreenchange", checkVisibility);
 
     // --- Robust Observation ---
     window.addEventListener("popstate", checkVisibility);
