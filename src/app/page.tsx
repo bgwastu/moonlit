@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { SiTiktok, SiYoutube } from "@icons-pack/react-simple-icons";
 import {
@@ -8,11 +9,12 @@ import {
   Anchor,
   AppShell,
   Box,
+  Center,
   Container,
   Divider,
   Flex,
-  Footer,
   Group,
+  Image,
   Stack,
   Text,
   TextInput,
@@ -49,10 +51,19 @@ import { getCookiesToUse } from "@/lib/cookies";
 import {
   getTikTokCreatorAndVideoId,
   getYouTubeId,
+  isDirectMediaURL,
   isSupportedURL,
   isTikTokURL,
   isYoutubeURL,
 } from "@/utils";
+
+export interface DemoTrack {
+  url: string;
+  coverUrl: string;
+  title: string;
+  artist: string;
+  album: string;
+}
 
 function LocalUpload() {
   const [loading, setLoading] = useState<{ status: boolean; message: string | null }>({
@@ -74,7 +85,7 @@ function LocalUpload() {
         maxFiles={1}
         disabled={loading.status}
         onDrop={async (files) => {
-          posthog.capture("upload_music");
+          posthog?.capture("upload_music");
           setLoading({
             status: true,
             message: "Saving to library...",
@@ -134,15 +145,14 @@ function LocalUpload() {
         }}
         onReject={(files) => console.log("rejected files", files)}
         sx={(theme) => ({
-          backgroundColor: "rgba(26, 27, 30, 0.3)",
-          backdropFilter: "blur(10px)",
-          border: `1px solid rgba(255, 255, 255, 0.1)`,
-          borderRadius: theme.radius.md,
+          backgroundColor: "rgba(255, 255, 255, 0.04)",
+          border: "1px solid rgba(255, 255, 255, 0.08)",
+          borderRadius: theme.radius.lg,
           padding: 0,
           transition: "all 0.2s ease",
           "&:hover": {
-            backgroundColor: "rgba(26, 27, 30, 0.5)",
-            borderColor: theme.colors.violet[5],
+            backgroundColor: "rgba(255, 255, 255, 0.06)",
+            borderColor: "rgba(255, 255, 255, 0.12)",
           },
         })}
       >
@@ -204,7 +214,10 @@ function YoutubeUpload({
       url: "",
     },
     validate: {
-      url: (value) => (!isSupportedURL(value) ? "Must be YouTube or TikTok URL" : null),
+      url: (value) =>
+        !isSupportedURL(value)
+          ? "Must be a YouTube, TikTok, or direct MP3/MP4 URL"
+          : null,
     },
   });
 
@@ -256,6 +269,8 @@ function YoutubeUpload({
         return;
       }
       router.push("/watch?v=" + id);
+    } else if (isDirectMediaURL(url)) {
+      router.push(`/player?url=${encodeURIComponent(url)}`);
     } else {
       setLoading(false);
       onLoadingStart(false);
@@ -279,7 +294,7 @@ function YoutubeUpload({
               <IconWorld size={isMobile ? 18 : 20} />
             )
           }
-          placeholder="YouTube or TikTok URL..."
+          placeholder="YouTube, TikTok, or MP3/MP4 URL..."
           size={isMobile ? "md" : "xl"}
           radius="md"
           variant="filled"
@@ -298,12 +313,11 @@ function YoutubeUpload({
           rightSectionWidth={isMobile ? 42 : 52}
           styles={(theme) => ({
             input: {
-              backgroundColor: "rgba(26, 27, 30, 0.3)",
-              backdropFilter: "blur(10px)",
-              border: `1px solid rgba(255, 255, 255, 0.1)`,
+              backgroundColor: "rgba(255, 255, 255, 0.04)",
+              border: "1px solid rgba(255, 255, 255, 0.08)",
               "&:focus": {
-                backgroundColor: "rgba(26, 27, 30, 0.5)",
-                borderColor: theme.colors.violet[5],
+                backgroundColor: "rgba(255, 255, 255, 0.06)",
+                borderColor: "rgba(255, 255, 255, 0.15)",
               },
             },
           })}
@@ -314,46 +328,151 @@ function YoutubeUpload({
   );
 }
 
-function FooterSection() {
+function FooterLinks() {
   return (
-    <Footer height={60} p="md" sx={{ borderTop: "none", backgroundColor: "transparent" }}>
-      <Container size="md">
-        <Flex justify="center" align="center" gap="xs">
+    <Flex justify="center" align="center" gap="xs" py="md" style={{ flexShrink: 0 }}>
+      <Anchor
+        href="https://github.com/bgwastu/moonlit"
+        target="_blank"
+        color="dimmed"
+        size="sm"
+        sx={{ "&:hover": { textDecoration: "underline" } }}
+      >
+        GitHub
+      </Anchor>
+      <Text color="dark.6" size="sm">
+        •
+      </Text>
+      <Anchor
+        href="https://github.com/bgwastu/moonlit/issues"
+        target="_blank"
+        color="dimmed"
+        size="sm"
+        sx={{ "&:hover": { textDecoration: "underline" } }}
+      >
+        Report Bugs
+      </Anchor>
+      <Text color="dark.6" size="sm">
+        •
+      </Text>
+      <Anchor
+        href="mailto:bagas@wastu.net?subject=Moonlit%20Feedback&body=Hi%20Bagas%2C%0A%0AI%20have%20some%20feedback%20for%20Moonlit%3A%0A"
+        color="dimmed"
+        size="sm"
+        sx={{ "&:hover": { textDecoration: "underline" } }}
+      >
+        Feedback
+      </Anchor>
+    </Flex>
+  );
+}
+
+const FALLBACK_DEMO_TRACKS: DemoTrack[] = [
+  {
+    url: "/demo-1.mp3",
+    coverUrl: "/demo-1-cover.jpg",
+    title: "Demo 1",
+    artist: "—",
+    album: "",
+  },
+  {
+    url: "/demo-2.mp3",
+    coverUrl: "/demo-2-cover.jpg",
+    title: "Demo 2",
+    artist: "—",
+    album: "",
+  },
+  {
+    url: "/demo-3.mp3",
+    coverUrl: "/demo-3-cover.jpg",
+    title: "Demo 3",
+    artist: "—",
+    album: "",
+  },
+];
+
+const DEMO_CARD_SIZE = 130;
+
+function DemoTracksSection() {
+  const { history } = useAppContext();
+  const [tracks, setTracks] = useState<DemoTrack[]>(FALLBACK_DEMO_TRACKS);
+
+  useEffect(() => {
+    fetch("/demo-tracks.json")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data: { tracks?: DemoTrack[] } | null) => {
+        if (data?.tracks?.length) setTracks(data.tracks);
+      })
+      .catch(() => {});
+  }, []);
+
+  if (history.length > 1) return null;
+
+  return (
+    <Stack spacing="xs" align="center">
+      <Text size="sm" c="dimmed" fw={500}>
+        Try a demo
+      </Text>
+      <Group spacing="xs" position="center">
+        {tracks.map((track) => (
           <Anchor
-            href="https://github.com/bgwastu/moonlit"
-            target="_blank"
-            color="dimmed"
-            size="sm"
-            sx={{ "&:hover": { textDecoration: "underline" } }}
+            key={track.url}
+            component={Link}
+            href={`/player?url=${encodeURIComponent(track.url)}`}
+            sx={{ textDecoration: "none" }}
           >
-            GitHub
+            <Box
+              sx={(t) => ({
+                width: DEMO_CARD_SIZE,
+                height: DEMO_CARD_SIZE,
+                borderRadius: t.radius.md,
+                overflow: "hidden",
+                position: "relative",
+                border: "1px solid rgba(255, 255, 255, 0.1)",
+                transition: "all 0.2s ease",
+                "&:hover": {
+                  borderColor: "rgba(255, 255, 255, 0.25)",
+                  transform: "scale(1.05)",
+                },
+              })}
+            >
+              <Image
+                src={track.coverUrl}
+                alt=""
+                width={DEMO_CARD_SIZE}
+                height={DEMO_CARD_SIZE}
+                fit="cover"
+                withPlaceholder
+                placeholder={
+                  <Center style={{ height: "100%", background: "rgba(0,0,0,0.3)" }}>
+                    <IconMusic size={24} stroke={1.5} color="rgba(255,255,255,0.4)" />
+                  </Center>
+                }
+              />
+              <Box
+                sx={{
+                  position: "absolute",
+                  inset: 0,
+                  background:
+                    "linear-gradient(to top, rgba(0,0,0,0.85) 0%, transparent 50%)",
+                  display: "flex",
+                  flexDirection: "column",
+                  justifyContent: "flex-end",
+                }}
+                p="xs"
+              >
+                <Text size="xs" fw={600} lineClamp={1} color="white">
+                  {track.title}
+                </Text>
+                <Text size="xs" lineClamp={1} color="rgba(255,255,255,0.8)">
+                  {track.artist}
+                </Text>
+              </Box>
+            </Box>
           </Anchor>
-          <Text color="dark.6" size="sm">
-            •
-          </Text>
-          <Anchor
-            href="https://github.com/bgwastu/moonlit/issues"
-            target="_blank"
-            color="dimmed"
-            size="sm"
-            sx={{ "&:hover": { textDecoration: "underline" } }}
-          >
-            Report Bugs
-          </Anchor>
-          <Text color="dark.6" size="sm">
-            •
-          </Text>
-          <Anchor
-            href="mailto:bagas@wastu.net?subject=Moonlit%20Feedback&body=Hi%20Bagas%2C%0A%0AI%20have%20some%20feedback%20for%20Moonlit%3A%0A"
-            color="dimmed"
-            size="sm"
-            sx={{ "&:hover": { textDecoration: "underline" } }}
-          >
-            Feedback
-          </Anchor>
-        </Flex>
-      </Container>
-    </Footer>
+        ))}
+      </Group>
+    </Stack>
   );
 }
 
@@ -367,12 +486,16 @@ function Header({
   setResetOpened: (o: boolean) => void;
 }) {
   return (
-    <Box py="lg">
+    <Box py="md" px="md">
       <Container size="md">
         <Flex justify="space-between" align="center">
-          <Flex align="center" gap={12}>
-            <Icon size={18} />
-            <Text fz={rem(20)} fw="bold" lts={rem(0.2)} style={{ userSelect: "none" }}>
+          <Flex align="center" gap={10}>
+            <Icon size={20} />
+            <Text
+              fz={rem(18)}
+              fw={600}
+              style={{ userSelect: "none", letterSpacing: "-0.01em" }}
+            >
               Moonlit
             </Text>
           </Flex>
@@ -447,7 +570,6 @@ export default function UploadPage() {
       <ResetModal opened={resetOpened} onClose={() => setResetOpened(false)} />
 
       <AppShell
-        footer={<FooterSection />}
         padding={0}
         styles={{
           main: {
@@ -455,10 +577,11 @@ export default function UploadPage() {
               "radial-gradient(circle at 50% 120%, rgba(120, 50, 220, 0.45) 0%, rgba(20, 20, 30, 0) 50%), radial-gradient(circle at 50% -20%, rgba(120, 50, 220, 0.25) 0%, #1A1B1E 60%)",
             backgroundSize: "300% 300%",
             animation: "gradient 10s ease infinite",
+            minHeight: "100dvh",
           },
         }}
       >
-        <Stack spacing={0} h="100%">
+        <Stack spacing={0} h="100%" style={{ minHeight: "100dvh" }}>
           <Header
             setCookiesOpened={setCookiesOpened}
             setHistoryOpened={setHistoryOpened}
@@ -471,66 +594,71 @@ export default function UploadPage() {
               display: "flex",
               flexDirection: "column",
               justifyContent: "center",
+              padding: "2rem 0 3rem",
             }}
           >
-            <Container size="xs" w="100%">
-              <Stack spacing={40}>
-                {/* Hero Text */}
-                <Stack spacing="xs" align="center" ta="center">
-                  <Title
-                    order={1}
-                    size={rem(42)}
-                    fw={800}
-                    color="white"
-                    sx={(theme) => ({
-                      [theme.fn.smallerThan("sm")]: {
-                        fontSize: rem(32),
-                      },
-                    })}
-                  >
-                    Play it your way.
-                  </Title>
-                  <Text
-                    size="lg"
-                    c="dimmed"
-                    maw={400}
-                    mx="auto"
-                    sx={(theme) => ({
-                      [theme.fn.smallerThan("sm")]: {
-                        fontSize: theme.fontSizes.md,
-                      },
-                    })}
-                  >
-                    Transform your music with real-time slowed + reverb and nightcore
-                    effects.
-                  </Text>
-                </Stack>
-
-                {/* Main Action Area */}
+            <Stack spacing={48} w="100%">
+              <Container size="sm" w="100%">
                 <Stack spacing="lg">
+                  {/* Hero */}
+                  <Stack spacing="md" align="center" ta="center">
+                    <Title
+                      order={1}
+                      size={rem(40)}
+                      fw={700}
+                      sx={(theme) => ({
+                        color: "white",
+                        letterSpacing: "-0.02em",
+                        lineHeight: 1.15,
+                        [theme.fn.smallerThan("sm")]: { fontSize: rem(28) },
+                      })}
+                    >
+                      Play it your way
+                    </Title>
+                    <Text
+                      size="md"
+                      maw={380}
+                      mx="auto"
+                      sx={(theme) => ({
+                        color: theme.colors.dark[2],
+                        lineHeight: 1.5,
+                        [theme.fn.smallerThan("sm")]: { fontSize: theme.fontSizes.sm },
+                      })}
+                    >
+                      Slowed + reverb, nightcore, and pitch control. Paste a link or drop
+                      a file.
+                    </Text>
+                  </Stack>
+
                   <YoutubeUpload
                     onOpenCookies={() => setCookiesOpened(true)}
                     onLoadingStart={setGlobalLoading}
                   />
 
-                  <Divider
-                    label="OR"
-                    labelPosition="center"
-                    color="rgba(255, 255, 255, 0.8)"
-                    styles={{
-                      label: {
-                        color: "rgba(255, 255, 255, 0.5)",
-                        "&::before": { borderTopColor: "rgba(255, 255, 255, 0.1)" },
-                        "&::after": { borderTopColor: "rgba(255, 255, 255, 0.1)" },
-                      },
-                    }}
-                  />
-
-                  <LocalUpload />
+                  <DemoTracksSection />
                 </Stack>
-              </Stack>
-            </Container>
+              </Container>
+
+              <Box w="100%" px="md">
+                <Divider
+                  label="or drop a file"
+                  labelPosition="center"
+                  color="dark.5"
+                  styles={{
+                    label: {
+                      color: "var(--mantine-color-dark-4)",
+                      fontSize: "var(--mantine-font-size-xs)",
+                      "&::before": { borderTopColor: "rgba(255,255,255,0.06)" },
+                      "&::after": { borderTopColor: "rgba(255,255,255,0.06)" },
+                    },
+                  }}
+                />
+                <LocalUpload />
+              </Box>
+            </Stack>
           </Box>
+
+          <FooterLinks />
         </Stack>
       </AppShell>
     </>

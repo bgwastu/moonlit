@@ -25,7 +25,7 @@ export function useMediaDownloader(url: string, metadata: Partial<Media["metadat
       if (isYoutubeURL(url)) eventName = "youtube_download";
       else if (isTikTokURL(url)) eventName = "tiktok_download";
 
-      posthog.capture(eventName, { url });
+      posthog?.capture(eventName, { url });
 
       if (!isSupportedURL(url)) {
         notifications.show({

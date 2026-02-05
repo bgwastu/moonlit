@@ -13,18 +13,33 @@ export function isTikTokURL(url: string) {
   return tiktokRegex.test(url);
 }
 
+/** True for direct .mp3 / .m4a / .mp4 URLs (https or same-origin path) */
+export function isDirectMediaURL(url: string) {
+  if (!url || typeof url !== "string") return false;
+  // Same-origin path (e.g. /demo-1.mp3)
+  if (url.startsWith("/") && /\.(mp3|m4a|mp4|webm|ogg|wav)(\?|$)/i.test(url)) return true;
+  if (!/^https?:\/\//i.test(url)) return false;
+  try {
+    const pathname = new URL(url).pathname;
+    return /\.(mp3|m4a|mp4|webm|ogg|wav)(\?|$)/i.test(pathname);
+  } catch {
+    return false;
+  }
+}
+
 export function getPlatform(
   url: string | undefined,
-): "youtube" | "tiktok" | "local" | "unknown" {
+): "youtube" | "tiktok" | "local" | "direct" | "unknown" {
   if (!url) return "unknown";
   if (url.startsWith("local:")) return "local";
   if (isYoutubeURL(url)) return "youtube";
   if (isTikTokURL(url)) return "tiktok";
+  if (isDirectMediaURL(url)) return "direct";
   return "unknown";
 }
 
 export function isSupportedURL(url: string) {
-  return isYoutubeURL(url) || isTikTokURL(url);
+  return isYoutubeURL(url) || isTikTokURL(url) || isDirectMediaURL(url);
 }
 
 export function getYouTubeId(url: string) {

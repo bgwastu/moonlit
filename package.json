@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "prepare": "husky"
+    "prepare": "husky",
+    "download-demos": "node scripts/download-demo-songs.mjs"
   },
   "dependencies": {
     "@icons-pack/react-simple-icons": "^13.8.0",

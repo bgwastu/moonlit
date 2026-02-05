@@ -1,9 +1,15 @@
 import { Metadata } from "next";
-import { notFound } from "next/navigation";
 import InitialPlayer from "@/components/InitialPlayer";
+import { readId3FromPublicPath } from "@/lib/id3Server";
 import { fetchYoutubeDetails } from "@/lib/youtube";
 import { getVideoInfo } from "@/lib/yt-dlp";
-import { getYouTubeId, isTikTokURL, isYoutubeURL, parseISO8601Duration } from "@/utils";
+import {
+  getYouTubeId,
+  isDirectMediaURL,
+  isTikTokURL,
+  isYoutubeURL,
+  parseISO8601Duration,
+} from "@/utils";
 
 type SearchParams = { [key: string]: string | string[] | undefined };
 
@@ -16,6 +22,25 @@ export async function generateMetadata({
 
   if (!url) {
     return { title: "Moonlit Player" };
+  }
+
+  if (isDirectMediaURL(url)) {
+    const pathname = url.startsWith("/") ? url : new URL(url).pathname;
+    const fallbackName =
+      decodeURIComponent(pathname.split("/").pop() || "").replace(
+        /\.(mp3|m4a|mp4|webm|ogg|wav)$/i,
+        "",
+      ) || "Direct media";
+    const id3 = url.startsWith("/") ? readId3FromPublicPath(pathname) : null;
+    const title = id3?.title || fallbackName;
+    const description =
+      id3?.artist || id3?.album
+        ? `Listen to "${title}"${id3?.artist ? ` by ${id3.artist}` : ""}${id3?.album ? ` from ${id3.album}` : ""} on Moonlit.`
+        : undefined;
+    return {
+      title: `${title} - Moonlit`,
+      ...(description && { description }),
+    };
   }
 
   if (isYoutubeURL(url) || isTikTokURL(url)) {
@@ -62,6 +87,18 @@ export default async function Page({ searchParams }: { searchParams: SearchParam
   // Local File Player (No URL)
   if (!url) {
     return <InitialPlayer isLocalFile />;
+  }
+
+  // Direct MP3/MP4: use URL as source, minimal metadata
+  if (isDirectMediaURL(url)) {
+    const pathname = url.startsWith("/") ? url : new URL(url).pathname;
+    const name = pathname.split("/").pop() || "";
+    const title =
+      decodeURIComponent(name).replace(/\.(mp3|m4a|mp4|webm|ogg|wav)$/i, "") ||
+      "Direct media";
+    return (
+      <InitialPlayer url={url} metadata={{ title, author: "Unknown", coverUrl: "" }} />
+    );
   }
 
   // YouTube and TikTok: use getVideoInfo for metadata (includes music: title, artist, album)

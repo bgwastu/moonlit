@@ -74,6 +74,17 @@ export default function InitialPlayer({
   const isLoading = !media;
   const isYouTube = url ? isYoutubeURL(url) : false;
 
+  // Update document title when media metadata is available
+  useEffect(() => {
+    if (media?.metadata?.title) {
+      const prev = document.title;
+      document.title = `${media.metadata.title} - Moonlit`;
+      return () => {
+        document.title = prev;
+      };
+    }
+  }, [media?.metadata?.title]);
+
   // Handle local file mode - redirect if no media
   useEffect(() => {
     if (isLocalFile && (!media || getPlatform(media.sourceUrl) !== "local")) {
@@ -204,8 +215,8 @@ export default function InitialPlayer({
     );
   }
 
-  // URL mode - download screen
-  const displayMetadata = metadata || {};
+  // URL mode - download screen (use media.metadata once loaded so ID3 etc. is shown)
+  const displayMetadata = media?.metadata ?? metadata ?? {};
 
   const getStatusText = () => {
     switch (downloadState.status) {
@@ -351,7 +362,10 @@ export default function InitialPlayer({
           />
           <Flex direction="column">
             <Text weight={600}>{displayMetadata.title || "Loading..."}</Text>
-            <Text>{displayMetadata.author || "Loading..."}</Text>
+            <Text>
+              {displayMetadata.artist ?? displayMetadata.author ?? "—"}
+              {displayMetadata.album ? ` · ${displayMetadata.album}` : ""}
+            </Text>
           </Flex>
         </Flex>
 

@@ -92,12 +92,13 @@ export function useMediaSession({
     if (!("mediaSession" in navigator)) return;
     navigator.mediaSession.playbackState = isPlaying ? "playing" : "paused";
 
-    // Also update position state with correct rate (0 when paused)
+    // Also update position state (playbackRate cannot be 0 per spec; use 1 when paused)
     if ("setPositionState" in navigator.mediaSession) {
       try {
+        const safeRate = Math.max(0.25, isPlaying ? rate : 1);
         navigator.mediaSession.setPositionState({
           duration: Math.max(0, duration),
-          playbackRate: isPlaying ? rate : 0,
+          playbackRate: safeRate,
           position: Math.max(0, Math.min(currentTime, duration)),
         });
       } catch (e) {

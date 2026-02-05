@@ -87,6 +87,9 @@ export default function HistoryModal({
         router.push(`/@${creator}/video/${videoId}`);
         return;
       }
+    } else if (platform === "direct") {
+      router.push(`/player?url=${encodeURIComponent(item.sourceUrl)}`);
+      return;
     }
 
     // Fallback - shouldn't normally reach here

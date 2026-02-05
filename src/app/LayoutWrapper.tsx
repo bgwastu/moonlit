@@ -29,17 +29,26 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
 }
 
 export default function LayoutWrapper({ children }: { children: React.ReactNode }) {
+  const posthogKey = process.env.NEXT_PUBLIC_POSTHOG_API_KEY;
+  const content = (
+    <AppProvider>
+      <LayoutContent>{children}</LayoutContent>
+    </AppProvider>
+  );
+
+  if (!posthogKey?.trim()) {
+    return content;
+  }
+
   return (
     <PostHogProvider
-      apiKey={process.env.NEXT_PUBLIC_POSTHOG_API_KEY}
+      apiKey={posthogKey}
       options={{
         api_host: "/ev",
         ui_host: "https://us.i.posthog.com",
       }}
     >
-      <AppProvider>
-        <LayoutContent>{children}</LayoutContent>
-      </AppProvider>
+      {content}
     </PostHogProvider>
   );
 }

@@ -1,0 +1,25 @@
+{
+  "tracks": [
+    {
+      "url": "/demo-1.mp3",
+      "coverUrl": "/demo-1-cover.jpg",
+      "title": "Heroes Tonight",
+      "artist": "Janji, Johnning",
+      "album": "Heroes Tonight"
+    },
+    {
+      "url": "/demo-2.mp3",
+      "coverUrl": "/demo-2-cover.jpg",
+      "title": "On & On",
+      "artist": "Cartoon, Jéja, Daniel Levi",
+      "album": "On & On"
+    },
+    {
+      "url": "/demo-3.mp3",
+      "coverUrl": "/demo-3-cover.jpg",
+      "title": "Blank (Hylo Remix)",
+      "artist": "Disfigure",
+      "album": "Blank"
+    }
+  ]
+}
