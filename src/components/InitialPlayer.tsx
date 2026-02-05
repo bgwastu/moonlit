@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
+  Alert,
   Button,
   Center,
   Container,
@@ -11,6 +12,7 @@ import {
   Group,
   Image,
   Modal,
+  Paper,
   Progress,
   SegmentedControl,
   Switch,
@@ -18,7 +20,7 @@ import {
   rem,
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
-import { IconMusic } from "@tabler/icons-react";
+import { IconAlertCircle, IconMusic } from "@tabler/icons-react";
 import Icon from "@/components/Icon";
 import { Player } from "@/components/Player";
 import { useAppContext } from "@/context/AppContext";
@@ -294,7 +296,51 @@ export default function InitialPlayer({
           </Flex>
         </Flex>
 
-        {isLoading ? (
+        {downloadState.status === "error" ? (
+          <Paper
+            p="md"
+            radius="md"
+            withBorder
+            style={{ borderColor: "var(--mantine-color-red-3)" }}
+          >
+            <Flex direction="column" gap="md">
+              <Alert
+                icon={<IconAlertCircle size={20} />}
+                title="Download failed"
+                color="red"
+                variant="light"
+              >
+                <Text
+                  size="sm"
+                  style={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}
+                >
+                  {downloadState.message || "Something went wrong."}
+                </Text>
+                <Text size="sm" color="dimmed" mt="xs">
+                  Try configuring cookies from a logged-in account in the app settings if
+                  the problem persists.
+                </Text>
+              </Alert>
+              <Flex gap="xs">
+                <Button
+                  variant="light"
+                  color="red"
+                  fullWidth
+                  onClick={() => router.push("/")}
+                >
+                  Go home
+                </Button>
+                <Button
+                  variant="filled"
+                  fullWidth
+                  onClick={() => startDownload(true, "high")}
+                >
+                  Try again
+                </Button>
+              </Flex>
+            </Flex>
+          </Paper>
+        ) : isLoading ? (
           <Flex direction="column" gap="sm">
             <Progress
               value={isIndeterminate ? 100 : downloadState.percent}
@@ -302,7 +348,7 @@ export default function InitialPlayer({
               radius="xl"
               striped={isIndeterminate}
               animate={isIndeterminate}
-              color={downloadState.status === "error" ? "red" : "violet"}
+              color="violet"
             />
             <Text size="sm" color="dimmed" align="center">
               {getStatusText()}

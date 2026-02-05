@@ -55,16 +55,18 @@ export function useMediaDownloader(url: string, metadata: Partial<Media["metadat
         .catch((e) => {
           if (e.name === "AbortError") return;
           console.error("Download error:", e);
+          const message = e.message || "Could not process the media.";
           setDownloadState({
             status: "error",
             percent: 0,
-            message: e.message,
+            message,
           });
           notifications.show({
-            title: "Download error",
-            message: e.message || "Could not process the media.",
+            title: "Download failed",
+            message: `${message} Try configuring cookies from a logged-in account in the app settings if the problem persists.`,
+            color: "red",
+            autoClose: 10000,
           });
-          router.push("/");
         });
 
       return () => {
