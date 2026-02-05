@@ -51,8 +51,8 @@ export async function POST(request: Request) {
     const { action, url } = await request.json();
 
     if (action === "update") {
-      // Update yt-dlp
-      const output = execSync("pip3 install --upgrade yt-dlp", {
+      // Update yt-dlp and EJS challenge solver (required for YouTube)
+      const output = execSync("pip install --upgrade yt-dlp yt-dlp-ejs", {
         encoding: "utf-8",
         timeout: 120000, // 2 minute timeout
       });

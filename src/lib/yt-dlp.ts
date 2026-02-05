@@ -91,6 +91,19 @@ function parseYtDlpError(stderr: string): string {
   ) {
     return "Live streams and premieres cannot be downloaded.";
   }
+  if (
+    lower.includes("signature solving failed") ||
+    lower.includes("sig function possibilities") ||
+    lower.includes("challenge solving failed")
+  ) {
+    return "YouTube challenge solving failed. Update yt-dlp (and yt-dlp-ejs) from the admin panel and try again.";
+  }
+  if (
+    lower.includes("requested format is not available") ||
+    lower.includes("only images are available")
+  ) {
+    return "Requested format is not available.";
+  }
 
   const errorMatch = stderr.match(/ERROR:\s*(.+)/i);
   if (errorMatch) {
@@ -277,6 +290,14 @@ export async function getVideoInfo(url: string, cookies?: string): Promise<Video
   }
 }
 
+function isFormatNotAvailableError(stderr: string): boolean {
+  const lower = stderr.toLowerCase();
+  return (
+    lower.includes("requested format is not available") ||
+    lower.includes("only images are available")
+  );
+}
+
 /** Download video to file. Caller must cleanup folderPath. */
 export async function downloadVideoToFile(
   url: string,
@@ -294,7 +315,7 @@ export async function downloadVideoToFile(
         : "bestvideo[height<=480][vcodec^=avc]+bestaudio[acodec^=mp4a]/best[height<=480][vcodec^=avc][acodec^=mp4a]";
   }
 
-  try {
+  const runDownload = async (fmt: string | undefined): Promise<ExecuteResult> => {
     const args = [
       "--merge-output-format",
       "mp4",
@@ -304,9 +325,8 @@ export async function downloadVideoToFile(
       "--newline",
       url,
     ];
-    if (format) args.unshift("--format", format);
-
-    const result = await executeYtDlp({
+    if (fmt) args.unshift("--format", fmt);
+    return executeYtDlp({
       args,
       cookies: options.cookies,
       onStdout: (data) => {
@@ -316,6 +336,22 @@ export async function downloadVideoToFile(
         }
       },
     });
+  };
+
+  try {
+    let result = await runDownload(format);
+
+    // For YouTube, if strict format failed with "format not available", retry with looser format
+    if (
+      result.code !== 0 &&
+      isYoutubeURL(url) &&
+      format &&
+      isFormatNotAvailableError(result.stderr)
+    ) {
+      const fallbackFormat =
+        quality === "high" ? "best[height<=720]/best" : "best[height<=480]/best";
+      result = await runDownload(fallbackFormat);
+    }
 
     if (result.code !== 0) throw new Error(parseYtDlpError(result.stderr));
 
@@ -431,16 +467,28 @@ export async function downloadAudio(
 
 /** Get direct video URL for streaming */
 export async function getVideoUrl(url: string, cookies?: string): Promise<string> {
-  const args = ["--get-url", "--no-playlist", url];
+  const primaryFormat =
+    "best[height<=480][vcodec^=avc][acodec^=mp4a]/bestvideo[height<=480][vcodec^=avc]+bestaudio[acodec^=mp4a]/best[height<=480]";
+  const fallbackFormat = "best[height<=480]/best";
 
+  let result: ExecuteResult;
   if (isYoutubeURL(url)) {
-    args.unshift(
-      "--format",
-      "best[height<=480][vcodec^=avc][acodec^=mp4a]/bestvideo[height<=480][vcodec^=avc]+bestaudio[acodec^=mp4a]/best[height<=480]",
-    );
+    result = await executeYtDlp({
+      args: ["--format", primaryFormat, "--get-url", "--no-playlist", url],
+      cookies,
+    });
+    if (result.code !== 0 && isFormatNotAvailableError(result.stderr)) {
+      result = await executeYtDlp({
+        args: ["--format", fallbackFormat, "--get-url", "--no-playlist", url],
+        cookies,
+      });
+    }
+  } else {
+    result = await executeYtDlp({
+      args: ["--get-url", "--no-playlist", url],
+      cookies,
+    });
   }
-
-  const result = await executeYtDlp({ args, cookies });
 
   if (result.code !== 0) throw new Error(parseYtDlpError(result.stderr));
 

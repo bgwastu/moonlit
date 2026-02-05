@@ -68,8 +68,8 @@ COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 
 USER nextjs
 
-# Install yt-dlp within the virtual environment
-RUN pip install -U --pre "yt-dlp[default,curl-cffi]"
+# Install yt-dlp and EJS challenge solver (required for YouTube signature solving)
+RUN pip install -U --pre "yt-dlp[default,curl-cffi]" yt-dlp-ejs
 
 EXPOSE 3000
 
