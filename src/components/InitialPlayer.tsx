@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
+  ActionIcon,
   Alert,
   Button,
   Center,
@@ -17,12 +18,23 @@ import {
   SegmentedControl,
   Switch,
   Text,
+  Tooltip,
   rem,
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
-import { IconAlertCircle, IconMusic } from "@tabler/icons-react";
+import {
+  IconAlertCircle,
+  IconCookie,
+  IconHistory,
+  IconMusic,
+  IconTrash,
+} from "@tabler/icons-react";
+import CookiesModal from "@/components/CookiesModal";
+import HistoryModal from "@/components/HistoryModal";
 import Icon from "@/components/Icon";
+import LoadingOverlay from "@/components/LoadingOverlay";
 import { Player } from "@/components/Player";
+import ResetModal from "@/components/ResetModal";
 import { useAppContext } from "@/context/AppContext";
 import { useMediaDownloader } from "@/hooks/useMediaDownloader";
 import useNoSleep from "@/hooks/useNoSleep";
@@ -53,6 +65,10 @@ export default function InitialPlayer({
   const [confirmationOpened, setConfirmationOpened] = useState(false);
   const [includeVideo, setIncludeVideo] = useState(false);
   const [quality, setQuality] = useState<"low" | "high">("low");
+  const [cookiesOpened, setCookiesOpened] = useState(false);
+  const [historyOpened, setHistoryOpened] = useState(false);
+  const [resetOpened, setResetOpened] = useState(false);
+  const [historyLoading, setHistoryLoading] = useState(false);
 
   const downloadStarted = useRef(false);
   const isLoading = !media;
@@ -222,6 +238,15 @@ export default function InitialPlayer({
 
   return (
     <Container size="xs">
+      <LoadingOverlay visible={historyLoading} message="Loading..." />
+      <CookiesModal opened={cookiesOpened} onClose={() => setCookiesOpened(false)} />
+      <HistoryModal
+        opened={historyOpened}
+        onClose={() => setHistoryOpened(false)}
+        onLoadingStart={setHistoryLoading}
+      />
+      <ResetModal opened={resetOpened} onClose={() => setResetOpened(false)} />
+
       <Modal
         opened={confirmationOpened}
         onClose={() => router.push("/")}
@@ -265,14 +290,48 @@ export default function InitialPlayer({
       </Modal>
 
       <Flex h="100dvh" align="stretch" justify="center" gap="md" direction="column">
-        <Link href="/" style={{ textDecoration: "none", color: "inherit" }}>
-          <Flex gap={12} align="center" mb="sm">
-            <Icon size={18} />
-            <Text fz={rem(20)} fw="bold" lts={rem(0.2)} style={{ userSelect: "none" }}>
-              Moonlit
-            </Text>
-          </Flex>
-        </Link>
+        <Flex justify="space-between" align="center" mb="sm">
+          <Link href="/" style={{ textDecoration: "none", color: "inherit" }}>
+            <Flex gap={12} align="center">
+              <Icon size={18} />
+              <Text fz={rem(20)} fw="bold" lts={rem(0.2)} style={{ userSelect: "none" }}>
+                Moonlit
+              </Text>
+            </Flex>
+          </Link>
+          <Group spacing="xs">
+            <Tooltip label="Cookies Settings" position="bottom" withArrow>
+              <ActionIcon
+                variant="subtle"
+                color="gray"
+                size="lg"
+                onClick={() => setCookiesOpened(true)}
+              >
+                <IconCookie size={20} />
+              </ActionIcon>
+            </Tooltip>
+            <Tooltip label="History" position="bottom" withArrow>
+              <ActionIcon
+                variant="subtle"
+                color="gray"
+                size="lg"
+                onClick={() => setHistoryOpened(true)}
+              >
+                <IconHistory size={20} />
+              </ActionIcon>
+            </Tooltip>
+            <Tooltip label="Reset Data" position="bottom" withArrow>
+              <ActionIcon
+                variant="subtle"
+                color="red"
+                size="lg"
+                onClick={() => setResetOpened(true)}
+              >
+                <IconTrash size={20} />
+              </ActionIcon>
+            </Tooltip>
+          </Group>
+        </Flex>
         <Text weight={600} color="dimmed">
           Video Details
         </Text>
