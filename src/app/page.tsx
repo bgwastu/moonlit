@@ -65,11 +65,14 @@ export interface DemoTrack {
   album: string;
 }
 
+const LOCAL_FILE_ACCEPT = ["audio/mpeg", "video/mp4", "audio/wav"];
+
 function LocalUpload() {
   const [loading, setLoading] = useState<{ status: boolean; message: string | null }>({
     status: false,
     message: null,
   });
+  const [fullScreenActive, setFullScreenActive] = useState(false);
   const { setMedia } = useAppContext();
   const posthog = usePostHog();
   const router = useRouter();
@@ -77,77 +80,130 @@ function LocalUpload() {
   const theme = useMantineTheme();
   const isMobile = useMediaQuery(`(max-width: ${theme.breakpoints.sm})`);
 
+  const handleDrop = async (files: File[]) => {
+    if (!files.length) return;
+    posthog?.capture("upload_music");
+    setLoading({ status: true, message: "Saving to library..." });
+    setFullScreenActive(false);
+
+    const fileId = `local-${Date.now()}`;
+    const sourceUrl = `local:${fileId}:video`;
+
+    const { setMedia: cacheSetMedia, setMeta } = await import("@/utils/cache");
+    await cacheSetMedia(sourceUrl, files[0]);
+
+    const tags = await convertFileToBuffer(files[0]).then(parse);
+    let metadata: Media["metadata"];
+
+    if (tags !== false) {
+      let imgSrc = "";
+      if (tags.image?.data) {
+        const coverBlob = new Blob([new Uint8Array(tags.image.data)], {
+          type: tags.image.mime,
+        });
+        imgSrc = URL.createObjectURL(coverBlob);
+      }
+      metadata = {
+        id: fileId,
+        title: tags.title ?? files[0].name,
+        author: tags.artist ?? "Unknown",
+        coverUrl: imgSrc || "",
+      };
+    } else {
+      metadata = {
+        id: fileId,
+        title: files[0].name,
+        author: "Unknown",
+        coverUrl: "",
+      };
+    }
+
+    await setMeta(`local:${fileId}`, metadata);
+
+    const blobUrl = URL.createObjectURL(files[0]);
+    setMedia({
+      fileUrl: blobUrl,
+      sourceUrl,
+      metadata,
+    });
+    router.push("/player");
+    setLoading({ status: false, message: null });
+    noSleep.enable();
+  };
+
   return (
     <>
       <LoadingOverlay visible={loading.status} message={loading.message} />
+      <Dropzone.FullScreen
+        active={fullScreenActive}
+        accept={LOCAL_FILE_ACCEPT}
+        maxFiles={1}
+        onDrop={(files) => handleDrop(files)}
+        onReject={() => setFullScreenActive(false)}
+        sx={{
+          "&[data-idle]": {
+            backgroundColor: "rgba(0, 0, 0, 0.85)",
+            "& .mantine-Dropzone-inner": {
+              pointerEvents: "none",
+            },
+          },
+          "&[data-accept]": {
+            backgroundColor: "rgba(139, 92, 246, 0.3)",
+          },
+          "&[data-reject]": {
+            backgroundColor: "rgba(244, 63, 94, 0.2)",
+          },
+        }}
+      >
+        <Stack
+          align="center"
+          justify="center"
+          spacing="lg"
+          mih={220}
+          style={{ pointerEvents: "none" }}
+        >
+          <Dropzone.Accept>
+            <IconUpload size="3.2rem" stroke={1.5} color={theme.colors.violet[4]} />
+          </Dropzone.Accept>
+          <Dropzone.Reject>
+            <IconTrash size="3.2rem" stroke={1.5} color={theme.colors.red[5]} />
+          </Dropzone.Reject>
+          <Dropzone.Idle>
+            <IconMusic size="3.2rem" stroke={1.5} color="rgba(255,255,255,0.5)" />
+          </Dropzone.Idle>
+          <Box ta="center">
+            <Text size="xl" color="white" weight={500}>
+              Drop file anywhere
+            </Text>
+            <Text size="sm" c="dimmed" mt={7}>
+              MP3, WAV, MP4
+            </Text>
+          </Box>
+          <Text
+            size="sm"
+            c="dimmed"
+            onClick={() => setFullScreenActive(false)}
+            style={{
+              pointerEvents: "all",
+              cursor: "pointer",
+              textDecoration: "underline",
+            }}
+          >
+            Cancel
+          </Text>
+        </Stack>
+      </Dropzone.FullScreen>
+
       <Dropzone
-        accept={["audio/mpeg", "video/mp4", "audio/wav"]}
+        accept={LOCAL_FILE_ACCEPT}
         maxFiles={1}
         disabled={loading.status}
-        onDrop={async (files) => {
-          posthog?.capture("upload_music");
-          setLoading({
-            status: true,
-            message: "Saving to library...",
-          });
-
-          // Generate stable ID for local file
-          const fileId = `local-${Date.now()}`;
-          const sourceUrl = `local:${fileId}:video`;
-
-          // 1. Save Blob to Cache
-          const { setMedia: cacheSetMedia, setMeta } = await import("@/utils/cache");
-          await cacheSetMedia(sourceUrl, files[0]);
-
-          // 2. Parse tags
-          const tags = await convertFileToBuffer(files[0]).then(parse);
-          let metadata: Media["metadata"];
-
-          if (tags !== false) {
-            let imgSrc = "";
-            if (tags.image?.data) {
-              const coverBlob = new Blob([new Uint8Array(tags.image.data)], {
-                type: tags.image.mime,
-              });
-              imgSrc = URL.createObjectURL(coverBlob);
-            }
-
-            metadata = {
-              id: fileId,
-              title: tags.title ?? files[0].name,
-              author: tags.artist ?? "Unknown",
-              coverUrl: imgSrc || "",
-            };
-          } else {
-            metadata = {
-              id: fileId,
-              title: files[0].name,
-              author: "Unknown",
-              coverUrl: "",
-            };
-          }
-
-          // 3. Save Metadata to Cache
-          await setMeta(`local:${fileId}`, metadata);
-
-          // 4. Update State
-          const blobUrl = URL.createObjectURL(files[0]);
-          const newMedia: Media = {
-            fileUrl: blobUrl,
-            sourceUrl: sourceUrl, // Use cache key as stable identifier/sourceUrl
-            metadata,
-          };
-
-          setMedia(newMedia);
-          router.push("/player");
-          setLoading({ status: false, message: null });
-          noSleep.enable();
-        }}
-        onReject={(files) => console.log("rejected files", files)}
-        sx={(theme) => ({
+        onDrop={handleDrop}
+        onReject={() => {}}
+        sx={(t) => ({
           backgroundColor: "rgba(255, 255, 255, 0.04)",
           border: "1px solid rgba(255, 255, 255, 0.08)",
-          borderRadius: theme.radius.lg,
+          borderRadius: t.radius.lg,
           padding: 0,
           transition: "all 0.2s ease",
           "&:hover": {
@@ -188,8 +244,20 @@ function LocalUpload() {
             >
               Drop local file here
             </Text>
-            <Text size={isMobile ? "xs" : "sm"} color="dimmed" align="center" mt={4}>
-              Supports MP3, WAV, MP4
+            <Text size="sm" c="dimmed" align="center" mt={4}>
+              Supports MP3, WAV, MP4 · or{" "}
+              <Text
+                component="span"
+                underline
+                sx={{ cursor: "pointer" }}
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setFullScreenActive(true);
+                }}
+              >
+                drop anywhere
+              </Text>
             </Text>
           </Box>
         </Stack>
@@ -636,25 +704,24 @@ export default function UploadPage() {
                   />
 
                   <DemoTracksSection />
+
+                  <Divider
+                    label="or drop a file"
+                    labelPosition="center"
+                    color="dark.5"
+                    styles={{
+                      label: {
+                        color: "var(--mantine-color-dark-4)",
+                        fontSize: "var(--mantine-font-size-xs)",
+                        "&::before": { borderTopColor: "rgba(255,255,255,0.06)" },
+                        "&::after": { borderTopColor: "rgba(255,255,255,0.06)" },
+                      },
+                    }}
+                  />
+
+                  <LocalUpload />
                 </Stack>
               </Container>
-
-              <Box w="100%" px="md">
-                <Divider
-                  label="or drop a file"
-                  labelPosition="center"
-                  color="dark.5"
-                  styles={{
-                    label: {
-                      color: "var(--mantine-color-dark-4)",
-                      fontSize: "var(--mantine-font-size-xs)",
-                      "&::before": { borderTopColor: "rgba(255,255,255,0.06)" },
-                      "&::after": { borderTopColor: "rgba(255,255,255,0.06)" },
-                    },
-                  }}
-                />
-                <LocalUpload />
-              </Box>
             </Stack>
           </Box>
 
