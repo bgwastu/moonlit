@@ -135,11 +135,10 @@ function LocalUpload() {
     <>
       <LoadingOverlay visible={loading.status} message={loading.message} />
       <Dropzone.FullScreen
-        active={fullScreenActive}
+        active
         accept={LOCAL_FILE_ACCEPT}
         maxFiles={1}
         onDrop={(files) => handleDrop(files)}
-        onReject={() => setFullScreenActive(false)}
         sx={{
           "&[data-idle]": {
             backgroundColor: "rgba(0, 0, 0, 0.85)",
