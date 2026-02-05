@@ -26,7 +26,6 @@ export function readId3FromPublicPath(pathname: string): {
     const bytesRead = readSync(fd, buf, 0, ID3_HEAD_SIZE, 0);
     closeSync(fd);
     const slice = buf.subarray(0, bytesRead);
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
     const parse = require("id3-parser").default;
     const tags = parse(slice);
     if (!tags || typeof tags !== "object") return null;
