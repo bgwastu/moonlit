@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Open in Moonlit
 // @namespace    http://tampermonkey.net/
-// @version      1.7
+// @version      1.8
 // @description  Adds a draggable floating button to open the current video in Moonlit
 // @author       Moonlit
 // @match        *://www.youtube.com/*
@@ -192,11 +192,20 @@
     let startX, startY, initialLeft, initialTop;
     let hasMoved = false;
 
-    btn.addEventListener("mousedown", (e) => {
+    // Helper to get coordinates from mouse or touch event
+    function getEventCoords(e) {
+      if (e.touches && e.touches.length > 0) {
+        return { x: e.touches[0].clientX, y: e.touches[0].clientY };
+      }
+      return { x: e.clientX, y: e.clientY };
+    }
+
+    function startDrag(e) {
       isDragging = true;
       hasMoved = false;
-      startX = e.clientX;
-      startY = e.clientY;
+      const coords = getEventCoords(e);
+      startX = coords.x;
+      startY = coords.y;
       const rect = container.getBoundingClientRect();
       initialLeft = rect.left;
       initialTop = rect.top;
@@ -207,18 +216,20 @@
       container.style.top = `${initialTop}px`;
       btn.style.cursor = "grabbing";
       e.preventDefault();
-    });
+    }
 
-    window.addEventListener("mousemove", (e) => {
+    function drag(e) {
       if (!isDragging) return;
-      const dx = e.clientX - startX;
-      const dy = e.clientY - startY;
+      const coords = getEventCoords(e);
+      const dx = coords.x - startX;
+      const dy = coords.y - startY;
       if (Math.abs(dx) > 2 || Math.abs(dy) > 2) hasMoved = true;
       container.style.left = `${initialLeft + dx}px`;
       container.style.top = `${initialTop + dy}px`;
-    });
+      e.preventDefault();
+    }
 
-    window.addEventListener("mouseup", () => {
+    function endDrag() {
       if (!isDragging) return;
       isDragging = false;
       btn.style.cursor = "pointer";
@@ -230,7 +241,17 @@
           left: `${rect.left}px`,
         }),
       );
-    });
+    }
+
+    // Mouse events
+    btn.addEventListener("mousedown", startDrag);
+    window.addEventListener("mousemove", drag);
+    window.addEventListener("mouseup", endDrag);
+
+    // Touch events
+    btn.addEventListener("touchstart", startDrag, { passive: false });
+    window.addEventListener("touchmove", drag, { passive: false });
+    window.addEventListener("touchend", endDrag);
 
     // --- Clamp position on resize to keep button visible ---
     function clampPosition() {
