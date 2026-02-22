@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Open in Moonlit
 // @namespace    http://tampermonkey.net/
-// @version      1.8
+// @version      1.9
 // @description  Adds a draggable floating button to open the current video in Moonlit
 // @author       Moonlit
 // @match        *://www.youtube.com/*
@@ -123,9 +123,9 @@
             #moonlit-floating-btn:active {
                 transform: scale(0.95);
             }
-            #moonlit-close-btn {
-                width: 18px;
-                height: 18px;
+             #moonlit-close-btn {
+                 width: 18px;
+                 height: 18px;
                 background-color: rgba(0, 0, 0, 0.6);
                 color: ${ICON_COLOR};
                 border: none;
@@ -135,16 +135,28 @@
                 justify-content: center;
                 cursor: pointer;
                 opacity: 0;
-                transition: opacity 0.2s;
-                flex-shrink: 0;
-            }
-            #moonlit-floating-container:hover #moonlit-close-btn {
-                opacity: 1;
-            }
-            #moonlit-close-btn:hover {
-                background-color: rgba(220, 53, 69, 0.9);
-            }
-        `;
+                 transition: opacity 0.2s;
+                 flex-shrink: 0;
+             }
+             #moonlit-floating-container:hover #moonlit-close-btn {
+                 opacity: 1;
+             }
+             #moonlit-close-btn:hover {
+                 background-color: rgba(220, 53, 69, 0.9);
+             }
+             @media (hover: none), (pointer: coarse) {
+                 #moonlit-floating-container {
+                     gap: 6px;
+                 }
+                 #moonlit-close-btn {
+                     width: 22px;
+                     height: 22px;
+                     opacity: 1;
+                     background-color: rgba(220, 53, 69, 0.88);
+                     box-shadow: 0 1px 4px rgba(0,0,0,0.35);
+                 }
+             }
+         `;
     document.head.appendChild(style);
 
     // --- Container & Button Construction ---
@@ -181,21 +193,30 @@
     document.body.appendChild(container);
 
     // --- Close Button Logic ---
-    closeBtn.addEventListener("click", (e) => {
+    function hideForSession(e) {
       e.stopPropagation();
+      e.preventDefault();
       isHiddenForSession = true;
       container.style.display = "none";
-    });
+    }
+
+    closeBtn.addEventListener("click", hideForSession);
+    closeBtn.addEventListener("touchend", hideForSession, { passive: false });
 
     // --- Drag Logic ---
     let isDragging = false;
     let startX, startY, initialLeft, initialTop;
     let hasMoved = false;
+    let activePointerType = null;
+    let ignoreClickUntil = 0;
 
     // Helper to get coordinates from mouse or touch event
     function getEventCoords(e) {
       if (e.touches && e.touches.length > 0) {
         return { x: e.touches[0].clientX, y: e.touches[0].clientY };
+      }
+      if (e.changedTouches && e.changedTouches.length > 0) {
+        return { x: e.changedTouches[0].clientX, y: e.changedTouches[0].clientY };
       }
       return { x: e.clientX, y: e.clientY };
     }
@@ -203,6 +224,7 @@
     function startDrag(e) {
       isDragging = true;
       hasMoved = false;
+      activePointerType = e.type.startsWith("touch") ? "touch" : "mouse";
       const coords = getEventCoords(e);
       startX = coords.x;
       startY = coords.y;
@@ -229,7 +251,7 @@
       e.preventDefault();
     }
 
-    function endDrag() {
+    function endDrag(e) {
       if (!isDragging) return;
       isDragging = false;
       btn.style.cursor = "pointer";
@@ -241,6 +263,16 @@
           left: `${rect.left}px`,
         }),
       );
+
+      if (activePointerType === "touch" && !hasMoved) {
+        ignoreClickUntil = Date.now() + 700;
+        openInMoonlit();
+        if (e && typeof e.preventDefault === "function") {
+          e.preventDefault();
+        }
+      }
+
+      activePointerType = null;
     }
 
     // Mouse events
@@ -287,6 +319,7 @@
     window.addEventListener("resize", clampPosition);
 
     btn.addEventListener("click", () => {
+      if (Date.now() < ignoreClickUntil) return;
       if (!hasMoved) openInMoonlit();
     });
 
