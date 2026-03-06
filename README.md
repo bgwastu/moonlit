@@ -32,9 +32,9 @@ https://github.com/user-attachments/assets/a54716fb-35cb-4158-b789-74a74fc359dc
 - **Lyrics Support**: View synchronized lyrics while listening to your tracks.
 - **Multi-platform support**: Works with YouTube and TikTok.
 - **Client-Side Cookie Management**: Use your own YouTube cookies to bypass restrictions (e.g., age-gated content).
-- **Admin Dashboard**: A dedicated interface to manage system-wide cookies and update the yt-dlp binary.
+- **Admin Dashboard**: A dedicated interface to manage system-wide cookies and verify yt-dlp connectivity.
 - **Export Options**: Download the original media or export your processed remix as a WAV file.
-- **Self-Hostable**: Includes Docker and Docker Compose support for easy deployment.
+- **Self-Hostable**: Run with a single Docker container or directly on your host.
 
 # How it Works 🛠️
 
@@ -43,6 +43,45 @@ Moonlit leverages the **Web Audio API** to process audio real-time in the browse
 - **Time & Pitch Manipulation**: We use the [signalsmith-stretch](https://github.com/Signalsmith-Audio/signalsmith-stretch) library to handle time-stretching and pitch-shifting with high quality and minimal artifacts.
 - **Reverb**: Implemented using a Convolution Reverb with a generated impulse response.
 - **Syncing**: The processed audio is played through an AudioContext while keeping the video element (muted) synchronized for visuals.
+
+# Quick start
+
+Moonlit no longer requires Warp or Docker Compose.
+
+## Docker (single container)
+
+```bash
+docker build -t moonlit .
+docker run -d \
+  --name moonlit \
+  -p 3000:3000 \
+  -e NODE_ENV=production \
+  -e YOUTUBE_API_KEY=your_key \
+  -e ADMIN_PASSWORD=your_password \
+  -v moonlit-data:/app/data \
+  moonlit
+```
+
+Optional: set `PROXY` if yt-dlp should use an external proxy.
+
+## Native host (no Docker)
+
+Prerequisites:
+
+- Node.js 20+
+- Python 3 + pip
+- ffmpeg
+- yt-dlp + yt-dlp-ejs
+
+Install dependencies and run:
+
+```bash
+bun install
+bun run build
+NODE_ENV=production bun run start
+```
+
+If needed, set `PROXY` to route yt-dlp through any external proxy.
 
 # Credits
 

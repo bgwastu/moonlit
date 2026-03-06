@@ -75,4 +75,4 @@ EXPOSE 3000
 
 ENV PORT=3000
 
-CMD HOSTNAME="0.0.0.0" node server.js
+CMD sh -c "pip install --upgrade yt-dlp yt-dlp-ejs && HOSTNAME=0.0.0.0 node server.js"

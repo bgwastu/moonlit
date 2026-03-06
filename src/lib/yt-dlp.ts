@@ -96,7 +96,7 @@ function parseYtDlpError(stderr: string): string {
     lower.includes("sig function possibilities") ||
     lower.includes("challenge solving failed")
   ) {
-    return "YouTube challenge solving failed. Update yt-dlp (and yt-dlp-ejs) from the admin panel and try again.";
+    return "YouTube challenge solving failed. Update yt-dlp (and yt-dlp-ejs) on the host/container and try again.";
   }
   if (
     lower.includes("requested format is not available") ||

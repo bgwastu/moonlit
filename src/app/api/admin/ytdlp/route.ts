@@ -50,22 +50,6 @@ export async function POST(request: Request) {
   try {
     const { action, url } = await request.json();
 
-    if (action === "update") {
-      // Update yt-dlp and EJS challenge solver (required for YouTube)
-      const output = execSync("pip install --upgrade yt-dlp yt-dlp-ejs", {
-        encoding: "utf-8",
-        timeout: 120000, // 2 minute timeout
-      });
-      const newVersion = execSync("yt-dlp --version", {
-        encoding: "utf-8",
-      }).trim();
-      return NextResponse.json({
-        success: true,
-        version: newVersion,
-        output,
-      });
-    }
-
     if (action === "test") {
       if (!url) {
         return NextResponse.json({ error: "URL is required for test" }, { status: 400 });

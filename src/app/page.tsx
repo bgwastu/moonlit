@@ -47,7 +47,6 @@ import ResetModal from "@/components/ResetModal";
 import { useAppContext } from "@/context/AppContext";
 import useNoSleep from "@/hooks/useNoSleep";
 import type { Media } from "@/interfaces";
-import { getCookiesToUse } from "@/lib/cookies";
 import {
   getTikTokCreatorAndVideoId,
   getYouTubeId,
@@ -298,31 +297,16 @@ function YoutubeUpload({
       if (creator && videoId) {
         router.push(`/@${creator}/video/${videoId}`);
       } else {
-        try {
-          const { cookies } = await getCookiesToUse();
-          const response = await fetch("/api/tiktok", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ url, metadataOnly: true, cookies }),
-          });
-
-          if (!response.ok) {
-            const error = await response.json();
-            throw new Error(error.message || "Failed to fetch TikTok metadata");
-          }
-
-          throw new Error("Could not parse TikTok URL. Please try again.");
-        } catch (error) {
-          setLoading(false);
-          onLoadingStart(false);
-          notifications.show({
-            title: "Error",
-            message: `${(error as Error).message || "Failed to load TikTok video"}. You can try downloading it manually and uploading it to Moonlit.`,
-            color: "red",
-            autoClose: 8000,
-          });
-          return;
-        }
+        setLoading(false);
+        onLoadingStart(false);
+        notifications.show({
+          title: "Error",
+          message:
+            "Could not parse TikTok URL. Please use a full TikTok video link or upload the file manually.",
+          color: "red",
+          autoClose: 8000,
+        });
+        return;
       }
     } else if (isYoutubeURL(url)) {
       const id = getYouTubeId(url);

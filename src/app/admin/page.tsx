@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import {
   Alert,
   Button,
@@ -10,8 +11,8 @@ import {
   PasswordInput,
   Stack,
   Text,
-  Textarea,
   TextInput,
+  Textarea,
   Title,
 } from "@mantine/core";
 import {
@@ -22,7 +23,6 @@ import {
   IconRefresh,
   IconTestPipe,
 } from "@tabler/icons-react";
-import { useState } from "react";
 
 const DEFAULT_TEST_URL = "https://www.youtube.com/watch?v=XgSobzBJFtg";
 
@@ -42,7 +42,6 @@ export default function AdminPage() {
   const [ytdlpVersion, setYtdlpVersion] = useState<string | null>(null);
   const [ytdlpLoading, setYtdlpLoading] = useState(false);
   const [ytdlpError, setYtdlpError] = useState<string | null>(null);
-  const [ytdlpSuccess, setYtdlpSuccess] = useState<string | null>(null);
 
   // Test state
   const [testUrl, setTestUrl] = useState(DEFAULT_TEST_URL);
@@ -72,9 +71,7 @@ export default function AdminPage() {
         return;
       }
       if (res.status === 403) {
-        setLoginError(
-          "Admin not configured. Set ADMIN_PASSWORD environment variable.",
-        );
+        setLoginError("Admin not configured. Set ADMIN_PASSWORD environment variable.");
         return;
       }
       if (!res.ok) {
@@ -145,7 +142,6 @@ export default function AdminPage() {
   const refreshVersion = async () => {
     setYtdlpLoading(true);
     setYtdlpError(null);
-    setYtdlpSuccess(null);
 
     try {
       const res = await fetch("/api/admin/ytdlp", {
@@ -157,33 +153,6 @@ export default function AdminPage() {
         setYtdlpVersion(data.version);
       } else {
         setYtdlpError("Failed to get version");
-      }
-    } catch {
-      setYtdlpError("Failed to connect to server");
-    } finally {
-      setYtdlpLoading(false);
-    }
-  };
-
-  const updateYtdlp = async () => {
-    setYtdlpLoading(true);
-    setYtdlpError(null);
-    setYtdlpSuccess(null);
-
-    try {
-      const res = await fetch("/api/admin/ytdlp", {
-        method: "POST",
-        headers: authHeaders,
-        body: JSON.stringify({ action: "update" }),
-      });
-
-      if (res.ok) {
-        const data = await res.json();
-        setYtdlpVersion(data.version);
-        setYtdlpSuccess(`Updated to ${data.version}`);
-      } else {
-        const data = await res.json();
-        setYtdlpError(data.error || "Failed to update");
       }
     } catch {
       setYtdlpError("Failed to connect to server");
@@ -231,9 +200,7 @@ export default function AdminPage() {
       <Container size="xs" py="xl">
         <Stack>
           <Title order={2}>Admin Settings</Title>
-          <Text color="dimmed">
-            Enter the admin password to access settings.
-          </Text>
+          <Text color="dimmed">Enter the admin password to access settings.</Text>
 
           <PasswordInput
             label="Password"
@@ -293,21 +260,13 @@ export default function AdminPage() {
             )}
 
             {cookiesError && (
-              <Alert
-                icon={<IconAlertCircle size={16} />}
-                color="red"
-                variant="light"
-              >
+              <Alert icon={<IconAlertCircle size={16} />} color="red" variant="light">
                 {cookiesError}
               </Alert>
             )}
 
             {cookiesSuccess && (
-              <Alert
-                icon={<IconCheck size={16} />}
-                color="green"
-                variant="light"
-              >
+              <Alert icon={<IconCheck size={16} />} color="green" variant="light">
                 Cookies saved successfully!
               </Alert>
             )}
@@ -349,33 +308,15 @@ export default function AdminPage() {
             </Flex>
 
             {ytdlpError && (
-              <Alert
-                icon={<IconAlertCircle size={16} />}
-                color="red"
-                variant="light"
-              >
+              <Alert icon={<IconAlertCircle size={16} />} color="red" variant="light">
                 {ytdlpError}
               </Alert>
             )}
 
-            {ytdlpSuccess && (
-              <Alert
-                icon={<IconCheck size={16} />}
-                color="green"
-                variant="light"
-              >
-                {ytdlpSuccess}
-              </Alert>
-            )}
-
-            <Button
-              leftIcon={<IconDownload size={16} />}
-              onClick={updateYtdlp}
-              loading={ytdlpLoading}
-              variant="light"
-            >
-              Update yt-dlp
-            </Button>
+            <Text size="sm" color="dimmed">
+              Updates are managed outside the app runtime. Install or update yt-dlp on the
+              host/container image, then refresh this version.
+            </Text>
 
             <Text size="sm" weight={600} mt="md">
               Test URL
@@ -398,9 +339,7 @@ export default function AdminPage() {
                 color={testResult.success ? "green" : "red"}
                 variant="light"
               >
-                <Text style={{ wordBreak: "break-word" }}>
-                  {testResult.message}
-                </Text>
+                <Text style={{ wordBreak: "break-word" }}>{testResult.message}</Text>
               </Alert>
             )}
 
