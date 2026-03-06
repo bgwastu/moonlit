@@ -46,8 +46,6 @@ Moonlit leverages the **Web Audio API** to process audio real-time in the browse
 
 # Quick start
 
-Moonlit no longer requires Warp or Docker Compose.
-
 ## Docker (single container)
 
 ```bash
