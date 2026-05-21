@@ -216,7 +216,7 @@ function LocalUpload({ dropzoneMinHeight }: { dropzoneMinHeight: number }) {
           </Center>
           <Box ta="center" px={isMobile ? 4 : 0}>
             <Text size={isMobile ? "md" : "xl"} weight={800} color="white">
-              Upload local file
+              Upload Local File
             </Text>
             <Text
               size={isMobile ? "xs" : "md"}
@@ -340,6 +340,12 @@ function SearchPanel({
     [setSearchActive],
   );
 
+  /** Keep latest `search` without listing it on the debounced effect — otherwise any
+   * `useCallback` identity change (e.g. after blur → parent re-render) re-runs the effect,
+   * clears results, and refetches for the same query. */
+  const searchRef = useRef(search);
+  searchRef.current = search;
+
   useEffect(() => {
     const controller = new AbortController();
     const value = debouncedQuery.trim();
@@ -360,12 +366,12 @@ function SearchPanel({
     setHasSearched(false);
     setResults([]);
     setResultsForQuery("");
-    void search(value, controller.signal, false);
+    void searchRef.current(value, controller.signal, false);
 
     return () => {
       controller.abort();
     };
-  }, [debouncedQuery, search]);
+  }, [debouncedQuery]);
 
   async function submit(value: string) {
     const clean = value.trim();
@@ -805,7 +811,7 @@ export default function UploadPage() {
   const isMobileLayout = useMediaQuery(`(max-width: ${theme.breakpoints.sm})`) ?? false;
   const panelMinH = panelContentMinHeight(isMobileLayout);
   /** Divider + gap above dropzone on desktop (align with search panel math). */
-  const localChromePx = 56;
+  const localChromePx = 72;
   /** Mobile: short drop target; desktop: fill remaining space in tuned panel. */
   const uploadDropzoneMin = isMobileLayout
     ? 132
