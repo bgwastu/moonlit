@@ -145,6 +145,9 @@ export function useStretchPlayer({
   const [isVideoReady, setIsVideoReady] = useState(false);
   const liteTeardownRef = useRef<(() => void) | null>(null);
 
+  /** Set when init succeeds; enables preserving time when only `liteMode` toggles */
+  const lastSuccessfulInitFileUrlRef = useRef<string | null>(null);
+
   // Single runtime ref for all mutable state
   const runtime = useRef<PlayerRuntime>({
     audioContext: null,
@@ -490,6 +493,31 @@ export function useStretchPlayer({
     const abortController = new AbortController();
 
     const init = async () => {
+      const rtSnap = runtime.current;
+      const vid = videoRef.current;
+      const sameTrack =
+        !!fileUrl &&
+        lastSuccessfulInitFileUrlRef.current === fileUrl &&
+        rtSnap.duration > 0;
+
+      let resumePosition = initialPosition;
+      let resumePlayback = autoPlay;
+      if (sameTrack) {
+        resumePlayback = rtSnap.isPlaying;
+        if (rtSnap.stretch !== null) {
+          resumePosition = Math.min(
+            Math.max(0, rtSnap.stretch.inputTime ?? 0),
+            rtSnap.duration,
+          );
+        } else if (vid && Number.isFinite(vid.currentTime)) {
+          resumePosition = Math.min(Math.max(0, vid.currentTime), rtSnap.duration);
+        }
+      }
+
+      if (!sameTrack) {
+        lastSuccessfulInitFileUrlRef.current = null;
+      }
+
       cleanup();
       setState("loading");
       runtime.current.liteMode = liteMode;
@@ -497,11 +525,22 @@ export function useStretchPlayer({
       try {
         const rt = runtime.current;
 
+        if (!sameTrack) {
+          rt.rate = initialRate;
+          rt.semitones = initialSemitones;
+          rt.reverbAmount = initialReverbAmount;
+          rt.volume = initialVolume;
+          setRateState(initialRate);
+          setSemitonesState(initialSemitones);
+          setReverbAmountState(initialReverbAmount);
+          setVolumeState(initialVolume);
+        }
+
         if (liteMode) {
           // Lite mode: native video playback only (speed only; no pitch/reverb). Much more stable.
           video.src = fileUrl;
           video.muted = false;
-          video.volume = initialVolume;
+          video.volume = rt.volume;
           video.playsInline = true;
           (video as any).preservesPitch = false;
           (video as any).mozPreservesPitch = false;
@@ -530,20 +569,18 @@ export function useStretchPlayer({
           if (aborted) return;
 
           rt.duration = video.duration;
-          rt.rate = initialRate;
-          rt.volume = initialVolume;
-          rt.reverbAmount = 0;
           rt.semitones = 0;
+          rt.reverbAmount = 0;
           setDuration(video.duration);
-          setRateState(initialRate);
-          setVolumeState(initialVolume);
+          setRateState(rt.rate);
+          setVolumeState(rt.volume);
           setReverbAmountState(0);
           setSemitonesState(0);
           setVideoElement(video);
           setIsVideoReady(true);
-          video.playbackRate = initialRate;
-          video.currentTime = initialPosition;
-          setCurrentTime(initialPosition);
+          video.playbackRate = rt.rate;
+          video.currentTime = resumePosition;
+          setCurrentTime(resumePosition);
 
           const onTimeUpdate = () => setCurrentTime(video.currentTime);
           const onVideoEnded = () => {
@@ -565,7 +602,8 @@ export function useStretchPlayer({
           };
 
           setState("ready");
-          if (autoPlay) {
+          lastSuccessfulInitFileUrlRef.current = fileUrl;
+          if (resumePlayback) {
             setTimeout(() => {
               video.play().catch(() => {});
               rt.isPlaying = true;
@@ -609,7 +647,7 @@ export function useStretchPlayer({
 
         setVideoElement(video);
         setIsVideoReady(true);
-        video.playbackRate = initialRate;
+        video.playbackRate = rt.rate;
 
         // Create AudioContext
         const AudioContextClass =
@@ -669,22 +707,22 @@ export function useStretchPlayer({
         // Set initial position
         stretch.schedule({
           active: false,
-          input: initialPosition,
+          input: resumePosition,
           rate: rt.rate,
           semitones: rt.semitones,
           loopStart: 0,
           loopEnd: audioBuffer.duration,
         });
 
-        if (initialPosition > 0) {
-          video.currentTime = initialPosition;
-          setCurrentTime(initialPosition);
+        if (resumePosition > 0) {
+          video.currentTime = resumePosition;
+          setCurrentTime(resumePosition);
         }
 
         setState("ready");
+        lastSuccessfulInitFileUrlRef.current = fileUrl;
 
-        // Auto-play if requested
-        if (autoPlay) {
+        if (resumePlayback) {
           setTimeout(() => play(), 50);
         }
       } catch (error) {
@@ -708,6 +746,8 @@ export function useStretchPlayer({
     cleanup,
     play,
     initialRate,
+    initialSemitones,
+    initialReverbAmount,
     initialPosition,
     initialVolume,
     autoPlay,

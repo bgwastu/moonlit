@@ -1,7 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Lyric, LyricsSearchRecord, parseLRC } from "@/lib/lyrics";
+import {
+  Lyric,
+  LyricsSearchRecord,
+  parseLRC,
+  sortLyricsSearchRecordsForTrack,
+  stripVideoTitleFiller,
+} from "@/lib/lyrics";
 
 const LRCLIB_BASE = "https://lrclib.net/api";
 const USER_AGENT = "Moonlit (https://github.com/bgwastu/moonlit)";
@@ -80,7 +86,9 @@ export function useLyrics({
   const offsetMs = offsetSeconds * 1000;
 
   const fetchLyrics = useCallback(async () => {
-    if (!trackName?.trim() || !artistName?.trim() || durationSeconds <= 0) {
+    const titleForLyrics = stripVideoTitleFiller(trackName) || trackName.trim();
+
+    if (!titleForLyrics || !artistName?.trim() || durationSeconds <= 0) {
       setLyrics([]);
       setState("idle");
       setDiscoveredLyrics(null);
@@ -91,15 +99,15 @@ export function useLyrics({
     setError(null);
 
     const getParams = new URLSearchParams({
-      track_name: trackName.trim(),
+      track_name: titleForLyrics,
       artist_name: artistName.trim(),
       album_name: "",
       duration: String(Math.round(durationSeconds)),
     });
 
     const searchParams = new URLSearchParams({
-      q: `${trackName.trim()} ${artistName.trim()}`,
-      track_name: trackName.trim(),
+      q: `${titleForLyrics} ${artistName.trim()}`,
+      track_name: titleForLyrics,
       artist_name: artistName.trim(),
     });
 
@@ -114,67 +122,82 @@ export function useLyrics({
         }),
       ]);
 
-      // -- Handle Search Results --
+      let searchRecords: LyricsSearchRecord[] = [];
       if (searchRes.status === "fulfilled" && searchRes.value.ok) {
         try {
           const searchData = (await searchRes.value.json()) as LyricsSearchRecord[];
-          setSearchResults(Array.isArray(searchData) ? searchData : []);
+          searchRecords = Array.isArray(searchData) ? searchData : [];
         } catch {
-          setSearchResults([]);
+          searchRecords = [];
         }
-      } else {
-        setSearchResults([]);
       }
+      setSearchResults(searchRecords);
 
-      // -- Handle Direct Get --
-      if (getRes.status === "rejected" || !getRes.value.ok) {
-        if (getRes.status === "fulfilled" && getRes.value.status === 404) {
-          setLyrics([]);
-          setState("not_found");
-          setDiscoveredLyrics(null);
+      // -- Direct /get when duration and synced lyrics match --
+      if (getRes.status === "fulfilled" && getRes.value.ok) {
+        const data: LrclibResponse = await getRes.value.json();
+        const recordDuration = data.duration ?? 0;
+        const synced = data.syncedLyrics?.trim();
+        if (synced && durationMatches(durationSeconds, recordDuration)) {
+          const durationMs = recordDuration * 1000;
+          const parsed = parseLRC(synced, durationMs);
+          setLyrics(applyOffset(parsed, offsetMs));
+          setState(parsed.length > 0 ? "ready" : "not_found");
+          if (parsed.length > 0 && data.id) {
+            setDiscoveredLyrics({
+              id: data.id,
+              trackName: data.trackName ?? titleForLyrics,
+              artistName: data.artistName ?? artistName.trim(),
+              albumName: data.albumName,
+              syncedLyrics: synced,
+            });
+          } else {
+            setDiscoveredLyrics(null);
+          }
           return;
         }
-        throw new Error(
-          getRes.status === "fulfilled"
-            ? `LRCLib ${getRes.value.status}`
-            : "Network error",
-        );
       }
 
-      const data: LrclibResponse = await getRes.value.json();
-      const recordDuration = data.duration ?? 0;
-      if (!durationMatches(durationSeconds, recordDuration)) {
-        setLyrics([]);
-        setState("not_found");
-        setDiscoveredLyrics(null);
+      // -- Fallback: auto-pick best search hit (same order as manual modal) --
+      const ranked = sortLyricsSearchRecordsForTrack(searchRecords, durationSeconds);
+      const best = ranked[0];
+      const bestSynced = best?.syncedLyrics?.trim();
+      if (best && bestSynced) {
+        const recordDuration = best.duration ?? 0;
+        const durationMs = Math.max(0, recordDuration) * 1000;
+        const parsed = parseLRC(bestSynced, durationMs);
+        setLyrics(applyOffset(parsed, offsetMs));
+        setState(parsed.length > 0 ? "ready" : "not_found");
+        if (parsed.length > 0) {
+          setDiscoveredLyrics({
+            id: best.id,
+            trackName: best.trackName,
+            artistName: best.artistName,
+            albumName: best.albumName,
+            syncedLyrics: bestSynced,
+          });
+        } else {
+          setDiscoveredLyrics(null);
+        }
         return;
       }
-      const synced = data.syncedLyrics?.trim();
-      if (!synced) {
-        setLyrics([]);
-        setState("not_found");
-        setDiscoveredLyrics(null);
-        return;
-      }
-      const durationMs = recordDuration * 1000;
-      const parsed = parseLRC(synced, durationMs);
-      setLyrics(applyOffset(parsed, offsetMs));
-      setState(parsed.length > 0 ? "ready" : "not_found");
 
-      // Store discovered lyrics metadata
-      if (parsed.length > 0 && data.id) {
-        setDiscoveredLyrics({
-          id: data.id,
-          trackName: data.trackName ?? trackName,
-          artistName: data.artistName ?? artistName,
-          albumName: data.albumName,
-          syncedLyrics: synced,
-        });
-      } else {
-        setDiscoveredLyrics(null);
+      setLyrics([]);
+      setDiscoveredLyrics(null);
+      if (getRes.status === "rejected") {
+        throw new Error("Network error");
       }
+      if (
+        getRes.status === "fulfilled" &&
+        !getRes.value.ok &&
+        getRes.value.status !== 404
+      ) {
+        throw new Error(`LRCLib ${getRes.value.status}`);
+      }
+      setState("not_found");
     } catch (e) {
       setLyrics([]);
+      setSearchResults([]);
       setState("error");
       setError(e instanceof Error ? e.message : "Failed to load lyrics");
       setDiscoveredLyrics(null);

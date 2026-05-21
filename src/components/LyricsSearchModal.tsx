@@ -16,7 +16,7 @@ import {
 } from "@mantine/core";
 import { IconCheck, IconMusic, IconSearch } from "@tabler/icons-react";
 import { useLyricsSearch } from "@/hooks/useLyricsSearch";
-import { LyricsSearchRecord } from "@/lib/lyrics";
+import { LyricsSearchRecord, sortLyricsSearchRecordsForTrack } from "@/lib/lyrics";
 import { getFormattedTime } from "@/utils";
 
 interface LyricsSearchModalProps {
@@ -74,20 +74,10 @@ export default function LyricsSearchModal({
     [handleSearch],
   );
 
-  // Filter out results without synced lyrics, then sort by duration match
-  const filteredAndSortedResults = useMemo(() => {
-    return results
-      .filter((r) => !!r.syncedLyrics)
-      .sort((a, b) => {
-        const aDiff = Math.abs((a.duration || 0) - trackDurationSeconds);
-        const bDiff = Math.abs((b.duration || 0) - trackDurationSeconds);
-        const aMatches = aDiff <= 1;
-        const bMatches = bDiff <= 1;
-        if (aMatches && !bMatches) return -1;
-        if (!aMatches && bMatches) return 1;
-        return aDiff - bDiff;
-      });
-  }, [results, trackDurationSeconds]);
+  const filteredAndSortedResults = useMemo(
+    () => sortLyricsSearchRecordsForTrack(results, trackDurationSeconds),
+    [results, trackDurationSeconds],
+  );
 
   const formatDuration = (seconds: number) => getFormattedTime(seconds);
 

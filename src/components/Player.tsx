@@ -58,7 +58,7 @@ import { useToast } from "@/hooks/useToast";
 import { useVideoStatePersistence } from "@/hooks/useVideoStatePersistence";
 import { Media } from "@/interfaces";
 import { LyricsSettings } from "@/interfaces";
-import { LyricsSearchRecord } from "@/lib/lyrics";
+import { LyricsSearchRecord, stripVideoTitleFiller } from "@/lib/lyrics";
 import { getModeFromRate, getVideoState } from "@/lib/videoState";
 import { saveVideoState } from "@/lib/videoState";
 import { getFormattedTime, getPlatform } from "@/utils";
@@ -112,7 +112,7 @@ export function Player({ media, repeating }: { media: Media; repeating: boolean 
   const [videoAspectRatio, setVideoAspectRatio] = useState<number>(16 / 9);
   const [isRepeat, setIsRepeat] = useState(savedState?.isRepeat ?? repeating);
   const [pitchLockedToSpeed, setPitchLockedToSpeed] = useState(
-    savedState?.pitchLockedToSpeed ?? true,
+    savedState?.pitchLockedToSpeed ?? false,
   );
   const [videoDisabled, setVideoDisabled] = useState(savedState?.videoDisabled ?? false);
 
@@ -208,13 +208,6 @@ export function Player({ media, repeating }: { media: Media; repeating: boolean 
       saveVideoState(sourceUrl, { lyrics: newSettings });
     }
   }, [discoveredLyrics, lyricsSettings, sourceUrl]);
-
-  // Auto-open search modal when lyrics not found
-  useEffect(() => {
-    if (lyricsState === "not_found" && showLyrics && !lyricsSettings?.syncedLyrics) {
-      setLyricsSearchModalOpened(true);
-    }
-  }, [lyricsState, showLyrics, lyricsSettings?.syncedLyrics]);
 
   // Whether lyrics are available (either discovered or manually selected)
   const hasLyrics = lyricsState === "ready" && lyrics.length > 0;
@@ -596,7 +589,9 @@ export function Player({ media, repeating }: { media: Media; repeating: boolean 
       <LyricsSearchModal
         opened={lyricsSearchModalOpened}
         onClose={() => setLyricsSearchModalOpened(false)}
-        initialSearchQuery={media.metadata.title}
+        initialSearchQuery={
+          stripVideoTitleFiller(media.metadata.title) || media.metadata.title
+        }
         initialResults={searchResults}
         trackDurationSeconds={duration}
         currentLyricsId={lyricsSettings?.id ?? null}

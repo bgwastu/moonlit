@@ -3,6 +3,48 @@
  * LRC format: [mm:ss.xx] or [mm:ss] line text, optionally enhanced: <mm:ss.xx>word</mm:ss.xx> or just <mm:ss.xx>word
  */
 
+/**
+ * Normalize video titles for LRCLib: drop all parenthetical segments `(...)` (handles
+ * nesting by removing innermost pairs first), collapse whitespace, then strip common
+ * trailing upload suffixes outside parentheses. If the result is empty, returns the
+ * original trimmed string.
+ */
+export function stripVideoTitleFiller(raw: string): string {
+  const trimmed = raw.trim();
+  if (!trimmed) return "";
+
+  let s = trimmed;
+
+  let prevParen = "";
+  while (s !== prevParen) {
+    prevParen = s;
+    s = s.replace(/\([^()]*\)/g, "");
+  }
+  s = s.replace(/\s+/g, " ").trim();
+
+  let prev = "";
+  while (s !== prev) {
+    prev = s;
+
+    s = s
+      .replace(
+        /\s*[-–—|]\s*(?:official\s*)?(?:lyrics?|music)\s*video(?:\s*4k|\s*hd)?\s*$/i,
+        "",
+      )
+      .replace(/\s*[-–—|]\s*(?:official\s*)?audio\s*$/i, "")
+      .trim();
+
+    s = s
+      .replace(/\s+(?:official\s*)?(?:lyrics?|music)\s*video(?:\s*4k|\s*hd)?\s*$/i, "")
+      .replace(/\s+(?:official\s*)?audio\s*$/i, "")
+      .trim();
+  }
+
+  s = s.replace(/\s*[-–—|]+\s*$/, "").trim();
+
+  return s || trimmed;
+}
+
 export interface LyricPart {
   startTimeMs: number;
   words: string;
@@ -26,6 +68,27 @@ export interface LyricsSearchRecord {
   instrumental: boolean;
   plainLyrics: string | null;
   syncedLyrics: string | null;
+}
+
+/**
+ * Entries that have synced lyrics, ordered like the lyrics picker: prefer duration
+ * within ±1s of the track, then closest duration.
+ */
+export function sortLyricsSearchRecordsForTrack(
+  records: LyricsSearchRecord[],
+  durationSeconds: number,
+): LyricsSearchRecord[] {
+  return records
+    .filter((r) => !!r.syncedLyrics?.trim())
+    .sort((a, b) => {
+      const aDiff = Math.abs((a.duration || 0) - durationSeconds);
+      const bDiff = Math.abs((b.duration || 0) - durationSeconds);
+      const aMatches = aDiff <= 1;
+      const bMatches = bDiff <= 1;
+      if (aMatches && !bMatches) return -1;
+      if (!aMatches && bMatches) return 1;
+      return aDiff - bDiff;
+    });
 }
 
 /**

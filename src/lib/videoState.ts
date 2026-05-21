@@ -54,7 +54,7 @@ export function saveVideoState(url: string, state: Partial<State>): void {
       semitones: state.semitones ?? existing?.semitones ?? 0,
       reverbAmount: state.reverbAmount ?? existing?.reverbAmount ?? 0,
       pitchLockedToSpeed:
-        state.pitchLockedToSpeed ?? existing?.pitchLockedToSpeed ?? true,
+        state.pitchLockedToSpeed ?? existing?.pitchLockedToSpeed ?? false,
       isRepeat: state.isRepeat ?? existing?.isRepeat ?? false,
       volume: state.volume ?? existing?.volume ?? 1,
       lastUpdated: Date.now(),
