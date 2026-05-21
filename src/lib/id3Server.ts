@@ -4,8 +4,8 @@ import path from "path";
 const ID3_HEAD_SIZE = 128 * 1024;
 
 /**
- * Read ID3 metadata from a local file (e.g. public/demo-1.mp3).
- * Only use for same-origin paths; pathname must be like "/demo-1.mp3" (no "..").
+ * Read ID3 metadata from a same-origin local media file.
+ * Only use for same-origin paths; pathname must not contain "..".
  * Returns null if file missing, not MP3, or parse fails.
  */
 export function readId3FromPublicPath(pathname: string): {

@@ -1,13 +1,14 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { SiTiktok, SiYoutube } from "@icons-pack/react-simple-icons";
+import { SiGithub, SiYoutube } from "@icons-pack/react-simple-icons";
 import {
   ActionIcon,
   Anchor,
   AppShell,
+  Badge,
   Box,
   Center,
   Container,
@@ -15,6 +16,9 @@ import {
   Flex,
   Group,
   Image,
+  type MantineTheme,
+  Paper,
+  Skeleton,
   Stack,
   Text,
   TextInput,
@@ -25,16 +29,19 @@ import {
 } from "@mantine/core";
 import { Dropzone } from "@mantine/dropzone";
 import { useForm } from "@mantine/form";
-import { useMediaQuery } from "@mantine/hooks";
+import { useDebouncedValue, useMediaQuery } from "@mantine/hooks";
 import { notifications } from "@mantine/notifications";
 import {
+  IconAlertCircle,
   IconArrowRight,
   IconCookie,
+  IconFileMusic,
   IconHistory,
+  IconMessage,
   IconMusic,
+  IconSearch,
   IconTrash,
   IconUpload,
-  IconWorld,
 } from "@tabler/icons-react";
 import parse from "id3-parser";
 import { convertFileToBuffer } from "id3-parser/lib/util";
@@ -51,22 +58,47 @@ import {
   getTikTokCreatorAndVideoId,
   getYouTubeId,
   isDirectMediaURL,
-  isSupportedURL,
   isTikTokURL,
   isYoutubeURL,
 } from "@/utils";
 
-export interface DemoTrack {
-  url: string;
-  coverUrl: string;
-  title: string;
-  artist: string;
-  album: string;
-}
-
 const LOCAL_FILE_ACCEPT = ["audio/mpeg", "video/mp4", "audio/wav"];
 
-function LocalUpload() {
+/** Min height for the search-results panel (text query mode). */
+function panelContentMinHeight(isMobile: boolean) {
+  return isMobile ? 360 : 420;
+}
+
+interface YouTubeResult {
+  id: string;
+  url: string;
+  title: string;
+  author: string;
+  thumbnail: string;
+  lengthSeconds: number;
+  viewCount?: number;
+  isLive?: boolean;
+}
+
+function formatDuration(seconds: number) {
+  if (!seconds) return "";
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const remaining = seconds % 60;
+  return hours > 0
+    ? `${hours}:${String(minutes).padStart(2, "0")}:${String(remaining).padStart(2, "0")}`
+    : `${minutes}:${String(remaining).padStart(2, "0")}`;
+}
+
+function formatViews(views?: number) {
+  if (!views) return "";
+  if (views >= 1_000_000)
+    return `${(views / 1_000_000).toFixed(views >= 10_000_000 ? 0 : 1)}M views`;
+  if (views >= 1_000) return `${Math.round(views / 1_000)}K views`;
+  return `${views} views`;
+}
+
+function LocalUpload({ dropzoneMinHeight }: { dropzoneMinHeight: number }) {
   const [loading, setLoading] = useState<{ status: boolean; message: string | null }>({
     status: false,
     message: null,
@@ -74,7 +106,7 @@ function LocalUpload() {
   const [fullScreenActive, setFullScreenActive] = useState(false);
   const { setMedia } = useAppContext();
   const posthog = usePostHog();
-  const router = useRouter();
+  const { push } = useRouter();
   const [, noSleep] = useNoSleep();
   const theme = useMantineTheme();
   const isMobile = useMediaQuery(`(max-width: ${theme.breakpoints.sm})`);
@@ -87,45 +119,28 @@ function LocalUpload() {
 
     const fileId = `local-${Date.now()}`;
     const sourceUrl = `local:${fileId}:video`;
-
-    const { setMedia: cacheSetMedia, setMeta } = await import("@/utils/cache");
+    const [{ setMedia: cacheSetMedia, setMeta }, tags] = await Promise.all([
+      import("@/utils/cache"),
+      convertFileToBuffer(files[0]).then(parse),
+    ]);
     await cacheSetMedia(sourceUrl, files[0]);
-
-    const tags = await convertFileToBuffer(files[0]).then(parse);
-    let metadata: Media["metadata"];
-
-    if (tags !== false) {
-      let imgSrc = "";
-      if (tags.image?.data) {
-        const coverBlob = new Blob([new Uint8Array(tags.image.data)], {
-          type: tags.image.mime,
-        });
-        imgSrc = URL.createObjectURL(coverBlob);
-      }
-      metadata = {
-        id: fileId,
-        title: tags.title ?? files[0].name,
-        author: tags.artist ?? "Unknown",
-        coverUrl: imgSrc || "",
-      };
-    } else {
-      metadata = {
-        id: fileId,
-        title: files[0].name,
-        author: "Unknown",
-        coverUrl: "",
-      };
-    }
+    const metadata: Media["metadata"] =
+      tags !== false
+        ? {
+            id: fileId,
+            title: tags.title ?? files[0].name,
+            author: tags.artist ?? "Unknown",
+            coverUrl: tags.image?.data
+              ? URL.createObjectURL(
+                  new Blob([new Uint8Array(tags.image.data)], { type: tags.image.mime }),
+                )
+              : "",
+          }
+        : { id: fileId, title: files[0].name, author: "Unknown", coverUrl: "" };
 
     await setMeta(`local:${fileId}`, metadata);
-
-    const blobUrl = URL.createObjectURL(files[0]);
-    setMedia({
-      fileUrl: blobUrl,
-      sourceUrl,
-      metadata,
-    });
-    router.push("/player");
+    setMedia({ fileUrl: URL.createObjectURL(files[0]), sourceUrl, metadata });
+    push("/player");
     setLoading({ status: false, message: null });
     noSleep.enable();
   };
@@ -133,116 +148,82 @@ function LocalUpload() {
   return (
     <>
       <LoadingOverlay visible={loading.status} message={loading.message} />
-      <Dropzone.FullScreen
-        active
-        accept={LOCAL_FILE_ACCEPT}
-        maxFiles={1}
-        onDrop={(files) => handleDrop(files)}
-        sx={{
-          "&[data-idle]": {
-            backgroundColor: "rgba(0, 0, 0, 0.85)",
-            "& .mantine-Dropzone-inner": {
-              pointerEvents: "none",
-            },
-          },
-          "&[data-accept]": {
-            backgroundColor: "rgba(139, 92, 246, 0.3)",
-          },
-          "&[data-reject]": {
-            backgroundColor: "rgba(244, 63, 94, 0.2)",
-          },
-        }}
-      >
-        <Stack
-          align="center"
-          justify="center"
-          spacing="lg"
-          mih={220}
-          style={{ pointerEvents: "none" }}
+      {fullScreenActive && (
+        <Dropzone.FullScreen
+          active
+          accept={LOCAL_FILE_ACCEPT}
+          maxFiles={1}
+          onDrop={handleDrop}
         >
-          <Dropzone.Accept>
+          <Stack align="center" justify="center" spacing="lg" mih={260}>
             <IconUpload size="3.2rem" stroke={1.5} color={theme.colors.violet[4]} />
-          </Dropzone.Accept>
-          <Dropzone.Reject>
-            <IconTrash size="3.2rem" stroke={1.5} color={theme.colors.red[5]} />
-          </Dropzone.Reject>
-          <Dropzone.Idle>
-            <IconMusic size="3.2rem" stroke={1.5} color="rgba(255,255,255,0.5)" />
-          </Dropzone.Idle>
-          <Box ta="center">
-            <Text size="xl" color="white" weight={500}>
+            <Text size="xl" color="white" weight={600}>
               Drop file anywhere
             </Text>
-            <Text size="sm" c="dimmed" mt={7}>
-              MP3, WAV, MP4
+            <Text
+              color="dimmed"
+              onClick={() => setFullScreenActive(false)}
+              sx={{ cursor: "pointer" }}
+            >
+              Cancel
             </Text>
-          </Box>
-          <Text
-            size="sm"
-            c="dimmed"
-            onClick={() => setFullScreenActive(false)}
-            style={{
-              pointerEvents: "all",
-              cursor: "pointer",
-              textDecoration: "underline",
-            }}
-          >
-            Cancel
-          </Text>
-        </Stack>
-      </Dropzone.FullScreen>
+          </Stack>
+        </Dropzone.FullScreen>
+      )}
 
       <Dropzone
         accept={LOCAL_FILE_ACCEPT}
         maxFiles={1}
         disabled={loading.status}
         onDrop={handleDrop}
-        onReject={() => {}}
         sx={(t) => ({
-          backgroundColor: "rgba(255, 255, 255, 0.04)",
-          border: "1px solid rgba(255, 255, 255, 0.08)",
-          borderRadius: t.radius.lg,
+          backgroundColor: t.fn.rgba(t.colors.dark[8], 0.28),
+          border: `${rem(2)} dashed ${t.fn.rgba(t.colors.gray[6], 0.35)}`,
+          borderRadius: t.radius.md,
           padding: 0,
-          transition: "all 0.2s ease",
+          transition: "border-color 150ms ease, background-color 150ms ease",
           "&:hover": {
-            backgroundColor: "rgba(255, 255, 255, 0.06)",
-            borderColor: "rgba(255, 255, 255, 0.12)",
+            backgroundColor: t.fn.rgba(t.colors.dark[7], 0.42),
+            borderColor: t.fn.rgba(t.colors.violet[5], 0.58),
+          },
+          "&:hover .upload-icon-card": {
+            backgroundColor: t.fn.rgba(t.colors.violet[9], 0.34),
+            color: t.colors.violet[2],
+            filter: `drop-shadow(0 0 ${rem(12)} ${t.fn.rgba(t.colors.violet[4], 0.38)})`,
+            transform: "scale(1.06)",
           },
         })}
       >
-        <Stack spacing="xs" align="center" justify="center" h={isMobile ? 140 : 180}>
-          <Dropzone.Accept>
-            <IconUpload
-              size={isMobile ? "2.5rem" : "3rem"}
-              stroke={1.5}
-              color={theme.colors.violet[4]}
-            />
-          </Dropzone.Accept>
-          <Dropzone.Reject>
-            <IconTrash
-              size={isMobile ? "2.5rem" : "3rem"}
-              stroke={1.5}
-              color={theme.colors.red[5]}
-            />
-          </Dropzone.Reject>
-          <Dropzone.Idle>
-            <IconMusic
-              size={isMobile ? "2.5rem" : "3rem"}
-              stroke={1.5}
-              color={theme.colors.dark[2]}
-            />
-          </Dropzone.Idle>
-
-          <Box>
-            <Text
-              size={isMobile ? "md" : "lg"}
-              align="center"
-              weight={500}
-              color="dimmed"
-            >
-              Drop local file here
+        <Stack
+          spacing={isMobile ? "sm" : "md"}
+          align="center"
+          justify="center"
+          sx={{ minHeight: rem(dropzoneMinHeight) }}
+        >
+          <Center
+            w={isMobile ? 44 : 60}
+            h={isMobile ? 44 : 60}
+            sx={(t) => ({
+              borderRadius: t.radius.md,
+              background: t.fn.rgba(t.colors.dark[5], 0.55),
+              color: t.colors.gray[4],
+              transition:
+                "background-color 160ms ease, color 160ms ease, filter 160ms ease, transform 160ms ease",
+            })}
+            className="upload-icon-card"
+          >
+            <IconFileMusic size={isMobile ? 26 : 34} stroke={1.5} />
+          </Center>
+          <Box ta="center" px={isMobile ? 4 : 0}>
+            <Text size={isMobile ? "md" : "xl"} weight={800} color="white">
+              Upload local file
             </Text>
-            <Text size="sm" c="dimmed" align="center" mt={4}>
+            <Text
+              size={isMobile ? "xs" : "md"}
+              color="dimmed"
+              weight={400}
+              mt={isMobile ? 6 : 8}
+            >
               Supports MP3, WAV, MP4 · or{" "}
               <Text
                 component="span"
@@ -254,7 +235,7 @@ function LocalUpload() {
                   setFullScreenActive(true);
                 }}
               >
-                drop anywhere
+                drag anywhere
               </Text>
             </Text>
           </Box>
@@ -264,266 +245,497 @@ function LocalUpload() {
   );
 }
 
-function YoutubeUpload({
-  onOpenCookies,
+function SearchPanel({
   onLoadingStart,
+  searchActive,
+  setSearchActive,
 }: {
-  onOpenCookies: () => void;
   onLoadingStart: (loading: boolean) => void;
+  searchActive: boolean;
+  setSearchActive: (active: boolean) => void;
 }) {
-  const router = useRouter();
-  const [loading, setLoading] = useState(false);
+  const { push } = useRouter();
   const theme = useMantineTheme();
-  const isMobile = useMediaQuery(`(max-width: ${theme.breakpoints.sm})`);
-  const form = useForm({
-    initialValues: {
-      url: "",
-    },
-    validate: {
-      url: (value) =>
-        !isSupportedURL(value)
-          ? "Must be a YouTube, TikTok, or direct MP3/MP4 URL"
-          : null,
-    },
-  });
+  const isMobile = useMediaQuery(`(max-width: ${theme.breakpoints.sm})`) ?? false;
+  const contentMinH = panelContentMinHeight(isMobile);
+  const [results, setResults] = useState<YouTubeResult[]>([]);
+  /** Query string that produced the current `results` (avoids picking #1 on stale lists). */
+  const [resultsForQuery, setResultsForQuery] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [pendingSearch, setPendingSearch] = useState(false);
+  const [hasSearched, setHasSearched] = useState(false);
+  const focusedRef = useRef(false);
+  const form = useForm({ initialValues: { query: "" } });
+  const query = form.values.query.trim();
+  const [debouncedQuery] = useDebouncedValue(query, 180);
+  const isLink = isYoutubeURL(query) || isDirectMediaURL(query) || isTikTokURL(query);
+  const rightSectionWidth = isLink ? (isMobile ? 54 : 64) : isMobile ? 12 : 16;
 
-  async function onSubmit(url: string) {
-    setLoading(true);
-    onLoadingStart(true);
+  const showSkeleton =
+    !isLink && (pendingSearch || loading || (!hasSearched && results.length === 0));
+  const showEmpty =
+    !isLink && hasSearched && results.length === 0 && !pendingSearch && !loading;
+  const showResultCards = !isLink && hasSearched && results.length > 0 && !showSkeleton;
 
-    if (isTikTokURL(url)) {
-      const { creator, videoId } = getTikTokCreatorAndVideoId(url);
+  function updateSearchActive(nextFocused: boolean, nextQuery: string) {
+    const cleanQuery = nextQuery.trim();
+    const hasQuery = cleanQuery.length > 0;
+    const hasVisibleResults =
+      results.length > 0 || hasSearched || pendingSearch || loading;
+    /** Keep the results sheet open while typing a normal search (2+ chars) even if the input blurs */
+    const isPlainTextSearch =
+      cleanQuery.length >= 2 &&
+      !isYoutubeURL(cleanQuery) &&
+      !isDirectMediaURL(cleanQuery) &&
+      !isTikTokURL(cleanQuery);
 
-      if (creator && videoId) {
-        router.push(`/@${creator}/video/${videoId}`);
-      } else {
+    setSearchActive(hasQuery && (nextFocused || hasVisibleResults || isPlainTextSearch));
+  }
+
+  const search = useCallback(
+    async (value: string, signal?: AbortSignal, showErrors = true) => {
+      setPendingSearch(false);
+      setLoading(true);
+      try {
+        const response = await fetch(
+          `/api/youtube/search?q=${encodeURIComponent(value)}&limit=3`,
+          { signal },
+        );
+        const data = (await response.json()) as {
+          results?: YouTubeResult[];
+          error?: string;
+          code?: string;
+        };
+        if (!response.ok) {
+          const err = new Error(data.error || "Search failed");
+          if (data.code) Object.assign(err, { code: data.code });
+          throw err;
+        }
+        setResults(data.results ?? []);
+        setResultsForQuery(value.trim());
+        setHasSearched(true);
+        if (value.trim()) setSearchActive(true);
+      } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+        setResults([]);
+        setResultsForQuery("");
+        setHasSearched(true);
+        if (showErrors) {
+          const code =
+            error instanceof Error && "code" in error
+              ? (error as Error & { code?: string }).code
+              : undefined;
+          const isUnavailable = code === "SEARCH_UNAVAILABLE";
+          notifications.show({
+            title: isUnavailable ? "Search unavailable" : "Search failed",
+            message: error instanceof Error ? error.message : "Unable to search YouTube",
+            color: "red",
+            ...(isUnavailable ? { autoClose: 20000 } : {}),
+          });
+        }
+      } finally {
         setLoading(false);
-        onLoadingStart(false);
-        notifications.show({
-          title: "Error",
-          message:
-            "Could not parse TikTok URL. Please use a full TikTok video link or upload the file manually.",
-          color: "red",
-          autoClose: 8000,
-        });
-        return;
       }
-    } else if (isYoutubeURL(url)) {
-      const id = getYouTubeId(url);
-      if (!id) {
-        setLoading(false);
-        onLoadingStart(false);
-        notifications.show({
-          title: "Error",
-          message: "Invalid URL",
-        });
-        return;
-      }
-      router.push("/watch?v=" + id);
-    } else if (isDirectMediaURL(url)) {
-      router.push(`/player?url=${encodeURIComponent(url)}`);
-    } else {
-      setLoading(false);
-      onLoadingStart(false);
-      notifications.show({
-        title: "Error",
-        message: "Unsupported URL",
-      });
+    },
+    [setSearchActive],
+  );
+
+  useEffect(() => {
+    const controller = new AbortController();
+    const value = debouncedQuery.trim();
+
+    if (
+      value.length < 2 ||
+      isYoutubeURL(value) ||
+      isDirectMediaURL(value) ||
+      isTikTokURL(value)
+    ) {
+      setResults([]);
+      setResultsForQuery("");
+      setPendingSearch(false);
+      setHasSearched(false);
+      return () => controller.abort();
     }
+
+    setHasSearched(false);
+    setResults([]);
+    setResultsForQuery("");
+    void search(value, controller.signal, false);
+
+    return () => {
+      controller.abort();
+    };
+  }, [debouncedQuery, search]);
+
+  async function submit(value: string) {
+    const clean = value.trim();
+    if (!clean) return;
+
+    if (isTikTokURL(clean)) {
+      const { creator, videoId } = getTikTokCreatorAndVideoId(clean);
+      if (creator && videoId) push(`/@${creator}/video/${videoId}`);
+      return;
+    }
+
+    if (isDirectMediaURL(clean)) {
+      push(`/player?url=${encodeURIComponent(clean)}`);
+      return;
+    }
+
+    if (isYoutubeURL(clean)) {
+      await search(clean, undefined, true);
+      return;
+    }
+
+    const isPlainSearch =
+      clean.length >= 2 &&
+      !isYoutubeURL(clean) &&
+      !isDirectMediaURL(clean) &&
+      !isTikTokURL(clean);
+    if (isPlainSearch && results.length > 0 && clean === resultsForQuery) {
+      onLoadingStart(true);
+      push(watchPath(results[0]));
+      return;
+    }
+
+    await search(clean, undefined, true);
+  }
+
+  function watchPath(result: YouTubeResult) {
+    const id = getYouTubeId(result.url) ?? result.id;
+    return `/watch?v=${id}`;
   }
 
   return (
-    <form onSubmit={form.onSubmit((values) => onSubmit(values.url))}>
-      <Stack spacing="md">
+    <Stack spacing={0}>
+      <form onSubmit={form.onSubmit((values) => submit(values.query))}>
         <TextInput
-          icon={
-            form.values.url.includes("youtube") ? (
-              <SiYoutube size={isMobile ? 18 : 20} />
-            ) : form.values.url.includes("tiktok") ? (
-              <SiTiktok size={isMobile ? 18 : 20} />
-            ) : (
-              <IconWorld size={isMobile ? 18 : 20} />
-            )
-          }
-          placeholder="YouTube, TikTok, or MP3/MP4 URL..."
-          size={isMobile ? "md" : "xl"}
+          icon={<IconSearch size={isMobile ? 20 : 24} stroke={2.2} />}
+          placeholder="Search YouTube, TikTok, or paste a URL..."
+          size={isMobile ? "md" : "lg"}
           radius="md"
-          variant="filled"
+          value={form.values.query}
+          onChange={(event) => {
+            const nextQuery = event.currentTarget.value;
+            form.setFieldValue("query", nextQuery);
+            updateSearchActive(focusedRef.current, nextQuery);
+            setPendingSearch(
+              nextQuery.trim().length >= 2 &&
+                !isYoutubeURL(nextQuery) &&
+                !isDirectMediaURL(nextQuery) &&
+                !isTikTokURL(nextQuery),
+            );
+            if (
+              nextQuery.trim().length < 2 ||
+              isYoutubeURL(nextQuery) ||
+              isDirectMediaURL(nextQuery) ||
+              isTikTokURL(nextQuery)
+            ) {
+              setHasSearched(false);
+            }
+          }}
+          onFocus={() => {
+            focusedRef.current = true;
+            updateSearchActive(true, form.values.query);
+          }}
+          onBlur={() => {
+            focusedRef.current = false;
+            updateSearchActive(false, form.values.query);
+          }}
           rightSection={
-            <ActionIcon
-              size={isMobile ? "md" : "lg"}
-              variant="filled"
-              color="violet"
-              loading={loading}
-              onClick={() => form.onSubmit((values) => onSubmit(values.url))()}
-              radius="md"
-            >
-              <IconArrowRight size={isMobile ? 18 : 20} />
-            </ActionIcon>
+            isLink ? (
+              <ActionIcon
+                type="submit"
+                size={isMobile ? 42 : 48}
+                radius="sm"
+                loading={loading}
+                variant="filled"
+                color="violet"
+              >
+                <IconArrowRight size={isMobile ? 22 : 26} />
+              </ActionIcon>
+            ) : null
           }
-          rightSectionWidth={isMobile ? 42 : 52}
-          styles={(theme) => ({
+          rightSectionWidth={rightSectionWidth}
+          styles={(t) => ({
             input: {
-              backgroundColor: "rgba(255, 255, 255, 0.04)",
-              border: "1px solid rgba(255, 255, 255, 0.08)",
-              "&:focus": {
-                backgroundColor: "rgba(255, 255, 255, 0.06)",
-                borderColor: "rgba(255, 255, 255, 0.15)",
-              },
+              height: isMobile ? rem(56) : rem(64),
+              paddingLeft: isMobile ? rem(46) : rem(56),
+              paddingRight: isLink ? (isMobile ? rem(62) : rem(74)) : rem(16),
+              backgroundColor: t.fn.rgba(t.colors.dark[9], 0.58),
+              border: `${rem(1)} solid ${t.fn.rgba(t.colors.gray[6], 0.26)}`,
+              color: t.white,
+              fontWeight: 400,
+              fontSize: isMobile ? rem(16) : rem(18),
+              "&::placeholder": { color: t.fn.rgba(t.colors.gray[4], 0.75) },
+            },
+            icon: {
+              color: query ? t.colors.violet[3] : t.colors.gray[6],
+              width: isMobile ? rem(46) : rem(56),
             },
           })}
-          {...form.getInputProps("url")}
         />
-      </Stack>
-    </form>
+      </form>
+
+      {searchActive ? (
+        <Box
+          mt={searchActive && !isLink ? rem(20) : 0}
+          sx={{
+            flexShrink: 0,
+            minHeight: isLink ? 0 : rem(contentMinH),
+            display: "flex",
+            flexDirection: "column",
+            overflow: "visible",
+            transition: "min-height 200ms ease, opacity 180ms ease, transform 180ms ease",
+          }}
+        >
+          {!isLink && (
+            <Stack spacing="md" sx={{ flex: 1, minHeight: 0, overflow: "visible" }}>
+              <Group position="apart" px="xs" sx={{ flexShrink: 0 }}>
+                <Text
+                  transform="uppercase"
+                  color="dimmed"
+                  opacity={0.72}
+                  weight={800}
+                  fz="sm"
+                  lts={rem(1.5)}
+                >
+                  Top results
+                </Text>
+                <Group spacing={6} c="dimmed" opacity={0.72}>
+                  <SiYoutube size={16} />
+                  <Text weight={700} size="sm">
+                    YouTube
+                  </Text>
+                </Group>
+              </Group>
+              <Stack
+                spacing="md"
+                sx={{
+                  flex: 1,
+                  minHeight: 0,
+                  overflow: "visible",
+                }}
+              >
+                {showSkeleton ? (
+                  Array.from({ length: 3 }).map((_, index) => (
+                    <Paper
+                      key={index}
+                      p="sm"
+                      radius="md"
+                      sx={(th) => ({
+                        backgroundColor: th.fn.rgba(th.colors.dark[9], 0.36),
+                      })}
+                    >
+                      <Flex gap="lg" align="center">
+                        <Skeleton
+                          width={isMobile ? 88 : 120}
+                          height={isMobile ? 64 : 72}
+                          radius="md"
+                        />
+                        <Box sx={{ flex: 1, minWidth: 0 }}>
+                          <Skeleton height={18} radius="sm" />
+                          <Skeleton height={14} radius="sm" width="45%" mt={rem(4)} />
+                        </Box>
+                      </Flex>
+                    </Paper>
+                  ))
+                ) : showEmpty ? (
+                  <Paper
+                    p="xl"
+                    radius="md"
+                    sx={(th) => ({
+                      backgroundColor: th.fn.rgba(th.colors.dark[9], 0.28),
+                      border: `${rem(1)} solid ${th.fn.rgba(th.colors.gray[7], 0.34)}`,
+                    })}
+                  >
+                    <Stack align="center" spacing="xs" ta="center">
+                      <Center
+                        w={44}
+                        h={44}
+                        sx={(th) => ({
+                          borderRadius: th.radius.md,
+                          backgroundColor: th.fn.rgba(th.colors.dark[6], 0.65),
+                          color: th.colors.gray[5],
+                        })}
+                      >
+                        <IconSearch size={24} />
+                      </Center>
+                      <Text color="white" weight={700}>
+                        No videos found
+                      </Text>
+                      <Text color="dimmed" size="sm" maw={360}>
+                        Try a different keyword or paste a YouTube link directly.
+                      </Text>
+                    </Stack>
+                  </Paper>
+                ) : showResultCards ? (
+                  results.map((result) => (
+                    <Paper
+                      key={result.id}
+                      component={Link}
+                      href={watchPath(result)}
+                      prefetch={false}
+                      p="sm"
+                      radius="md"
+                      onClick={(e: React.MouseEvent) => {
+                        if (
+                          e.metaKey ||
+                          e.ctrlKey ||
+                          e.shiftKey ||
+                          e.altKey ||
+                          e.button !== 0
+                        ) {
+                          return;
+                        }
+                        onLoadingStart(true);
+                      }}
+                      sx={(th) => ({
+                        display: "block",
+                        textDecoration: "none",
+                        color: "inherit",
+                        cursor: "pointer",
+                        backgroundColor: th.fn.rgba(th.colors.dark[9], 0.36),
+                        border: `${rem(1)} solid transparent`,
+                        boxShadow: `0 ${rem(12)} ${rem(28)} ${th.fn.rgba(th.black, 0.18)}`,
+                        transition: "transform 150ms ease, border-color 150ms ease",
+                        "&:hover": {
+                          transform: "translateY(-2px)",
+                          borderColor: th.fn.rgba(th.colors.violet[5], 0.45),
+                        },
+                      })}
+                    >
+                      <Flex gap="lg" align="center">
+                        <Box pos="relative" sx={{ flexShrink: 0 }}>
+                          <Image
+                            src={result.thumbnail}
+                            alt=""
+                            width={isMobile ? 88 : 120}
+                            height={isMobile ? 64 : 72}
+                            radius="md"
+                            fit="cover"
+                            withPlaceholder
+                            placeholder={
+                              <Center h="100%">
+                                <IconMusic size={24} />
+                              </Center>
+                            }
+                          />
+                          <Badge
+                            pos="absolute"
+                            right={6}
+                            bottom={6}
+                            color={result.isLive ? "red" : "dark"}
+                            variant="filled"
+                            radius="sm"
+                            size="md"
+                          >
+                            {result.isLive
+                              ? "LIVE"
+                              : formatDuration(result.lengthSeconds)}
+                          </Badge>
+                        </Box>
+                        <Box sx={{ minWidth: 0 }}>
+                          <Text
+                            color="white"
+                            weight={800}
+                            size={isMobile ? "sm" : "md"}
+                            lineClamp={2}
+                          >
+                            {result.title}
+                          </Text>
+                          <Text
+                            color="dimmed"
+                            weight={700}
+                            size="sm"
+                            mt={4}
+                            lineClamp={1}
+                          >
+                            {result.author}
+                            {formatViews(result.viewCount)
+                              ? `  •  ${formatViews(result.viewCount)}`
+                              : ""}
+                          </Text>
+                        </Box>
+                      </Flex>
+                    </Paper>
+                  ))
+                ) : null}
+              </Stack>
+            </Stack>
+          )}
+        </Box>
+      ) : null}
+    </Stack>
   );
 }
 
 function FooterLinks() {
+  const theme = useMantineTheme();
+  const isMobile = useMediaQuery(`(max-width: ${theme.breakpoints.sm})`) ?? false;
+  const linkSx = (t: MantineTheme) => ({
+    textDecoration: "none",
+    opacity: 0.62,
+    transition: "opacity 160ms ease, color 160ms ease, filter 160ms ease",
+    fontSize: isMobile ? rem(14) : undefined,
+    "&:hover": {
+      opacity: 1,
+      color: t.colors.gray[2],
+      textDecoration: "none",
+      filter: `drop-shadow(0 0 ${rem(10)} ${t.fn.rgba(t.colors.violet[4], 0.35)})`,
+    },
+  });
+  const iconSz = isMobile ? 17 : 20;
+  const ghSz = isMobile ? 16 : 18;
+
   return (
-    <Flex justify="center" align="center" gap="xs" py="md" style={{ flexShrink: 0 }}>
+    <Group
+      position="center"
+      spacing={isMobile ? "md" : "xl"}
+      pt={isMobile ? "md" : "lg"}
+      pb={isMobile ? "md" : "lg"}
+      c="dimmed"
+      sx={{ flexShrink: 0, flexWrap: "wrap" }}
+    >
       <Anchor
         href="https://github.com/bgwastu/moonlit"
         target="_blank"
         color="dimmed"
-        size="sm"
-        sx={{ "&:hover": { textDecoration: "underline" } }}
+        fw={isMobile ? 600 : 700}
+        size={isMobile ? "sm" : "md"}
+        sx={linkSx}
       >
-        GitHub
+        <Group spacing="xs">
+          <SiGithub size={ghSz} />
+          GitHub
+        </Group>
       </Anchor>
-      <Text color="dark.6" size="sm">
-        •
-      </Text>
       <Anchor
         href="https://github.com/bgwastu/moonlit/issues"
         target="_blank"
         color="dimmed"
-        size="sm"
-        sx={{ "&:hover": { textDecoration: "underline" } }}
+        fw={isMobile ? 600 : 700}
+        size={isMobile ? "sm" : "md"}
+        sx={linkSx}
       >
-        Report Bugs
+        <Group spacing="xs">
+          <IconAlertCircle size={iconSz} />
+          Report Bugs
+        </Group>
       </Anchor>
-      <Text color="dark.6" size="sm">
-        •
-      </Text>
       <Anchor
         href="mailto:bagas@wastu.net?subject=Moonlit%20Feedback&body=Hi%20Bagas%2C%0A%0AI%20have%20some%20feedback%20for%20Moonlit%3A%0A"
         color="dimmed"
-        size="sm"
-        sx={{ "&:hover": { textDecoration: "underline" } }}
+        fw={isMobile ? 600 : 700}
+        size={isMobile ? "sm" : "md"}
+        sx={linkSx}
       >
-        Feedback
+        <Group spacing="xs">
+          <IconMessage size={iconSz} />
+          Feedback
+        </Group>
       </Anchor>
-    </Flex>
-  );
-}
-
-const FALLBACK_DEMO_TRACKS: DemoTrack[] = [
-  {
-    url: "/demo-1.mp3",
-    coverUrl: "/demo-1-cover.jpg",
-    title: "Demo 1",
-    artist: "—",
-    album: "",
-  },
-  {
-    url: "/demo-2.mp3",
-    coverUrl: "/demo-2-cover.jpg",
-    title: "Demo 2",
-    artist: "—",
-    album: "",
-  },
-  {
-    url: "/demo-3.mp3",
-    coverUrl: "/demo-3-cover.jpg",
-    title: "Demo 3",
-    artist: "—",
-    album: "",
-  },
-];
-
-const DEMO_CARD_SIZE = 130;
-
-function DemoTracksSection() {
-  const { history } = useAppContext();
-  const [tracks, setTracks] = useState<DemoTrack[]>(FALLBACK_DEMO_TRACKS);
-
-  useEffect(() => {
-    fetch("/demo-tracks.json")
-      .then((r) => (r.ok ? r.json() : null))
-      .then((data: { tracks?: DemoTrack[] } | null) => {
-        if (data?.tracks?.length) setTracks(data.tracks);
-      })
-      .catch(() => {});
-  }, []);
-
-  if (history.length > 1) return null;
-
-  return (
-    <Stack spacing="xs" align="center">
-      <Text size="sm" c="dimmed" fw={500}>
-        Try a demo
-      </Text>
-      <Group spacing="xs" position="center">
-        {tracks.map((track) => (
-          <Anchor
-            key={track.url}
-            component={Link}
-            href={`/player?url=${encodeURIComponent(track.url)}`}
-            sx={{ textDecoration: "none" }}
-          >
-            <Box
-              sx={(t) => ({
-                width: DEMO_CARD_SIZE,
-                height: DEMO_CARD_SIZE,
-                borderRadius: t.radius.md,
-                overflow: "hidden",
-                position: "relative",
-                border: "1px solid rgba(255, 255, 255, 0.1)",
-                transition: "all 0.2s ease",
-                "&:hover": {
-                  borderColor: "rgba(255, 255, 255, 0.25)",
-                  transform: "scale(1.05)",
-                },
-              })}
-            >
-              <Image
-                src={track.coverUrl}
-                alt=""
-                width={DEMO_CARD_SIZE}
-                height={DEMO_CARD_SIZE}
-                fit="cover"
-                withPlaceholder
-                placeholder={
-                  <Center style={{ height: "100%", background: "rgba(0,0,0,0.3)" }}>
-                    <IconMusic size={24} stroke={1.5} color="rgba(255,255,255,0.4)" />
-                  </Center>
-                }
-              />
-              <Box
-                sx={{
-                  position: "absolute",
-                  inset: 0,
-                  background:
-                    "linear-gradient(to top, rgba(0,0,0,0.85) 0%, transparent 50%)",
-                  display: "flex",
-                  flexDirection: "column",
-                  justifyContent: "flex-end",
-                }}
-                p="xs"
-              >
-                <Text size="xs" fw={600} lineClamp={1} color="white">
-                  {track.title}
-                </Text>
-                <Text size="xs" lineClamp={1} color="rgba(255,255,255,0.8)">
-                  {track.artist}
-                </Text>
-              </Box>
-            </Box>
-          </Anchor>
-        ))}
-      </Group>
-    </Stack>
+    </Group>
   );
 }
 
@@ -536,23 +748,21 @@ function Header({
   setHistoryOpened: (o: boolean) => void;
   setResetOpened: (o: boolean) => void;
 }) {
+  const theme = useMantineTheme();
+  const isMobile = useMediaQuery(`(max-width: ${theme.breakpoints.sm})`) ?? false;
   return (
-    <Box py="md" px="md">
-      <Container size="md">
+    <Box pt={isMobile ? "md" : "xl"} pb={isMobile ? "sm" : "md"} px="md">
+      <Container size="lg">
         <Flex justify="space-between" align="center">
-          <Flex align="center" gap={10}>
-            <Icon size={20} />
-            <Text
-              fz={rem(18)}
-              fw={600}
-              style={{ userSelect: "none", letterSpacing: "-0.01em" }}
-            >
-              Moonlit
-            </Text>
-          </Flex>
-
+          <Link href="/" style={{ textDecoration: "none", color: "inherit" }}>
+            <Flex align="center" gap={12}>
+              <Icon size={18} />
+              <Text fz={rem(20)} fw="bold" lts={rem(0.2)} style={{ userSelect: "none" }}>
+                Moonlit
+              </Text>
+            </Flex>
+          </Link>
           <Group spacing="xs">
-            {/* Icons */}
             <Tooltip label="Cookies Settings" position="bottom" withArrow>
               <ActionIcon
                 variant="subtle"
@@ -591,26 +801,24 @@ function Header({
 }
 
 export default function UploadPage() {
+  const theme = useMantineTheme();
+  const isMobileLayout = useMediaQuery(`(max-width: ${theme.breakpoints.sm})`) ?? false;
+  const panelMinH = panelContentMinHeight(isMobileLayout);
+  /** Divider + gap above dropzone on desktop (align with search panel math). */
+  const localChromePx = 56;
+  /** Mobile: short drop target; desktop: fill remaining space in tuned panel. */
+  const uploadDropzoneMin = isMobileLayout
+    ? 132
+    : Math.max(panelMinH - localChromePx, 240);
+
   const [cookiesOpened, setCookiesOpened] = useState(false);
   const [historyOpened, setHistoryOpened] = useState(false);
   const [resetOpened, setResetOpened] = useState(false);
   const [globalLoading, setGlobalLoading] = useState(false);
+  const [searchActive, setSearchActive] = useState(false);
 
   return (
     <>
-      <style global jsx>{`
-        @keyframes gradient {
-          0% {
-            background-position: 0% 0%;
-          }
-          50% {
-            background-position: 100% 100%;
-          }
-          100% {
-            background-position: 0% 0%;
-          }
-        }
-      `}</style>
       <LoadingOverlay visible={globalLoading} message="Loading video..." />
       <CookiesModal opened={cookiesOpened} onClose={() => setCookiesOpened(false)} />
       <HistoryModal
@@ -619,95 +827,153 @@ export default function UploadPage() {
         onLoadingStart={setGlobalLoading}
       />
       <ResetModal opened={resetOpened} onClose={() => setResetOpened(false)} />
-
       <AppShell
         padding={0}
-        styles={{
+        styles={(t) => ({
           main: {
-            background:
-              "radial-gradient(circle at 50% 120%, rgba(120, 50, 220, 0.45) 0%, rgba(20, 20, 30, 0) 50%), radial-gradient(circle at 50% -20%, rgba(120, 50, 220, 0.25) 0%, #1A1B1E 60%)",
-            backgroundSize: "300% 300%",
-            animation: "gradient 10s ease infinite",
             minHeight: "100dvh",
+            backgroundColor: t.colors.dark[7],
           },
-        }}
+        })}
       >
-        <Stack spacing={0} h="100%" style={{ minHeight: "100dvh" }}>
+        <Stack spacing={0} mih="100dvh">
           <Header
             setCookiesOpened={setCookiesOpened}
             setHistoryOpened={setHistoryOpened}
             setResetOpened={setResetOpened}
           />
-
           <Box
-            style={{
+            sx={(t) => ({
               flex: 1,
               display: "flex",
-              flexDirection: "column",
-              justifyContent: "center",
-              padding: "2rem 0 3rem",
-            }}
+              alignItems: "center",
+              padding: `${isMobileLayout ? rem(16) : rem(32)} ${rem(16)}`,
+              [t.fn.largerThan("sm")]: {
+                padding: `${rem(32)} 0`,
+              },
+            })}
           >
-            <Stack spacing={48} w="100%">
-              <Container size="sm" w="100%">
-                <Stack spacing="lg">
-                  {/* Hero */}
-                  <Stack spacing="md" align="center" ta="center">
-                    <Title
-                      order={1}
-                      size={rem(40)}
-                      fw={700}
-                      sx={(theme) => ({
-                        color: "white",
-                        letterSpacing: "-0.02em",
-                        lineHeight: 1.15,
-                        [theme.fn.smallerThan("sm")]: { fontSize: rem(28) },
-                      })}
-                    >
-                      Play it your way
-                    </Title>
-                    <Text
-                      size="md"
-                      maw={380}
-                      mx="auto"
-                      sx={(theme) => ({
-                        color: theme.colors.dark[2],
-                        lineHeight: 1.5,
-                        [theme.fn.smallerThan("sm")]: { fontSize: theme.fontSizes.sm },
-                      })}
-                    >
-                      Slowed + reverb, nightcore, and pitch control. Paste a link or drop
-                      a file.
-                    </Text>
-                  </Stack>
-
-                  <YoutubeUpload
-                    onOpenCookies={() => setCookiesOpened(true)}
-                    onLoadingStart={setGlobalLoading}
-                  />
-
-                  <DemoTracksSection />
-
-                  <Divider
-                    label="or drop a file"
-                    labelPosition="center"
-                    color="dark.5"
-                    styles={{
-                      label: {
-                        color: "var(--mantine-color-dark-4)",
-                        fontSize: "var(--mantine-font-size-xs)",
-                        "&::before": { borderTopColor: "rgba(255,255,255,0.06)" },
-                        "&::after": { borderTopColor: "rgba(255,255,255,0.06)" },
+            <Container size="md" w="100%" px={0}>
+              <Stack spacing={isMobileLayout ? rem(24) : rem(56)}>
+                <Stack
+                  spacing={isMobileLayout ? "sm" : "md"}
+                  align="center"
+                  ta="center"
+                  sx={(t) => ({
+                    opacity: searchActive ? 0.58 : 1,
+                    transform: searchActive ? "scale(0.985)" : "scale(1)",
+                    transition: "opacity 180ms ease, transform 180ms ease",
+                    transformOrigin: "center bottom",
+                    [t.fn.smallerThan("sm")]: {
+                      transform: searchActive ? "scale(0.98)" : "scale(1)",
+                    },
+                  })}
+                >
+                  <Title
+                    order={1}
+                    fw={900}
+                    sx={(t) => ({
+                      color: t.white,
+                      fontSize: rem(48),
+                      letterSpacing: rem(-1.5),
+                      lineHeight: 1.08,
+                      [t.fn.smallerThan("sm")]: {
+                        fontSize: rem(30),
+                        letterSpacing: rem(-1),
                       },
-                    }}
-                  />
-
-                  <LocalUpload />
+                    })}
+                  >
+                    Transform your audio.
+                  </Title>
+                  <Text
+                    maw={640}
+                    color="dimmed"
+                    fw={600}
+                    sx={(t) => ({
+                      fontSize: rem(20),
+                      lineHeight: 1.45,
+                      [t.fn.smallerThan("sm")]: {
+                        fontSize: rem(14),
+                        lineHeight: 1.5,
+                        padding: `0 ${rem(8)}`,
+                      },
+                    })}
+                  >
+                    Apply slowed + reverb, nightcore, or custom pitch shifts instantly to
+                    YouTube links, TikToks, or local files.
+                  </Text>
                 </Stack>
-              </Container>
-            </Stack>
-          </Box>
 
+                <Paper
+                  p={{ base: "sm", sm: "xl" }}
+                  radius="md"
+                  sx={() => ({
+                    backgroundColor: "#222528",
+                    border: `${rem(1)} solid #33363D`,
+                  })}
+                >
+                  <Stack
+                    spacing={0}
+                    sx={(t) => ({
+                      gap: t.spacing.md,
+                      [t.fn.largerThan("sm")]: { gap: t.spacing.lg },
+                      transition: "gap 180ms ease",
+                    })}
+                  >
+                    <SearchPanel
+                      onLoadingStart={setGlobalLoading}
+                      searchActive={searchActive}
+                      setSearchActive={setSearchActive}
+                    />
+                    {!searchActive && (
+                      <Box
+                        sx={{
+                          ...(isMobileLayout ? {} : { minHeight: rem(panelMinH) }),
+                          display: "flex",
+                          flexDirection: "column",
+                        }}
+                      >
+                        <Stack
+                          spacing={0}
+                          sx={(t) => ({
+                            gap: t.spacing.md,
+                            [t.fn.largerThan("sm")]: { gap: t.spacing.lg },
+                            flex: 1,
+                            transition: "opacity 180ms ease, transform 180ms ease",
+                          })}
+                        >
+                          <Divider
+                            label="OR"
+                            labelPosition="center"
+                            styles={(t) => ({
+                              root: {
+                                borderTopColor: isMobileLayout
+                                  ? t.fn.rgba(t.colors.gray[5], 0.45)
+                                  : t.fn.rgba(t.colors.gray[6], 0.5),
+                                marginTop: rem(4),
+                                marginBottom: rem(4),
+                                paddingTop: isMobileLayout ? rem(10) : rem(14),
+                                paddingBottom: isMobileLayout ? rem(10) : rem(14),
+                              },
+                              label: {
+                                color: isMobileLayout
+                                  ? t.colors.gray[3]
+                                  : t.colors.gray[5],
+                                fontWeight: 900,
+                                letterSpacing: isMobileLayout ? rem(1.5) : rem(2),
+                                fontSize: isMobileLayout ? rem(12) : undefined,
+                              },
+                            })}
+                          />
+                          <LocalUpload dropzoneMinHeight={uploadDropzoneMin} />
+                        </Stack>
+                      </Box>
+                    )}
+                  </Stack>
+                </Paper>
+              </Stack>
+            </Container>
+          </Box>
           <FooterLinks />
         </Stack>
       </AppShell>

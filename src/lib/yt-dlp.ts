@@ -16,6 +16,17 @@ export interface VideoInfo {
   lengthSeconds: number;
 }
 
+export interface YouTubeSearchResult {
+  id: string;
+  url: string;
+  title: string;
+  author: string;
+  thumbnail: string;
+  lengthSeconds: number;
+  viewCount?: number;
+  isLive?: boolean;
+}
+
 export interface DownloadProgress {
   status: "downloading" | "processing" | "finished" | "error";
   percent?: number;
@@ -250,6 +261,115 @@ function parseArtist(info: Record<string, unknown>): string | undefined {
   const artist = info.artist;
   if (typeof artist === "string" && artist.trim()) return artist.trim();
   return undefined;
+}
+
+/** Prefer a non-maxres thumb when yt-dlp lists many sizes (search avoids maxres). */
+function pickFlatPlaylistThumbnail(entry: Record<string, unknown>, id: string): string {
+  if (typeof entry.thumbnail === "string" && entry.thumbnail.trim()) {
+    return entry.thumbnail.trim();
+  }
+  const thumbs = entry.thumbnails;
+  if (Array.isArray(thumbs) && thumbs.length > 0) {
+    const isMaxResUrl = (u: string) => /maxres(default)?\.jpg|\/maxres\.jpg/i.test(u);
+    let bestNonMax = "";
+    let bestNonMaxW = -1;
+    let bestUrl = "";
+    let bestW = -1;
+    for (const row of thumbs) {
+      if (!row || typeof row !== "object") continue;
+      const url = (row as { url?: string }).url;
+      const w = Number((row as { width?: number }).width) || 0;
+      if (typeof url !== "string" || !url) continue;
+      if (w >= bestW) {
+        bestW = w;
+        bestUrl = url;
+      }
+      if (!isMaxResUrl(url) && w >= bestNonMaxW) {
+        bestNonMaxW = w;
+        bestNonMax = url;
+      }
+    }
+    if (bestNonMax) return bestNonMax;
+    if (bestUrl) return bestUrl;
+    const first = thumbs[0] as { url?: string };
+    if (typeof first?.url === "string" && first.url) return first.url;
+  }
+  return `https://i.ytimg.com/vi/${id}/hqdefault.jpg`;
+}
+
+function parseSearchEntry(entry: Record<string, unknown>): YouTubeSearchResult | null {
+  const id = typeof entry.id === "string" ? entry.id : null;
+  const title = typeof entry.title === "string" ? entry.title : null;
+
+  if (!id || !title) return null;
+
+  return {
+    id,
+    url:
+      (typeof entry.webpage_url === "string" && entry.webpage_url) ||
+      `https://www.youtube.com/watch?v=${id}`,
+    title,
+    author:
+      (typeof entry.uploader === "string" && entry.uploader) ||
+      (typeof entry.channel === "string" && entry.channel) ||
+      "YouTube",
+    thumbnail: pickFlatPlaylistThumbnail(entry, id),
+    lengthSeconds: Math.floor(Number(entry.duration) || 0),
+    ...(Number.isFinite(Number(entry.view_count)) && {
+      viewCount: Number(entry.view_count),
+    }),
+    ...(typeof entry.is_live === "boolean" && { isLive: entry.is_live }),
+  };
+}
+
+/**
+ * yt-search sometimes injects non-video rows (e.g. channel cards with UC… id, duration 0).
+ * Real YouTube watch IDs are 11 chars; channels are typically 24+ and start with UC/HC.
+ */
+function isYtSearchVideoRow(e: YouTubeSearchResult): boolean {
+  if (e.lengthSeconds <= 0) return false;
+  return /^[\w-]{11}$/.test(e.id);
+}
+
+function parseSearchEntries(info: Record<string, unknown>): YouTubeSearchResult[] {
+  if (Array.isArray(info.entries)) {
+    return info.entries
+      .filter(
+        (entry): entry is Record<string, unknown> =>
+          Boolean(entry) && typeof entry === "object",
+      )
+      .map(parseSearchEntry)
+      .filter((entry): entry is YouTubeSearchResult => Boolean(entry));
+  }
+
+  const entry = parseSearchEntry(info);
+  return entry ? [entry] : [];
+}
+
+/** YouTube search via yt-dlp (flat playlist). Use when Data API is unavailable or quota exhausted. */
+export async function searchYouTube(
+  query: string,
+  options: { limit?: number; cookies?: string } = {},
+): Promise<YouTubeSearchResult[]> {
+  const cleanQuery = query.trim();
+  if (!cleanQuery) return [];
+
+  const limit = Math.min(Math.max(options.limit ?? 3, 1), 10);
+  const target = isYoutubeURL(cleanQuery) ? cleanQuery : `ytsearch${limit}:${cleanQuery}`;
+  const result = await executeYtDlp({
+    args: ["--skip-download", "--flat-playlist", "-J", "--no-playlist", target],
+    cookies: options.cookies,
+  });
+
+  if (result.code !== 0) throw new Error(parseYtDlpError(result.stderr));
+
+  try {
+    const info = JSON.parse(result.stdout) as Record<string, unknown>;
+    const rows = parseSearchEntries(info).filter(isYtSearchVideoRow);
+    return rows.slice(0, isYoutubeURL(cleanQuery) ? 1 : limit);
+  } catch {
+    throw new Error("Failed to parse YouTube search results.");
+  }
 }
 
 /** Get video metadata without downloading. For music (YouTube Music, etc.) extracts track, artist, album. */

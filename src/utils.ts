@@ -16,7 +16,7 @@ export function isTikTokURL(url: string) {
 /** True for direct .mp3 / .m4a / .mp4 URLs (https or same-origin path) */
 export function isDirectMediaURL(url: string) {
   if (!url || typeof url !== "string") return false;
-  // Same-origin path (e.g. /demo-1.mp3)
+  // Same-origin media path.
   if (url.startsWith("/") && /\.(mp3|m4a|mp4|webm|ogg|wav)(\?|$)/i.test(url)) return true;
   if (!/^https?:\/\//i.test(url)) return false;
   try {
