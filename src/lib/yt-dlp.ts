@@ -178,8 +178,6 @@ async function executeYtDlp(options: ExecuteOptions): Promise<ExecuteResult> {
     if (cookiePath) finalArgs.unshift("--cookies", cookiePath);
     if (process.env.PROXY) finalArgs.unshift("--proxy", process.env.PROXY);
 
-    console.log("[Moonlit] Executing:", "yt-dlp", finalArgs.join(" "));
-
     return await new Promise((resolve, reject) => {
       const proc = spawn("yt-dlp", finalArgs);
       let stdout = "";

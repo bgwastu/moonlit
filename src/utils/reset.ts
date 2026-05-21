@@ -16,7 +16,6 @@ export async function resetAllData(
         storeName: "media",
       });
       await mediaStore.clear();
-      console.log("Cached media cleared");
     }
 
     if (options.settings) {
@@ -36,7 +35,6 @@ export async function resetAllData(
         }
       }
       keysToRemove.forEach((key) => localStorage.removeItem(key));
-      console.log("Configurations and history cleared");
     }
 
     return true;

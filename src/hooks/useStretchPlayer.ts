@@ -41,9 +41,28 @@ interface UseStretchPlayerReturn {
 }
 
 // All mutable runtime state in one ref to avoid stale closures
+interface SignalsmithStretchInstance {
+  connect(node: AudioNode): void;
+  disconnect(): void;
+  addBuffers(buffers: Float32Array[]): Promise<void>;
+  seek(timeSeconds: number): void;
+  stop(): void;
+  schedule(opts: {
+    active?: boolean;
+    input?: number;
+    rate?: number;
+    semitones?: number;
+    loopStart?: number;
+    loopEnd?: number;
+  }): void;
+  inputTime: number;
+  setTransposeSemitones(semitones: number): void;
+  process(input: Float32Array[], output: Float32Array[], numFrames: number): void;
+}
+
 interface PlayerRuntime {
   audioContext: AudioContext | null;
-  stretch: any | null;
+  stretch: SignalsmithStretchInstance | null;
   buffer: AudioBuffer | null;
 
   // Audio graph nodes
