@@ -124,6 +124,8 @@ export default async function Page({
       );
     } catch (e) {
       if (isYoutubeURL(url)) {
+        const fromYtDlp =
+          e instanceof Error && typeof e.message === "string" ? e.message.trim() : "";
         const id = getYouTubeId(url);
         if (id) {
           try {
@@ -144,7 +146,10 @@ export default async function Page({
             // fallthrough
           }
         }
-        throw new Error(`Video not found or private (YouTube)`);
+        const detail =
+          fromYtDlp ||
+          "That video appears to be unavailable, deleted, private, or the server could not read its metadata.";
+        return <InitialPlayer url={url} metadata={{}} metadataLoadError={detail} />;
       }
       console.error("Metadata fetch error:", e);
       return <InitialPlayer url={url} metadata={{}} />;

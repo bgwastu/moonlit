@@ -47,6 +47,8 @@ interface InitialPlayerProps {
   metadata?: Partial<Media["metadata"]>;
   duration?: number;
   isLocalFile?: boolean; // Deprecated but kept for compatibility during transition if needed
+  /** Server could not resolve this URL (yt-dlp / API). Shows same error UX as failed download without starting fetch. */
+  metadataLoadError?: string;
 }
 
 export default function InitialPlayer({
@@ -54,6 +56,7 @@ export default function InitialPlayer({
   metadata,
   duration,
   isLocalFile = false,
+  metadataLoadError,
 }: InitialPlayerProps) {
   const router = useRouter();
   const { media, history, setHistory } = useAppContext();
@@ -94,7 +97,7 @@ export default function InitialPlayer({
 
   // Handle URL-based download
   useEffect(() => {
-    if (isLocalFile || downloadStarted.current) return;
+    if (isLocalFile || metadataLoadError || downloadStarted.current) return;
     if (!url) {
       notifications.show({ title: "Error", message: "No URL provided." });
       router.push("/");
@@ -138,7 +141,7 @@ export default function InitialPlayer({
     }
 
     checkAndStart();
-  }, [url, duration, router, startDownload, isYouTube, isLocalFile]);
+  }, [url, duration, router, startDownload, isYouTube, isLocalFile, metadataLoadError]);
 
   const handleGoToPlayer = () => {
     setIsPlayer(true);
@@ -361,7 +364,11 @@ export default function InitialPlayer({
             alt="cover image"
           />
           <Flex direction="column">
-            <Text weight={600}>{displayMetadata.title || "Loading..."}</Text>
+            <Text weight={600}>
+              {metadataLoadError
+                ? "Video unavailable"
+                : displayMetadata.title || "Loading..."}
+            </Text>
             <Text>
               {displayMetadata.artist ?? displayMetadata.author ?? "—"}
               {displayMetadata.album ? ` · ${displayMetadata.album}` : ""}
@@ -369,7 +376,47 @@ export default function InitialPlayer({
           </Flex>
         </Flex>
 
-        {downloadState.status === "error" ? (
+        {metadataLoadError ? (
+          <Paper
+            p="md"
+            radius="md"
+            withBorder
+            style={{ borderColor: "var(--mantine-color-red-3)" }}
+          >
+            <Flex direction="column" gap="md">
+              <Alert
+                icon={<IconAlertCircle size={20} />}
+                title="Video unavailable"
+                color="red"
+                variant="light"
+              >
+                <Text
+                  size="sm"
+                  style={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}
+                >
+                  {metadataLoadError}
+                </Text>
+                <Text size="sm" color="dimmed" mt="xs">
+                  Try configuring cookies from a logged-in account in the app settings if
+                  the problem persists.
+                </Text>
+              </Alert>
+              <Flex gap="xs">
+                <Button
+                  variant="light"
+                  color="red"
+                  fullWidth
+                  onClick={() => router.push("/")}
+                >
+                  Go home
+                </Button>
+                <Button variant="filled" fullWidth onClick={() => router.refresh()}>
+                  Try again
+                </Button>
+              </Flex>
+            </Flex>
+          </Paper>
+        ) : downloadState.status === "error" ? (
           <Paper
             p="md"
             radius="md"

@@ -63,6 +63,13 @@ function parseYtDlpError(stderr: string): string {
     return "This content is not available in your region.";
   }
   if (
+    lower.includes("not a bot") ||
+    lower.includes("confirm you're not a bot") ||
+    lower.includes("confirm you’re not a bot")
+  ) {
+    return "YouTube asked for verification (often labeled as a bot check). Add cookies via Moonlit cookie settings from the homepage, export server cookies (`data/cookies.txt`), or use `--cookies-from-browser` on yt-dlp if you administer the host.";
+  }
+  if (
     lower.includes("login required") ||
     lower.includes("sign in") ||
     lower.includes("members only")
