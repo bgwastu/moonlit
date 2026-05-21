@@ -40,8 +40,8 @@ WORKDIR /app
 # Install Python, ffmpeg and yt-dlp dependencies
 RUN apk add --no-cache python3 py3-pip py3-setuptools ffmpeg curl bash
 
-# Configure yt-dlp to use Node.js runtime for EJS
-RUN echo "--js-runtimes node" > /etc/yt-dlp.conf
+# Configure yt-dlp: Node runtime + remote EJS (recommended upstream for YouTube JS challenges)
+RUN printf '%s\n' "--js-runtimes node" "--remote-components ejs:github" > /etc/yt-dlp.conf
 
 ENV NODE_ENV=production
 
