@@ -133,7 +133,8 @@ function parseYtDlpError(stderr: string): string {
   return "Failed to process the video. Please check the URL and try again.";
 }
 
-function hasSystemCookies(): boolean {
+/** True when `data/cookies.txt` exists and is non-empty (Docker volume / admin). */
+export function hasSystemCookies(): boolean {
   try {
     if (existsSync(SYSTEM_COOKIES_PATH)) {
       const content = readFileSync(SYSTEM_COOKIES_PATH, "utf-8");

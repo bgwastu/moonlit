@@ -2,7 +2,7 @@ import { Metadata } from "next";
 import InitialPlayer from "@/components/InitialPlayer";
 import { readId3FromPublicPath } from "@/lib/id3Server";
 import { fetchYoutubeDetails } from "@/lib/youtube";
-import { getVideoInfo } from "@/lib/yt-dlp";
+import { getVideoInfo, hasSystemCookies } from "@/lib/yt-dlp";
 import {
   getYouTubeId,
   isDirectMediaURL,
@@ -45,38 +45,46 @@ export async function generateMetadata({
   }
 
   if (isYoutubeURL(url) || isTikTokURL(url)) {
-    try {
-      const info = await getVideoInfo(url);
-      const title = `${info.title} - Moonlit`;
-      const description =
-        info.artist || info.author
-          ? `Listen to "${info.title}"${info.artist ? ` by ${info.artist}` : ""}${info.album ? ` from ${info.album}` : ""} on Moonlit.`
-          : `Watch "${info.title}" on Moonlit.`;
-      const imageUrl = `https://moonlit.wastu.net/api/og?title=${encodeURIComponent(
-        info.title,
-      )}&cover=${encodeURIComponent(info.thumbnail)}`;
+    if (hasSystemCookies()) {
+      try {
+        const info = await getVideoInfo(url);
+        const title = `${info.title} - Moonlit`;
+        const description =
+          info.artist || info.author
+            ? `Listen to "${info.title}"${info.artist ? ` by ${info.artist}` : ""}${info.album ? ` from ${info.album}` : ""} on Moonlit.`
+            : `Watch "${info.title}" on Moonlit.`;
+        const imageUrl = `https://moonlit.wastu.net/api/og?title=${encodeURIComponent(
+          info.title,
+        )}&cover=${encodeURIComponent(info.thumbnail)}`;
 
-      return {
-        title,
-        description,
-        openGraph: { title, description, type: "website", images: [{ url: imageUrl }] },
-        twitter: { card: "summary_large_image", title, description, images: [imageUrl] },
-      };
-    } catch {
-      if (isYoutubeURL(url)) {
-        const id = getYouTubeId(url);
-        if (id) {
-          try {
-            const videoDetails = await fetchYoutubeDetails(id);
-            const title = `${videoDetails.title} - Moonlit`;
-            return { title };
-          } catch {
-            // ignore
-          }
+        return {
+          title,
+          description,
+          openGraph: { title, description, type: "website", images: [{ url: imageUrl }] },
+          twitter: {
+            card: "summary_large_image",
+            title,
+            description,
+            images: [imageUrl],
+          },
+        };
+      } catch {
+        /* fall through — YouTube Data API fallback for OG when yt-dlp fails */
+      }
+    }
+    if (isYoutubeURL(url)) {
+      const id = getYouTubeId(url);
+      if (id) {
+        try {
+          const videoDetails = await fetchYoutubeDetails(id);
+          const title = `${videoDetails.title} - Moonlit`;
+          return { title };
+        } catch {
+          // ignore
         }
       }
-      return { title: isTikTokURL(url) ? "TikTok Video - Moonlit" : "Moonlit Player" };
     }
+    return { title: isTikTokURL(url) ? "TikTok Video - Moonlit" : "Moonlit Player" };
   }
 
   return { title: "Moonlit Player" };
@@ -107,8 +115,14 @@ export default async function Page({
     );
   }
 
-  // YouTube and TikTok: use getVideoInfo for metadata (includes music: title, artist, album)
+  // YouTube and TikTok: use getVideoInfo for metadata (includes music: title, artist, album).
+  // Skip SSR yt-dlp when the host has no `data/cookies.txt`: inlined cookies live in the browser
+  // only; otherwise getVideoInfo always runs without those cookies and errors before download.
   if (isYoutubeURL(url) || isTikTokURL(url)) {
+    if (!hasSystemCookies()) {
+      return <InitialPlayer url={url} metadata={{}} />;
+    }
+
     try {
       const info = await getVideoInfo(url);
       const metadata: Parameters<typeof InitialPlayer>[0]["metadata"] = {
