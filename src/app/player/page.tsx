@@ -16,9 +16,10 @@ type SearchParams = { [key: string]: string | string[] | undefined };
 export async function generateMetadata({
   searchParams,
 }: {
-  searchParams: SearchParams;
+  searchParams: Promise<SearchParams>;
 }): Promise<Metadata> {
-  const url = searchParams.url as string;
+  const params = await searchParams;
+  const url = params.url as string;
 
   if (!url) {
     return { title: "Moonlit Player" };
@@ -81,8 +82,13 @@ export async function generateMetadata({
   return { title: "Moonlit Player" };
 }
 
-export default async function Page({ searchParams }: { searchParams: SearchParams }) {
-  const url = searchParams.url as string;
+export default async function Page({
+  searchParams,
+}: {
+  searchParams: Promise<SearchParams>;
+}) {
+  const params = await searchParams;
+  const url = params.url as string;
 
   // Local File Player (No URL)
   if (!url) {
