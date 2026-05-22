@@ -10,7 +10,6 @@
     "prepare": "husky"
   },
   "dependencies": {
-    "@icons-pack/react-simple-icons": "^13.13.0",
     "@mantine/colors-generator": "^7.17.8",
     "@mantine/core": "6.0.20",
     "@mantine/dropzone": "6.0.20",
@@ -22,9 +21,7 @@
     "eslint": "8.49.0",
     "id3-parser": "^3.0.0",
     "localforage": "^1.10.0",
-    "lucide-react": "^0.563.0",
     "next": "^15.5.18",
-    "nosleep.js": "^0.12.0",
     "posthog-js": "^1.374.3",
     "react": "19.2.3",
     "react-dom": "19.2.3",
@@ -38,5 +35,12 @@
     "lint-staged": "^16.2.7",
     "prettier": "^3.8.1",
     "eslint-config-next": "13.4.19"
+  },
+  "lint-staged": {
+    "*.{js,jsx,ts,tsx}": [
+      "bunx eslint --max-warnings=0",
+      "bunx prettier --write"
+    ],
+    "*.{json,css,md}": "bunx prettier --write"
   }
 }
