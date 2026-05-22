@@ -1,0 +1,7 @@
+{
+  "*.{js,jsx,ts,tsx}": [
+    "bunx eslint --max-warnings=0",
+    "bunx prettier --write"
+  ],
+  "*.{json,css,md}": "bunx prettier --write"
+}
