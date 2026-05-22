@@ -32,7 +32,6 @@ docker run -d \
   --name moonlit \
   -p 3000:3000 \
   -e NODE_ENV=production \
-  -e YOUTUBE_API_KEY=your_key \
   -e ADMIN_PASSWORD=your_password \
   -v moonlit-data:/app/data \
   moonlit

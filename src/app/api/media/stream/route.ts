@@ -1,19 +1,14 @@
+import crypto from "crypto";
 import {
-  downloadAudioToFile,
   DownloadProgress,
+  downloadAudioToFile,
   downloadVideoToFile,
   getVideoInfo,
 } from "@/lib/yt-dlp";
-import crypto from "crypto";
 import { isTikTokURL } from "@/utils";
 
 export async function POST(req: Request) {
-  const {
-    url,
-    cookies,
-    videoMode: requestedVideoMode,
-    quality,
-  } = await req.json();
+  const { url, cookies, videoMode: requestedVideoMode, quality } = await req.json();
 
   const encoder = new TextEncoder();
   const isTikTok = isTikTokURL(url);
@@ -25,28 +20,29 @@ export async function POST(req: Request) {
       };
 
       try {
-        // Determine video mode and quality
+        // Determine video mode and quality, and fetch metadata for the client
+        send({ type: "status", message: "Checking video info..." });
+
         let videoMode: boolean;
         let finalQuality: "high" | "low" = quality;
+        let videoTitle = "";
+        let videoAuthor = "";
+        let videoThumbnail = "";
 
-        // If we have both videoMode and quality, we can skip the initial metadata fetch!
-        if (typeof requestedVideoMode === "boolean" && quality) {
+        const videoInfo = await getVideoInfo(url, cookies);
+        videoTitle = videoInfo.title;
+        videoAuthor = videoInfo.author;
+        videoThumbnail = videoInfo.thumbnail;
+
+        if (typeof requestedVideoMode === "boolean") {
           videoMode = requestedVideoMode;
         } else {
-          // Fallback: We need metadata to make decisions
-          send({ type: "status", message: "Checking video info..." });
-          const videoInfo = await getVideoInfo(url, cookies);
+          // Default: TikTok always video, YouTube video for short content
+          videoMode = isTikTok || videoInfo.lengthSeconds < 600;
+        }
 
-          if (typeof requestedVideoMode === "boolean") {
-            videoMode = requestedVideoMode;
-          } else {
-            // Default: TikTok always video, YouTube video for short content
-            videoMode = isTikTok || videoInfo.lengthSeconds < 600;
-          }
-
-          if (!finalQuality) {
-            finalQuality = videoInfo.lengthSeconds < 600 ? "high" : "low";
-          }
+        if (!finalQuality) {
+          finalQuality = videoInfo.lengthSeconds < 600 ? "high" : "low";
         }
 
         // Download with progress
@@ -102,18 +98,19 @@ export async function POST(req: Request) {
         // Cleanup the original temp folder
         await fs.rmdir(folderPath).catch(() => {});
 
-        // Send only download info - metadata comes from server-side page render
         send({
           type: "complete",
           contentType,
           downloadUrl: `/api/media/${fileId}`,
           videoMode,
+          title: videoTitle,
+          author: videoAuthor,
+          thumbnail: videoThumbnail,
         });
 
         controller.close();
       } catch (error) {
-        const message =
-          error instanceof Error ? error.message : "Unknown error";
+        const message = error instanceof Error ? error.message : "Unknown error";
         send({ type: "error", message });
         controller.close();
       }

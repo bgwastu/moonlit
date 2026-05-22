@@ -220,6 +220,7 @@ export default function InitialPlayer({
 
   // URL mode - download screen (use media.metadata once loaded so ID3 etc. is shown)
   const displayMetadata = media?.metadata ?? metadata ?? {};
+  const hasMetadataContent = metadataLoadError || media || Boolean(displayMetadata.title);
 
   const getStatusText = () => {
     switch (downloadState.status) {
@@ -346,35 +347,37 @@ export default function InitialPlayer({
             </Tooltip>
           </Group>
         </Flex>
-        <Text weight={600} color="dimmed">
-          Video Details
-        </Text>
-        <Flex gap="md" align="center">
-          <Image
-            src={displayMetadata.coverUrl}
-            radius="sm"
-            height={48}
-            width={48}
-            withPlaceholder
-            placeholder={
-              <Center>
-                <IconMusic />
-              </Center>
-            }
-            alt="cover image"
-          />
-          <Flex direction="column">
-            <Text weight={600}>
-              {metadataLoadError
-                ? "Video unavailable"
-                : displayMetadata.title || "Loading..."}
+        {hasMetadataContent && (
+          <>
+            <Text weight={600} color="dimmed">
+              Video Details
             </Text>
-            <Text>
-              {displayMetadata.artist ?? displayMetadata.author ?? "—"}
-              {displayMetadata.album ? ` · ${displayMetadata.album}` : ""}
-            </Text>
-          </Flex>
-        </Flex>
+            <Flex gap="md" align="center">
+              <Image
+                src={displayMetadata.coverUrl}
+                radius="sm"
+                height={48}
+                width={48}
+                withPlaceholder
+                placeholder={
+                  <Center>
+                    <IconMusic />
+                  </Center>
+                }
+                alt="cover image"
+              />
+              <Flex direction="column">
+                <Text weight={600}>
+                  {metadataLoadError ? "Video unavailable" : displayMetadata.title}
+                </Text>
+                <Text>
+                  {displayMetadata.artist ?? displayMetadata.author ?? "—"}
+                  {displayMetadata.album ? ` · ${displayMetadata.album}` : ""}
+                </Text>
+              </Flex>
+            </Flex>
+          </>
+        )}
 
         {metadataLoadError ? (
           <Paper

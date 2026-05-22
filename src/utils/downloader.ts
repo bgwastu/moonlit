@@ -149,16 +149,17 @@ export async function downloadWithProgress(
       const storedMeta = await getMeta<Partial<Media["metadata"]>>(`${prefix}:${id}`);
       const blobUrl = URL.createObjectURL(cachedVideo);
       onProgress({ status: "complete", percent: 100 });
+      const mergedMeta = { ...(storedMeta || {}), ...(preload || {}) };
       return {
         fileUrl: blobUrl,
         sourceUrl: url,
         metadata: {
           id,
-          title: "",
-          author: "",
-          coverUrl: "",
-          ...(storedMeta || {}),
-          ...(preload || {}),
+          title: mergedMeta.title || "Unknown",
+          author: mergedMeta.author || "Unknown",
+          coverUrl: mergedMeta.coverUrl || "",
+          ...(mergedMeta.artist != null && { artist: mergedMeta.artist }),
+          ...(mergedMeta.album != null && { album: mergedMeta.album }),
         },
       };
     }
@@ -169,16 +170,17 @@ export async function downloadWithProgress(
       const storedMeta = await getMeta<Partial<Media["metadata"]>>(`${prefix}:${id}`);
       const audioUrl = URL.createObjectURL(cachedAudio);
       onProgress({ status: "complete", percent: 100 });
+      const mergedMeta = { ...(storedMeta || {}), ...(preload || {}) };
       return {
         fileUrl: audioUrl,
         sourceUrl: url,
         metadata: {
           id,
-          title: "",
-          author: "",
-          coverUrl: "",
-          ...(storedMeta || {}),
-          ...(preload || {}),
+          title: mergedMeta.title || "Unknown",
+          author: mergedMeta.author || "Unknown",
+          coverUrl: mergedMeta.coverUrl || "",
+          ...(mergedMeta.artist != null && { artist: mergedMeta.artist }),
+          ...(mergedMeta.album != null && { album: mergedMeta.album }),
         },
       };
     }
@@ -301,7 +303,18 @@ export async function downloadWithProgress(
                       }
                       const blobUrl = URL.createObjectURL(blob);
 
-                      // Use preload metadata from server-side
+                      const serverTitle = data.title || "";
+                      const serverAuthor = data.author || "";
+                      const serverThumbnail = data.thumbnail || "";
+
+                      const resolvedMetadata: Media["metadata"] = {
+                        id: id || "unknown",
+                        title: preload.title || serverTitle || "Unknown",
+                        author: preload.author || serverAuthor || "Unknown",
+                        ...(preload.artist != null && { artist: preload.artist }),
+                        ...(preload.album != null && { album: preload.album }),
+                        coverUrl: preload.coverUrl || serverThumbnail || "",
+                      };
 
                       // Cache the media
                       if (id) {
@@ -309,27 +322,13 @@ export async function downloadWithProgress(
                           ? `${prefix}:${id}:video`
                           : `${prefix}:${id}:audio`;
                         setMedia(cacheKey, blob).catch(() => {});
-                        setMeta(`${prefix}:${id}`, {
-                          id: id || "unknown",
-                          title: preload.title || "",
-                          author: preload.author || "",
-                          ...(preload.artist != null && { artist: preload.artist }),
-                          ...(preload.album != null && { album: preload.album }),
-                          coverUrl: preload.coverUrl || "",
-                        }).catch(() => {});
+                        setMeta(`${prefix}:${id}`, resolvedMetadata).catch(() => {});
                       }
 
                       resolve({
                         fileUrl: blobUrl,
                         sourceUrl: url,
-                        metadata: {
-                          id: id || "unknown",
-                          title: preload.title || "",
-                          author: preload.author || "",
-                          ...(preload.artist != null && { artist: preload.artist }),
-                          ...(preload.album != null && { album: preload.album }),
-                          coverUrl: preload.coverUrl || "",
-                        },
+                        metadata: resolvedMetadata,
                       });
                       return;
 

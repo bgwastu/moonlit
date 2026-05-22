@@ -1,15 +1,8 @@
 import { Metadata } from "next";
 import InitialPlayer from "@/components/InitialPlayer";
 import { readId3FromPublicPath } from "@/lib/id3Server";
-import { fetchYoutubeDetails } from "@/lib/youtube";
 import { getVideoInfo, hasSystemCookies } from "@/lib/yt-dlp";
-import {
-  getYouTubeId,
-  isDirectMediaURL,
-  isTikTokURL,
-  isYoutubeURL,
-  parseISO8601Duration,
-} from "@/utils";
+import { isDirectMediaURL, isTikTokURL, isYoutubeURL } from "@/utils";
 
 type SearchParams = { [key: string]: string | string[] | undefined };
 
@@ -69,19 +62,7 @@ export async function generateMetadata({
           },
         };
       } catch {
-        /* fall through — YouTube Data API fallback for OG when yt-dlp fails */
-      }
-    }
-    if (isYoutubeURL(url)) {
-      const id = getYouTubeId(url);
-      if (id) {
-        try {
-          const videoDetails = await fetchYoutubeDetails(id);
-          const title = `${videoDetails.title} - Moonlit`;
-          return { title };
-        } catch {
-          // ignore
-        }
+        /* yt-dlp metadata unavailable — return basic title */
       }
     }
     return { title: isTikTokURL(url) ? "TikTok Video - Moonlit" : "Moonlit Player" };
@@ -116,13 +97,8 @@ export default async function Page({
   }
 
   // YouTube and TikTok: use getVideoInfo for metadata (includes music: title, artist, album).
-  // Skip SSR yt-dlp when the host has no `data/cookies.txt`: inlined cookies live in the browser
-  // only; otherwise getVideoInfo always runs without those cookies and errors before download.
+  // yt-dlp works without cookies for public videos; cookies are only needed for restricted content.
   if (isYoutubeURL(url) || isTikTokURL(url)) {
-    if (!hasSystemCookies()) {
-      return <InitialPlayer url={url} metadata={{}} />;
-    }
-
     try {
       const info = await getVideoInfo(url);
       const metadata: Parameters<typeof InitialPlayer>[0]["metadata"] = {
@@ -138,30 +114,10 @@ export default async function Page({
       );
     } catch (e) {
       if (isYoutubeURL(url)) {
-        const fromYtDlp =
+        const message =
           e instanceof Error && typeof e.message === "string" ? e.message.trim() : "";
-        const id = getYouTubeId(url);
-        if (id) {
-          try {
-            const details = await fetchYoutubeDetails(id);
-            const duration = parseISO8601Duration(details.duration);
-            return (
-              <InitialPlayer
-                url={url}
-                metadata={{
-                  title: details.title,
-                  author: details.channelTitle,
-                  coverUrl: details.thumbnails.default.url,
-                }}
-                duration={duration}
-              />
-            );
-          } catch {
-            // fallthrough
-          }
-        }
         const detail =
-          fromYtDlp ||
+          message ||
           "That video appears to be unavailable, deleted, private, or the server could not read its metadata.";
         return <InitialPlayer url={url} metadata={{}} metadataLoadError={detail} />;
       }
