@@ -66,7 +66,7 @@ const LOCAL_FILE_ACCEPT = ["audio/mpeg", "video/mp4", "audio/wav"];
 
 /** Min height for the search-results panel (text query mode). */
 function panelContentMinHeight(isMobile: boolean) {
-  return isMobile ? 360 : 420;
+  return isMobile ? 260 : 300;
 }
 
 interface YouTubeResult {
@@ -195,14 +195,14 @@ function LocalUpload({ dropzoneMinHeight }: { dropzoneMinHeight: number }) {
         })}
       >
         <Stack
-          spacing={isMobile ? "sm" : "md"}
+          spacing={isMobile ? "xs" : "sm"}
           align="center"
           justify="center"
           sx={{ minHeight: rem(dropzoneMinHeight) }}
         >
           <Center
-            w={isMobile ? 44 : 60}
-            h={isMobile ? 44 : 60}
+            w={isMobile ? 38 : 48}
+            h={isMobile ? 38 : 48}
             sx={(t) => ({
               borderRadius: t.radius.md,
               background: t.fn.rgba(t.colors.dark[5], 0.55),
@@ -212,13 +212,13 @@ function LocalUpload({ dropzoneMinHeight }: { dropzoneMinHeight: number }) {
             })}
             className="upload-icon-card"
           >
-            <IconFileMusic size={isMobile ? 26 : 34} stroke={1.5} />
+            <IconFileMusic size={isMobile ? 20 : 26} stroke={1.5} />
           </Center>
           <Box ta="center" px={isMobile ? 4 : 0}>
-            <Text size={isMobile ? "md" : "xl"} weight={600} color="white">
+            <Text size={isMobile ? "sm" : "md"} weight={600} color="white">
               Upload Local File
             </Text>
-            <Text size={isMobile ? "xs" : "md"} color="dimmed" mt={isMobile ? 6 : 8}>
+            <Text size={isMobile ? "xs" : "sm"} color="dimmed" mt={isMobile ? 4 : 6}>
               Supports MP3, WAV, MP4 · or{" "}
               <Text
                 component="span"
@@ -415,7 +415,7 @@ function SearchPanel({
     <Stack spacing={0}>
       <form onSubmit={form.onSubmit((values) => submit(values.query))}>
         <TextInput
-          icon={<IconSearch size={isMobile ? 20 : 24} stroke={2.2} />}
+          icon={<IconSearch size={isMobile ? 18 : 20} stroke={2.2} />}
           placeholder="Search YouTube, TikTok, or paste a URL..."
           size={isMobile ? "md" : "lg"}
           radius="md"
@@ -451,32 +451,32 @@ function SearchPanel({
             isLink ? (
               <ActionIcon
                 type="submit"
-                size={isMobile ? 42 : 48}
+                size={isMobile ? 36 : 40}
                 radius="sm"
                 loading={loading}
                 variant="filled"
                 color="violet"
               >
-                <IconArrowRight size={isMobile ? 22 : 26} />
+                <IconArrowRight size={isMobile ? 18 : 22} />
               </ActionIcon>
             ) : null
           }
           rightSectionWidth={rightSectionWidth}
           styles={(t) => ({
             input: {
-              height: isMobile ? rem(56) : rem(64),
-              paddingLeft: isMobile ? rem(46) : rem(56),
-              paddingRight: isLink ? (isMobile ? rem(62) : rem(74)) : rem(16),
+              height: isMobile ? rem(46) : rem(50),
+              paddingLeft: isMobile ? rem(38) : rem(44),
+              paddingRight: isLink ? (isMobile ? rem(54) : rem(60)) : rem(14),
               backgroundColor: t.fn.rgba(t.colors.dark[9], 0.58),
               border: `${rem(1)} solid ${t.fn.rgba(t.colors.gray[6], 0.26)}`,
               color: t.white,
               fontWeight: 400,
-              fontSize: isMobile ? rem(16) : rem(18),
+              fontSize: isMobile ? rem(15) : rem(16),
               "&::placeholder": { color: t.fn.rgba(t.colors.gray[4], 0.75) },
             },
             icon: {
               color: query ? t.colors.violet[3] : t.colors.gray[6],
-              width: isMobile ? rem(46) : rem(56),
+              width: isMobile ? rem(38) : rem(44),
             },
           })}
         />
@@ -496,20 +496,20 @@ function SearchPanel({
         >
           {!isLink && (
             <Stack spacing="md" sx={{ flex: 1, minHeight: 0, overflow: "visible" }}>
-              <Group position="apart" px="xs" sx={{ flexShrink: 0 }}>
+              <Group position="apart" px={4} sx={{ flexShrink: 0 }}>
                 <Text
                   transform="uppercase"
                   color="dimmed"
-                  opacity={0.72}
-                  fz="xs"
-                  weight={600}
-                  lts={rem(1.5)}
+                  opacity={0.6}
+                  fz={10}
+                  weight={700}
+                  lts={rem(1.2)}
                 >
                   Top results
                 </Text>
-                <Group spacing={6} c="dimmed" opacity={0.72}>
-                  <SiYoutube size={16} />
-                  <Text weight={600} size="sm">
+                <Group spacing={4} c="dimmed" opacity={0.6}>
+                  <SiYoutube size={14} />
+                  <Text weight={600} size="xs">
                     YouTube
                   </Text>
                 </Group>
@@ -526,29 +526,29 @@ function SearchPanel({
                   Array.from({ length: 3 }).map((_, index) => (
                     <Paper
                       key={index}
-                      p="sm"
-                      radius="md"
+                      p="xs"
+                      radius="sm"
                       sx={(th) => ({
                         backgroundColor: th.fn.rgba(th.colors.dark[9], 0.36),
                       })}
                     >
                       <Flex gap="lg" align="center">
                         <Skeleton
-                          width={isMobile ? 88 : 120}
-                          height={isMobile ? 64 : 72}
-                          radius="md"
+                          width={isMobile ? 80 : 100}
+                          height={isMobile ? 56 : 60}
+                          radius="sm"
                         />
                         <Box sx={{ flex: 1, minWidth: 0 }}>
-                          <Skeleton height={18} radius="sm" />
-                          <Skeleton height={14} radius="sm" width="45%" mt={rem(4)} />
+                          <Skeleton height={16} radius="sm" />
+                          <Skeleton height={12} radius="sm" width="45%" mt={rem(3)} />
                         </Box>
                       </Flex>
                     </Paper>
                   ))
                 ) : showEmpty ? (
                   <Paper
-                    p="xl"
-                    radius="md"
+                    p="md"
+                    radius="sm"
                     sx={(th) => ({
                       backgroundColor: th.fn.rgba(th.colors.dark[9], 0.28),
                       border: `${rem(1)} solid ${th.fn.rgba(th.colors.gray[7], 0.34)}`,
@@ -581,8 +581,8 @@ function SearchPanel({
                       component={Link}
                       href={watchPath(result)}
                       prefetch={false}
-                      p="sm"
-                      radius="md"
+                      p="xs"
+                      radius="sm"
                       onClick={(e: React.MouseEvent) => {
                         if (
                           e.metaKey ||
@@ -610,14 +610,14 @@ function SearchPanel({
                         },
                       })}
                     >
-                      <Flex gap="lg" align="center">
+                      <Flex gap="md" align="center">
                         <Box pos="relative" sx={{ flexShrink: 0 }}>
                           <Image
                             src={result.thumbnail}
                             alt=""
-                            width={isMobile ? 88 : 120}
-                            height={isMobile ? 64 : 72}
-                            radius="md"
+                            width={isMobile ? 80 : 100}
+                            height={isMobile ? 56 : 60}
+                            radius="sm"
                             fit="cover"
                             withPlaceholder
                             placeholder={
@@ -914,8 +914,8 @@ export default function UploadPage() {
                   <Stack
                     spacing={0}
                     sx={(t) => ({
-                      gap: t.spacing.sm,
-                      [t.fn.largerThan("sm")]: { gap: t.spacing.md },
+                      gap: t.spacing.xs,
+                      [t.fn.largerThan("sm")]: { gap: t.spacing.sm },
                       transition: "gap 180ms ease",
                     })}
                   >
@@ -949,10 +949,10 @@ export default function UploadPage() {
                                 borderTopColor: isMobileLayout
                                   ? t.fn.rgba(t.colors.gray[5], 0.45)
                                   : t.fn.rgba(t.colors.gray[6], 0.5),
-                                marginTop: rem(4),
-                                marginBottom: rem(4),
-                                paddingTop: isMobileLayout ? rem(6) : rem(8),
-                                paddingBottom: isMobileLayout ? rem(6) : rem(8),
+                                marginTop: rem(2),
+                                marginBottom: rem(2),
+                                paddingTop: isMobileLayout ? rem(2) : rem(4),
+                                paddingBottom: isMobileLayout ? rem(2) : rem(4),
                               },
                               label: {
                                 color: isMobileLayout
