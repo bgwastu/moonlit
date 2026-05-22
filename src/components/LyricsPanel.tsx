@@ -32,7 +32,7 @@ export default function LyricsPanel({
   const containerRef = useRef<HTMLDivElement>(null);
   const lineRefs = useRef<(HTMLDivElement | null)[]>([]);
   const ignoreScrollRef = useRef(false);
-  const scrollTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
+  const scrollTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const [isOutOfSync, setIsOutOfSync] = useState(false);
   const currentTimeMs = currentTimeSeconds * 1000;
 
@@ -59,7 +59,9 @@ export default function LyricsPanel({
 
   useEffect(() => {
     if (activeIndex < 0) return;
-    setIsOutOfSync(false);
+    const syncId = requestAnimationFrame(() => {
+      setIsOutOfSync(false);
+    });
     ignoreScrollRef.current = true;
     if (scrollTimeoutRef.current) clearTimeout(scrollTimeoutRef.current);
     lineRefs.current[activeIndex]?.scrollIntoView({
@@ -70,6 +72,7 @@ export default function LyricsPanel({
       ignoreScrollRef.current = false;
     }, 1200);
     return () => {
+      cancelAnimationFrame(syncId);
       if (scrollTimeoutRef.current) clearTimeout(scrollTimeoutRef.current);
     };
   }, [activeIndex]);

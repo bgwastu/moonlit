@@ -1,17 +1,37 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useSyncExternalStore } from "react";
 import { MantineProvider } from "@mantine/core";
 import { Notifications } from "@mantine/notifications";
 import { AppProvider, useAppContext } from "@/context/AppContext";
 
+/** 0 until first client microtask; keeps SSR/hydration first paint identical (placeholder). */
+let layoutHydrationBeacon = 0;
+const layoutHydrationListeners = new Set<() => void>();
+
+function subscribeLayoutHydrated(onStoreChange: () => void) {
+  layoutHydrationListeners.add(onStoreChange);
+  if (typeof window !== "undefined") {
+    queueMicrotask(() => {
+      if (layoutHydrationBeacon === 0) {
+        layoutHydrationBeacon = 1;
+        layoutHydrationListeners.forEach((listener) => listener());
+      }
+    });
+  }
+  return () => {
+    layoutHydrationListeners.delete(onStoreChange);
+  };
+}
+
 function LayoutContent({ children }: { children: React.ReactNode }) {
   const { theme } = useAppContext();
-  const [ready, setReady] = useState(false);
-
-  useEffect(() => {
-    setReady(true);
-  }, []);
+  const ready =
+    useSyncExternalStore(
+      subscribeLayoutHydrated,
+      () => layoutHydrationBeacon,
+      () => 0,
+    ) > 0;
 
   if (!ready) {
     return (

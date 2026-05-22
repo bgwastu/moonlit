@@ -206,22 +206,30 @@ export function useLyrics({
 
   // Handle selected synced lyrics (user-selected override)
   useEffect(() => {
-    if (!enabled) {
-      setLyrics([]);
-      setState("idle");
-      setError(null);
-      return;
-    }
+    let cancelled = false;
+    const id = requestAnimationFrame(() => {
+      if (!enabled) {
+        setLyrics([]);
+        setState("idle");
+        setError(null);
+        return;
+      }
 
-    if (selectedSyncedLyrics) {
-      const durationMs = durationSeconds * 1000;
-      const parsed = parseLRC(selectedSyncedLyrics, durationMs);
-      setLyrics(applyOffset(parsed, offsetMs));
-      setState(parsed.length > 0 ? "ready" : "not_found");
-      return;
-    }
+      if (selectedSyncedLyrics) {
+        const durationMs = durationSeconds * 1000;
+        const parsed = parseLRC(selectedSyncedLyrics, durationMs);
+        setLyrics(applyOffset(parsed, offsetMs));
+        setState(parsed.length > 0 ? "ready" : "not_found");
+        return;
+      }
 
-    fetchLyrics();
+      if (!cancelled) void fetchLyrics();
+    });
+
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(id);
+    };
   }, [enabled, selectedSyncedLyrics, durationSeconds, offsetMs, fetchLyrics]);
 
   return { lyrics, state, error, discoveredLyrics, searchResults, refetch: fetchLyrics };

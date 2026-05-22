@@ -335,8 +335,10 @@ function SearchPanel({
   /** Keep latest `search` without listing it on the debounced effect — otherwise any
    * `useCallback` identity change (e.g. after blur → parent re-render) re-runs the effect,
    * clears results, and refetches for the same query. */
-  const searchRef = useRef(search);
-  searchRef.current = search;
+  const searchLatestRef = useRef(search);
+  useEffect(() => {
+    searchLatestRef.current = search;
+  });
 
   useEffect(() => {
     const controller = new AbortController();
@@ -348,17 +350,21 @@ function SearchPanel({
       isDirectMediaURL(value) ||
       isTikTokURL(value)
     ) {
-      setResults([]);
-      setResultsForQuery("");
-      setPendingSearch(false);
-      setHasSearched(false);
+      queueMicrotask(() => {
+        setResults([]);
+        setResultsForQuery("");
+        setPendingSearch(false);
+        setHasSearched(false);
+      });
       return () => controller.abort();
     }
 
-    setHasSearched(false);
-    setResults([]);
-    setResultsForQuery("");
-    void searchRef.current(value, controller.signal, false);
+    queueMicrotask(() => {
+      setHasSearched(false);
+      setResults([]);
+      setResultsForQuery("");
+    });
+    void searchLatestRef.current(value, controller.signal, false);
 
     return () => {
       controller.abort();

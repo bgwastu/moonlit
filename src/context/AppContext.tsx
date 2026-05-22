@@ -39,15 +39,18 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   // Load history from localStorage on mount
   useEffect(() => {
-    try {
-      const stored = localStorage.getItem(HISTORY_STORAGE_KEY);
-      if (stored) {
-        setHistoryState(JSON.parse(stored));
+    const id = requestAnimationFrame(() => {
+      try {
+        const stored = localStorage.getItem(HISTORY_STORAGE_KEY);
+        if (stored) {
+          setHistoryState(JSON.parse(stored));
+        }
+      } catch (e) {
+        console.error("Failed to load history:", e);
       }
-    } catch (e) {
-      console.error("Failed to load history:", e);
-    }
-    setIsHydrated(true);
+      setIsHydrated(true);
+    });
+    return () => cancelAnimationFrame(id);
   }, []);
 
   // Save history to localStorage when it changes

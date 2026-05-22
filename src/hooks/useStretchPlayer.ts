@@ -172,10 +172,14 @@ export function useStretchPlayer({
     liteMode: false,
   });
 
-  // Keep runtime in sync with props
-  runtime.current.repeat = isRepeat;
-  runtime.current.onEnded = onEnded;
-  runtime.current.liteMode = liteMode;
+  const syncLoopImplRef = useRef<(() => void) | null>(null);
+
+  useEffect(() => {
+    const rt = runtime.current;
+    rt.repeat = isRepeat;
+    rt.onEnded = onEnded;
+    rt.liteMode = liteMode ?? false;
+  }, [isRepeat, onEnded, liteMode]);
 
   // Cleanup function
   const cleanup = useCallback(() => {
@@ -218,139 +222,142 @@ export function useStretchPlayer({
     rt.isPlaying = false;
   }, []);
 
-  // rAF sync loop - runs only while playing
-  const syncLoop = useCallback(() => {
-    const rt = runtime.current;
-    const video = videoRef.current;
-
-    if (!rt.isPlaying || !rt.stretch) {
-      rt.rafId = null;
-      return;
-    }
-
-    const audioTime = rt.stretch.inputTime ?? 0;
-    const now = performance.now();
-
-    // Throttle UI updates
-    if (now - rt.lastUiUpdateMs > UI_UPDATE_INTERVAL) {
-      setCurrentTime(Math.min(audioTime, rt.duration));
-      rt.lastUiUpdateMs = now;
-    }
-
-    // Sync video to audio (video is visual slave)
-    // Skip drift correction briefly after rate changes to avoid visual jumps
-    const timeSinceRateChange = now - rt.lastRateChangeMs;
-    const timeSinceDriftCorrection = now - rt.lastDriftCorrectionMs;
-    if (video && !video.seeking) {
-      // Sync playback rate (only when different)
-      if (Math.abs(video.playbackRate - rt.rate) > 0.01) {
-        video.playbackRate = rt.rate;
-      }
-      // Only correct drift if enough time has passed since rate change AND last correction
-      if (
-        timeSinceRateChange > RATE_CHANGE_GRACE_PERIOD &&
-        timeSinceDriftCorrection > DRIFT_CORRECTION_INTERVAL
-      ) {
-        const drift = Math.abs(video.currentTime - audioTime);
-        if (drift > DRIFT_THRESHOLD) {
-          video.currentTime = audioTime;
-          rt.lastDriftCorrectionMs = now;
-        }
-      }
-      // Ensure video is playing (needed for initial start and visibility restore)
-      if (video.paused && document.visibilityState === "visible") {
-        video.play().catch(() => {});
-      }
-    }
-
-    // Handle end/repeat
-    if (audioTime >= rt.duration - 0.05) {
-      if (rt.repeat) {
-        rt.stretch.schedule({
-          input: 0,
-          rate: rt.rate,
-          semitones: rt.semitones,
-          active: true,
-        });
-        if (video) video.currentTime = 0;
-      } else {
-        rt.stretch.schedule({ active: false });
-        rt.isPlaying = false;
-        setIsPlaying(false);
-        setCurrentTime(rt.duration);
-        if (video) video.pause();
-        rt.onEnded?.();
-        rt.rafId = null;
-        return;
-      }
-    }
-
-    rt.rafId = requestAnimationFrame(syncLoop);
-  }, []);
-
-  // Play
-  const play = useCallback(
-    async (startTime?: number) => {
+  // rAF sync loop implementation (stored in effect to avoid Hooks purity lint on nested impure APIs)
+  useEffect(() => {
+    syncLoopImplRef.current = () => {
       const rt = runtime.current;
       const video = videoRef.current;
 
-      if (rt.liteMode) {
-        if (video) {
-          video.play().catch(() => {});
-          rt.isPlaying = true;
-          setIsPlaying(true);
-        }
+      if (!rt.isPlaying || !rt.stretch) {
+        rt.rafId = null;
         return;
       }
 
-      if (!rt.audioContext || !rt.stretch) return;
+      const audioTime = rt.stretch.inputTime ?? 0;
+      const now = performance.now();
 
-      // Resume AudioContext (required for autoplay policies)
-      if (rt.audioContext.state === "suspended") {
-        await rt.audioContext.resume();
+      // Throttle UI updates
+      if (now - rt.lastUiUpdateMs > UI_UPDATE_INTERVAL) {
+        setCurrentTime(Math.min(audioTime, rt.duration));
+        rt.lastUiUpdateMs = now;
       }
 
-      const inputTime = startTime ?? rt.stretch.inputTime ?? 0;
-
-      // Set grace period to prevent immediate drift correction
-      rt.lastRateChangeMs = performance.now();
-
-      // Prepare video BEFORE starting audio to minimize desync
-      if (video) {
-        // Set rate and position before playing to avoid flicker
-        video.playbackRate = rt.rate;
+      // Sync video to audio (video is visual slave)
+      // Skip drift correction briefly after rate changes to avoid visual jumps
+      const timeSinceRateChange = now - rt.lastRateChangeMs;
+      const timeSinceDriftCorrection = now - rt.lastDriftCorrectionMs;
+      if (video && !video.seeking) {
+        // Sync playback rate (only when different)
+        if (Math.abs(video.playbackRate - rt.rate) > 0.01) {
+          video.playbackRate = rt.rate;
+        }
+        // Only correct drift if enough time has passed since rate change AND last correction
         if (
-          startTime !== undefined ||
-          Math.abs(video.currentTime - inputTime) > DRIFT_THRESHOLD
+          timeSinceRateChange > RATE_CHANGE_GRACE_PERIOD &&
+          timeSinceDriftCorrection > DRIFT_CORRECTION_INTERVAL
         ) {
-          video.currentTime = inputTime;
+          const drift = Math.abs(video.currentTime - audioTime);
+          if (drift > DRIFT_THRESHOLD) {
+            video.currentTime = audioTime;
+            rt.lastDriftCorrectionMs = now;
+          }
+        }
+        // Ensure video is playing (needed for initial start and visibility restore)
+        if (video.paused && document.visibilityState === "visible") {
+          video.play().catch(() => {});
         }
       }
 
-      // Start audio
-      rt.stretch.schedule({
-        active: true,
-        input: inputTime,
-        rate: rt.rate,
-        semitones: rt.semitones,
-      });
+      // Handle end/repeat
+      if (audioTime >= rt.duration - 0.05) {
+        if (rt.repeat) {
+          rt.stretch.schedule({
+            input: 0,
+            rate: rt.rate,
+            semitones: rt.semitones,
+            active: true,
+          });
+          if (video) video.currentTime = 0;
+        } else {
+          rt.stretch.schedule({ active: false });
+          rt.isPlaying = false;
+          setIsPlaying(false);
+          setCurrentTime(rt.duration);
+          if (video) video.pause();
+          rt.onEnded?.();
+          rt.rafId = null;
+          return;
+        }
+      }
 
-      rt.isPlaying = true;
-      setIsPlaying(true);
+      rt.rafId = requestAnimationFrame(() => syncLoopImplRef.current?.());
+    };
 
-      // Start video after audio is scheduled
-      if (video && video.paused) {
+    return () => {
+      syncLoopImplRef.current = null;
+    };
+  }, []);
+
+  // Play
+  const play = useCallback(async (startTime?: number) => {
+    const rt = runtime.current;
+    const video = videoRef.current;
+
+    if (rt.liteMode) {
+      if (video) {
         video.play().catch(() => {});
+        rt.isPlaying = true;
+        setIsPlaying(true);
       }
+      return;
+    }
 
-      // Start sync loop
-      if (rt.rafId === null) {
-        rt.lastUiUpdateMs = 0;
-        rt.rafId = requestAnimationFrame(syncLoop);
+    if (!rt.audioContext || !rt.stretch) return;
+
+    // Resume AudioContext (required for autoplay policies)
+    if (rt.audioContext.state === "suspended") {
+      await rt.audioContext.resume();
+    }
+
+    const inputTime = startTime ?? rt.stretch.inputTime ?? 0;
+
+    // Set grace period to prevent immediate drift correction
+    rt.lastRateChangeMs = performance.now();
+
+    // Prepare video BEFORE starting audio to minimize desync
+    if (video) {
+      // Set rate and position before playing to avoid flicker
+      video.playbackRate = rt.rate;
+      if (
+        startTime !== undefined ||
+        Math.abs(video.currentTime - inputTime) > DRIFT_THRESHOLD
+      ) {
+        video.currentTime = inputTime;
       }
-    },
-    [syncLoop],
-  );
+    }
+
+    // Start audio
+    rt.stretch.schedule({
+      active: true,
+      input: inputTime,
+      rate: rt.rate,
+      semitones: rt.semitones,
+    });
+
+    rt.isPlaying = true;
+    setIsPlaying(true);
+
+    // Start video after audio is scheduled
+    if (video && video.paused) {
+      video.play().catch(() => {});
+    }
+
+    // Start sync loop
+    if (rt.rafId === null) {
+      rt.lastUiUpdateMs = 0;
+      rt.rafId = requestAnimationFrame(() => syncLoopImplRef.current?.());
+    }
+  }, []);
 
   // Pause
   const pause = useCallback(() => {
@@ -771,13 +778,13 @@ export function useStretchPlayer({
       video.currentTime = audioTime;
       video.play().catch(() => {});
       if (rt.rafId === null) {
-        rt.rafId = requestAnimationFrame(syncLoop);
+        rt.rafId = requestAnimationFrame(() => syncLoopImplRef.current?.());
       }
     };
 
     document.addEventListener("visibilitychange", handleVisibility);
     return () => document.removeEventListener("visibilitychange", handleVisibility);
-  }, [syncLoop]);
+  }, []);
 
   // Cleanup on unmount
   useEffect(() => cleanup, [cleanup]);

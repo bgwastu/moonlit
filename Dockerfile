@@ -1,5 +1,5 @@
-# Node 20 base (required for yt-dlp EJS support)
-FROM node:20-alpine AS base
+# Node 24 LTS (Alpine) — Next.js 16 + yt-dlp JS runtime
+FROM node:24-alpine AS base
 
 # Install bun
 RUN npm install -g bun

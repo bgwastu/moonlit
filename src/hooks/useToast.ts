@@ -19,7 +19,7 @@ export function useToast(): UseToastReturn {
     message: null,
     visible: false,
   });
-  const toastTimeoutRef = useRef<NodeJS.Timeout>();
+  const toastTimeoutRef = useRef<NodeJS.Timeout | undefined>(undefined);
 
   const showToast = useCallback((message: React.ReactNode, isCircular?: boolean) => {
     if (toastTimeoutRef.current) {

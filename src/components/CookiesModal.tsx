@@ -1,15 +1,9 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import {
-  getUserCookies,
-  setUserCookies,
-  validateCookies,
-  isCustomCookiesEnabled,
-  setCustomCookiesEnabled,
-} from "@/lib/cookies";
-import {
-  Anchor,
   Alert,
+  Anchor,
   Button,
   Flex,
   Loader,
@@ -25,7 +19,13 @@ import {
   IconInfoCircle,
   IconShieldLock,
 } from "@tabler/icons-react";
-import { useEffect, useState } from "react";
+import {
+  getUserCookies,
+  isCustomCookiesEnabled,
+  setCustomCookiesEnabled,
+  setUserCookies,
+  validateCookies,
+} from "@/lib/cookies";
 
 interface CookiesModalProps {
   opened: boolean;
@@ -42,23 +42,26 @@ export default function CookiesModal({ opened, onClose }: CookiesModalProps) {
 
   // Load cookies and preferences when modal opens
   useEffect(() => {
-    if (opened) {
+    if (!opened) return;
+    const task = Promise.resolve().then(async () => {
       setLoading(true);
       setError(null);
       setSuccess(false);
 
-      Promise.all([getUserCookies(), isCustomCookiesEnabled()])
-        .then(([userCookies, isCustom]) => {
-          setCookiesState(userCookies);
-          setCustomEnabled(isCustom);
-        })
-        .catch(() => {
-          setError("Failed to load settings");
-        })
-        .finally(() => {
-          setLoading(false);
-        });
-    }
+      try {
+        const [userCookies, isCustom] = await Promise.all([
+          getUserCookies(),
+          isCustomCookiesEnabled(),
+        ]);
+        setCookiesState(userCookies);
+        setCustomEnabled(isCustom);
+      } catch {
+        setError("Failed to load settings");
+      } finally {
+        setLoading(false);
+      }
+    });
+    void task;
   }, [opened]);
 
   const handleSave = async () => {
@@ -98,9 +101,8 @@ export default function CookiesModal({ opened, onClose }: CookiesModalProps) {
         {/* Privacy Notice */}
         <Alert icon={<IconShieldLock size={16} />} color="gray" variant="light">
           <Text size="sm">
-            Moonlit <strong>does not store or log</strong> your cookies. They
-            are kept locally in your browser and sent directly for downloads.
-            This app is{" "}
+            Moonlit <strong>does not store or log</strong> your cookies. They are kept
+            locally in your browser and sent directly for downloads. This app is{" "}
             <Anchor
               href="https://github.com/bgwastu/moonlit"
               target="_blank"
@@ -115,9 +117,8 @@ export default function CookiesModal({ opened, onClose }: CookiesModalProps) {
         {/* Info about cookies */}
         <Alert icon={<IconInfoCircle size={16} />} color="blue" variant="light">
           <Text size="sm">
-            Cookies help bypass age restrictions, avoid captchas, and improve
-            download reliability for YouTube and TikTok. Export from your
-            browser using the{" "}
+            Cookies help bypass age restrictions, avoid captchas, and improve download
+            reliability for YouTube and TikTok. Export from your browser using the{" "}
             <Anchor
               href="https://chromewebstore.google.com/detail/get-cookiestxt-locally/cclelndahbckbenkjhflpdbgdldlbecc"
               target="_blank"
@@ -171,19 +172,15 @@ export default function CookiesModal({ opened, onClose }: CookiesModalProps) {
 
             {!cookies.trim() && (
               <Text size="xs" color="orange">
-                Custom cookies enabled but no cookies provided. Downloads may
-                fail for age-restricted content or encounter rate limits.
+                Custom cookies enabled but no cookies provided. Downloads may fail for
+                age-restricted content or encounter rate limits.
               </Text>
             )}
           </>
         )}
 
         {error && (
-          <Alert
-            icon={<IconAlertCircle size={16} />}
-            color="red"
-            variant="light"
-          >
+          <Alert icon={<IconAlertCircle size={16} />} color="red" variant="light">
             {error}
           </Alert>
         )}

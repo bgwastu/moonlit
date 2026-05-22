@@ -16,7 +16,7 @@ export default function AmbientCanvas({
   imageUrl,
 }: AmbientCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const rafRef = useRef<number>();
+  const rafRef = useRef<number | undefined>(undefined);
   const imageRef = useRef<HTMLImageElement | null>(null);
 
   useEffect(() => {

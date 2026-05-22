@@ -41,10 +41,12 @@ export default function CustomizePlaybackModal({
 
   // Sync slider state from player when modal opens
   useEffect(() => {
-    if (opened) {
+    if (!opened) return;
+    const id = requestAnimationFrame(() => {
       setSpeedSliderValue(rate);
       setPitchSliderValue(semitones);
-    }
+    });
+    return () => cancelAnimationFrame(id);
   }, [opened, rate, semitones]);
 
   const effectiveLocked = pitchLockedToSpeed;

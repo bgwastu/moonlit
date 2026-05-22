@@ -36,13 +36,25 @@ function getDominantColorFromImage(img: HTMLImageElement, palenessFactor: number
 
 /** Hook to extract and track dominant color from an image URL */
 export function useDominantColor(imageUrl?: string, initialColor?: string) {
-  const [dominantColor, setDominantColor] = useState<string>(
-    initialColor || "rgba(0,0,0,0)",
+  const [dominantColor, setDominantColor] = useState(() =>
+    initialColor && initialColor !== "rgba(0,0,0,0)" ? initialColor : "rgba(0,0,0,0)",
   );
 
   useEffect(() => {
+    const id = requestAnimationFrame(() => {
+      if (initialColor && initialColor !== "rgba(0,0,0,0)") {
+        setDominantColor(initialColor);
+      }
+    });
+    return () => cancelAnimationFrame(id);
+  }, [initialColor]);
+
+  useEffect(() => {
+    document.body.style.setProperty("--dominant-color", dominantColor);
+  }, [dominantColor]);
+
+  useEffect(() => {
     if (initialColor && initialColor !== "rgba(0,0,0,0)") {
-      setDominantColor(initialColor);
       return;
     }
 
@@ -55,7 +67,6 @@ export function useDominantColor(imageUrl?: string, initialColor?: string) {
     img.onload = () => {
       const color = getDominantColorFromImage(img);
       setDominantColor(color);
-      document.body.style.setProperty("--dominant-color", color);
     };
   }, [imageUrl, initialColor]);
 

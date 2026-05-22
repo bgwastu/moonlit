@@ -119,7 +119,10 @@ export function Player({ media, repeating }: { media: Media; repeating: boolean 
   // Lite mode: native playback only (much more stable); default on for everyone
   const [liteMode, setLiteMode] = useState(() => savedState?.liteMode ?? true);
   useEffect(() => {
-    setLiteMode(savedState?.liteMode ?? true);
+    const id = requestAnimationFrame(() => {
+      setLiteMode(savedState?.liteMode ?? true);
+    });
+    return () => cancelAnimationFrame(id);
   }, [sourceUrl, savedState?.liteMode]);
 
   // Volume UI state (actual volume is managed by useStretchPlayer)
@@ -140,7 +143,8 @@ export function Player({ media, repeating }: { media: Media; repeating: boolean 
 
   // Initialize state loaded flag
   useEffect(() => {
-    setStateLoaded(true);
+    const id = requestAnimationFrame(() => setStateLoaded(true));
+    return () => cancelAnimationFrame(id);
   }, []);
 
   // Unified player (video + audio processing)
@@ -195,7 +199,8 @@ export function Player({ media, repeating }: { media: Media; repeating: boolean 
 
   // Populate lyricsSettings when lyrics are auto-discovered
   useEffect(() => {
-    if (discoveredLyrics && !lyricsSettings) {
+    if (!discoveredLyrics || lyricsSettings) return;
+    const id = requestAnimationFrame(() => {
       const newSettings: LyricsSettings = {
         id: discoveredLyrics.id,
         syncedLyrics: discoveredLyrics.syncedLyrics,
@@ -206,7 +211,8 @@ export function Player({ media, repeating }: { media: Media; repeating: boolean 
       };
       setLyricsSettings(newSettings);
       saveVideoState(sourceUrl, { lyrics: newSettings });
-    }
+    });
+    return () => cancelAnimationFrame(id);
   }, [discoveredLyrics, lyricsSettings, sourceUrl]);
 
   // Whether lyrics are available (either discovered or manually selected)

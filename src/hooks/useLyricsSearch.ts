@@ -93,7 +93,11 @@ export function useLyricsSearch(
   useEffect(() => {
     if (!enabled) return;
     const sp = buildSearchParams({ q, track_name, artist_name, album_name });
-    if (sp) search({ q, track_name, artist_name, album_name });
+    if (!sp) return;
+    const id = requestAnimationFrame(() => {
+      void search({ q, track_name, artist_name, album_name });
+    });
+    return () => cancelAnimationFrame(id);
   }, [enabled, q, track_name, artist_name, album_name, search]);
 
   return { results, state, error, search };

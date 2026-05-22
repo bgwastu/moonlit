@@ -6,7 +6,6 @@ export async function GET(request: Request) {
   const coverUrl = searchParams.get("cover");
 
   // We use simple fetch here to avoid webpack analysis issues with new URL()
-  // We use simple fetch here to avoid webpack analysis issues with new URL()
   const interBold = await fetch(
     "https://cdn.jsdelivr.net/npm/@fontsource/inter@5.0.8/files/inter-latin-700-normal.woff",
   ).then((res) => res.arrayBuffer());
@@ -26,7 +25,6 @@ export async function GET(request: Request) {
       }}
     >
       {coverUrl && (
-        // eslint-disable-next-line @next/next/no-img-element
         <img
           src={coverUrl}
           alt="background"

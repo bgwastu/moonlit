@@ -54,9 +54,11 @@ export default function LyricsSearchModal({
   const error = hookState === "error" ? hookError : null;
 
   useEffect(() => {
-    if (opened) {
+    if (!opened) return;
+    const id = requestAnimationFrame(() => {
       setSearchQuery(initialSearchQuery);
-    }
+    });
+    return () => cancelAnimationFrame(id);
   }, [opened, initialSearchQuery]);
 
   const handleSearch = useCallback(() => {
