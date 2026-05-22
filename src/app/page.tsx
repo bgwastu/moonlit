@@ -215,15 +215,10 @@ function LocalUpload({ dropzoneMinHeight }: { dropzoneMinHeight: number }) {
             <IconFileMusic size={isMobile ? 26 : 34} stroke={1.5} />
           </Center>
           <Box ta="center" px={isMobile ? 4 : 0}>
-            <Text size={isMobile ? "md" : "xl"} weight={800} color="white">
+            <Text size={isMobile ? "md" : "xl"} weight={600} color="white">
               Upload Local File
             </Text>
-            <Text
-              size={isMobile ? "xs" : "md"}
-              color="dimmed"
-              weight={400}
-              mt={isMobile ? 6 : 8}
-            >
+            <Text size={isMobile ? "xs" : "md"} color="dimmed" mt={isMobile ? 6 : 8}>
               Supports MP3, WAV, MP4 · or{" "}
               <Text
                 component="span"
@@ -502,15 +497,15 @@ function SearchPanel({
                   transform="uppercase"
                   color="dimmed"
                   opacity={0.72}
-                  weight={800}
-                  fz="sm"
+                  fz="xs"
+                  weight={600}
                   lts={rem(1.5)}
                 >
                   Top results
                 </Text>
                 <Group spacing={6} c="dimmed" opacity={0.72}>
                   <SiYoutube size={16} />
-                  <Text weight={700} size="sm">
+                  <Text weight={600} size="sm">
                     YouTube
                   </Text>
                 </Group>
@@ -567,7 +562,7 @@ function SearchPanel({
                       >
                         <IconSearch size={24} />
                       </Center>
-                      <Text color="white" weight={700}>
+                      <Text color="white" weight={600}>
                         No videos found
                       </Text>
                       <Text color="dimmed" size="sm" maw={360}>
@@ -644,19 +639,13 @@ function SearchPanel({
                         <Box sx={{ minWidth: 0 }}>
                           <Text
                             color="white"
-                            weight={800}
+                            weight={600}
                             size={isMobile ? "sm" : "md"}
                             lineClamp={2}
                           >
                             {result.title}
                           </Text>
-                          <Text
-                            color="dimmed"
-                            weight={700}
-                            size="sm"
-                            mt={4}
-                            lineClamp={1}
-                          >
+                          <Text color="dimmed" size="sm" mt={4} lineClamp={1}>
                             {result.author}
                             {formatViews(result.viewCount)
                               ? `  •  ${formatViews(result.viewCount)}`
@@ -707,7 +696,7 @@ function FooterLinks() {
         href="https://github.com/bgwastu/moonlit"
         target="_blank"
         color="dimmed"
-        fw={isMobile ? 600 : 700}
+        fw={600}
         size={isMobile ? "sm" : "md"}
         sx={linkSx}
       >
@@ -720,7 +709,7 @@ function FooterLinks() {
         href="https://github.com/bgwastu/moonlit/issues"
         target="_blank"
         color="dimmed"
-        fw={isMobile ? 600 : 700}
+        fw={600}
         size={isMobile ? "sm" : "md"}
         sx={linkSx}
       >
@@ -732,7 +721,7 @@ function FooterLinks() {
       <Anchor
         href="mailto:bagas@wastu.net?subject=Moonlit%20Feedback&body=Hi%20Bagas%2C%0A%0AI%20have%20some%20feedback%20for%20Moonlit%3A%0A"
         color="dimmed"
-        fw={isMobile ? 600 : 700}
+        fw={600}
         size={isMobile ? "sm" : "md"}
         sx={linkSx}
       >
@@ -893,14 +882,14 @@ export default function UploadPage() {
                   </Title>
                   <Text
                     maw={640}
+                    ta="center"
                     color="dimmed"
-                    fw={600}
+                    size="lg"
                     sx={(t) => ({
-                      fontSize: rem(20),
-                      lineHeight: 1.45,
+                      lineHeight: 1.55,
                       [t.fn.smallerThan("sm")]: {
-                        fontSize: rem(14),
-                        lineHeight: 1.5,
+                        fontSize: t.fontSizes.sm,
+                        lineHeight: 1.55,
                         padding: `0 ${rem(8)}`,
                       },
                     })}
@@ -965,9 +954,9 @@ export default function UploadPage() {
                                 color: isMobileLayout
                                   ? t.colors.gray[3]
                                   : t.colors.gray[5],
-                                fontWeight: 900,
-                                letterSpacing: isMobileLayout ? rem(1.5) : rem(2),
-                                fontSize: isMobileLayout ? rem(12) : undefined,
+                                fontWeight: 600,
+                                letterSpacing: rem(1.5),
+                                fontSize: isMobileLayout ? rem(12) : t.fontSizes.sm,
                               },
                             })}
                           />
