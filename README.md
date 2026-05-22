@@ -15,6 +15,7 @@ https://github.com/user-attachments/assets/a54716fb-35cb-4158-b789-74a74fc359dc
 
 - **Pitch Lock & Shifting**: Change the speed without affecting pitch, or shift pitch independently (non lite mode).
 - **Reverb Effect**: Add ambiance to your tracks with adjustable reverb.
+- **Search Support**: Search for videos on YouTube for faster access.
 - **Lyrics Support**: View synchronized lyrics while listening to your tracks.
 - **Multi-platform support**: Works with YouTube and TikTok.
 - **Client-Side Cookie Management**: Use your own YouTube cookies to bypass restrictions (e.g., age-gated content).
