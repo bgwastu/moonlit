@@ -1,5 +1,11 @@
-import { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import LayoutWrapper from "./LayoutWrapper";
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
+};
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://moonlit.wastu.net"),

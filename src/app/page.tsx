@@ -695,9 +695,15 @@ function FooterLinks() {
       position="center"
       spacing={isMobile ? "md" : "xl"}
       pt={isMobile ? "md" : "lg"}
-      pb={isMobile ? "md" : "lg"}
+      pb={isMobile ? undefined : "lg"}
       c="dimmed"
-      sx={{ flexShrink: 0, flexWrap: "wrap" }}
+      sx={(t) => ({
+        flexShrink: 0,
+        flexWrap: "wrap",
+        ...(isMobile
+          ? { paddingBottom: `calc(${t.spacing.md} + env(safe-area-inset-bottom, 0px))` }
+          : {}),
+      })}
     >
       <Anchor
         href="https://github.com/bgwastu/moonlit"
@@ -753,7 +759,18 @@ function Header({
   const theme = useMantineTheme();
   const isMobile = useMediaQuery(`(max-width: ${theme.breakpoints.sm})`) ?? false;
   return (
-    <Box pt={isMobile ? "md" : "xl"} pb={isMobile ? "sm" : "md"} px="md">
+    <Box
+      px="md"
+      pb={isMobile ? "sm" : "md"}
+      pt={isMobile ? undefined : "xl"}
+      sx={(t) =>
+        isMobile
+          ? {
+              paddingTop: `calc(${t.spacing.lg} + env(safe-area-inset-top, 0px))`,
+            }
+          : undefined
+      }
+    >
       <Container size="lg">
         <Flex justify="space-between" align="center">
           <Link href="/" style={{ textDecoration: "none", color: "inherit" }}>
@@ -848,7 +865,10 @@ export default function UploadPage() {
             sx={(t) => ({
               flex: 1,
               display: "flex",
-              alignItems: "flex-start",
+              minHeight: isMobileLayout ? 0 : undefined,
+              flexDirection: isMobileLayout ? "column" : "row",
+              justifyContent: isMobileLayout ? "center" : "flex-start",
+              alignItems: isMobileLayout ? "stretch" : "flex-start",
               padding: `${isMobileLayout ? rem(16) : rem(32)} ${rem(16)}`,
               [t.fn.largerThan("sm")]: {
                 padding: `${rem(32)} 0`,
