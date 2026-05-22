@@ -25,7 +25,6 @@
     "lucide-react": "^0.563.0",
     "next": "^15.5.18",
     "nosleep.js": "^0.12.0",
-    "posthog-js": "^1.374.3",
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "signalsmith-stretch": "^1.3.2",

@@ -1,16 +1,13 @@
 import { useCallback, useState } from "react";
 import { useRouter } from "next/navigation";
 import { notifications } from "@mantine/notifications";
-import { usePostHog } from "posthog-js/react";
 import { useAppContext } from "@/context/AppContext";
 import { Media } from "@/interfaces";
 import { isSupportedURL } from "@/utils";
-import { isTikTokURL, isYoutubeURL } from "@/utils";
 import { DownloadState, downloadWithProgress } from "@/utils/downloader";
 
 export function useMediaDownloader(url: string, metadata: Partial<Media["metadata"]>) {
   const router = useRouter();
-  const posthog = usePostHog();
   const { setMedia } = useAppContext();
 
   const [downloadState, setDownloadState] = useState<DownloadState>({
@@ -20,13 +17,6 @@ export function useMediaDownloader(url: string, metadata: Partial<Media["metadat
 
   const startDownload = useCallback(
     (withVideo?: boolean, downloadQuality: "high" | "low" = "high") => {
-      // Analytics
-      let eventName = "media_download";
-      if (isYoutubeURL(url)) eventName = "youtube_download";
-      else if (isTikTokURL(url)) eventName = "tiktok_download";
-
-      posthog?.capture(eventName, { url });
-
       if (!isSupportedURL(url)) {
         notifications.show({
           title: "Error",
@@ -73,7 +63,7 @@ export function useMediaDownloader(url: string, metadata: Partial<Media["metadat
         abortController.abort();
       };
     },
-    [url, router, posthog, setMedia, metadata],
+    [url, router, setMedia, metadata],
   );
 
   return { downloadState, startDownload };

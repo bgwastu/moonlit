@@ -45,7 +45,6 @@ import {
 } from "@tabler/icons-react";
 import parse from "id3-parser";
 import { convertFileToBuffer } from "id3-parser/lib/util";
-import { usePostHog } from "posthog-js/react";
 import CookiesModal from "@/components/CookiesModal";
 import HistoryModal from "@/components/HistoryModal";
 import Icon from "@/components/Icon";
@@ -105,7 +104,6 @@ function LocalUpload({ dropzoneMinHeight }: { dropzoneMinHeight: number }) {
   });
   const [fullScreenActive, setFullScreenActive] = useState(false);
   const { setMedia } = useAppContext();
-  const posthog = usePostHog();
   const { push } = useRouter();
   const [, noSleep] = useNoSleep();
   const theme = useMantineTheme();
@@ -113,7 +111,6 @@ function LocalUpload({ dropzoneMinHeight }: { dropzoneMinHeight: number }) {
 
   const handleDrop = async (files: File[]) => {
     if (!files.length) return;
-    posthog?.capture("upload_music");
     setLoading({ status: true, message: "Saving to library..." });
     setFullScreenActive(false);
 

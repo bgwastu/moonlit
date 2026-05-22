@@ -19,16 +19,7 @@ const nextConfig = {
       },
       {
         source: "/@:creator/video/:videoId",
-        destination:
-          "/player?url=https://www.tiktok.com/@:creator/video/:videoId",
-      },
-      {
-        source: "/ev/static/:path*",
-        destination: "https://us-assets.i.posthog.com/static/:path*",
-      },
-      {
-        source: "/ev/:path*",
-        destination: "https://us.i.posthog.com/:path*",
+        destination: "/player?url=https://www.tiktok.com/@:creator/video/:videoId",
       },
     ];
   },
