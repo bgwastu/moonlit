@@ -384,7 +384,11 @@ function SearchPanel({
     }
 
     if (isYoutubeURL(clean)) {
-      await search(clean, undefined, true);
+      const id = getYouTubeId(clean);
+      if (id) {
+        onLoadingStart(true);
+        push(`/watch?v=${id}`);
+      }
       return;
     }
 
@@ -841,7 +845,7 @@ export default function UploadPage() {
             sx={(t) => ({
               flex: 1,
               display: "flex",
-              alignItems: "center",
+              alignItems: "flex-start",
               padding: `${isMobileLayout ? rem(16) : rem(32)} ${rem(16)}`,
               [t.fn.largerThan("sm")]: {
                 padding: `${rem(32)} 0`,
@@ -900,7 +904,7 @@ export default function UploadPage() {
                 </Stack>
 
                 <Paper
-                  p={{ base: "sm", sm: "xl" }}
+                  p={{ base: "sm", sm: "md" }}
                   radius="md"
                   sx={() => ({
                     backgroundColor: "#222528",
@@ -910,8 +914,8 @@ export default function UploadPage() {
                   <Stack
                     spacing={0}
                     sx={(t) => ({
-                      gap: t.spacing.md,
-                      [t.fn.largerThan("sm")]: { gap: t.spacing.lg },
+                      gap: t.spacing.sm,
+                      [t.fn.largerThan("sm")]: { gap: t.spacing.md },
                       transition: "gap 180ms ease",
                     })}
                   >
@@ -931,8 +935,8 @@ export default function UploadPage() {
                         <Stack
                           spacing={0}
                           sx={(t) => ({
-                            gap: t.spacing.md,
-                            [t.fn.largerThan("sm")]: { gap: t.spacing.lg },
+                            gap: t.spacing.sm,
+                            [t.fn.largerThan("sm")]: { gap: t.spacing.md },
                             flex: 1,
                             transition: "opacity 180ms ease, transform 180ms ease",
                           })}
@@ -947,8 +951,8 @@ export default function UploadPage() {
                                   : t.fn.rgba(t.colors.gray[6], 0.5),
                                 marginTop: rem(4),
                                 marginBottom: rem(4),
-                                paddingTop: isMobileLayout ? rem(10) : rem(14),
-                                paddingBottom: isMobileLayout ? rem(10) : rem(14),
+                                paddingTop: isMobileLayout ? rem(6) : rem(8),
+                                paddingBottom: isMobileLayout ? rem(6) : rem(8),
                               },
                               label: {
                                 color: isMobileLayout
