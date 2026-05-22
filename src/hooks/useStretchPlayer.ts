@@ -717,8 +717,9 @@ export function useStretchPlayer({
           input: resumePosition,
           rate: rt.rate,
           semitones: rt.semitones,
+          // Same value disables buffer looping (signalsmith-stretch repeats when loopEnd > loopStart)
           loopStart: 0,
-          loopEnd: audioBuffer.duration,
+          loopEnd: 0,
         });
 
         if (resumePosition > 0) {

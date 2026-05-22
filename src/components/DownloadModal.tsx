@@ -165,8 +165,9 @@ export default function DownloadModal({
         input: 0,
         rate: currentPlaybackRate,
         semitones: currentSemitones,
+        // Same loopStart/loopEnd disables auto-loop per signalsmith-stretch
         loopStart: 0,
-        loopEnd: audioBuffer.duration,
+        loopEnd: 0,
       });
 
       if (currentReverbAmount > 0) {
