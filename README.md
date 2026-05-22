@@ -43,7 +43,8 @@ Optional: set `PROXY` if yt-dlp should use an external proxy.
 
 Prerequisites:
 
-- Node.js 20+
+- Bun (`bun install` / `bun run …`)
+- Node.js 24+ (see `engines` in `package.json`)
 - Python 3 + pip
 - ffmpeg
 - yt-dlp + yt-dlp-ejs
