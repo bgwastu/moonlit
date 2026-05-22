@@ -2,51 +2,28 @@
 
 Are you a weirdo who likes to listen to _slowed_, _nightcore_ music? Well, you'll probably like this app.
 
-Moonlit lets you grab tracks from YouTube or TikTok and tweak their pitch, reverb, and playback speed in real-time. It’s a simple tool for creating your own _slowed_ or _nightcore_ vibes.
+The app is available at [moonlit.wastu.net](https://moonlit.wastu.net).
 
-See it in action: [moonlit.wastu.net](https://moonlit.wastu.net)
+For quick access, you can replace the URL with the Moonlit URL:
 
-You can listen to your favorite tracks from multiple platforms on Moonlit:
-
-- **YouTube**: Replace `youtube.com` with `moonlit.wastu.net` to the URL (example: <a href="https://moonlit.wastu.net/watch?v=AEp08vVYreg" target="_blank">moonlit.wastu.net/watch?v=AEp08vVYreg</a>)
+- **YouTube**: Replace `youtube.com` with `moonlit.wastu.net` to the URL (example: <a href="https://moonlit.wastu.net/watch?v=JGwWNGJdvx8" target="_blank">moonlit.wastu.net/watch?v=JGwWNGJdvx8</a>)
 - **TikTok**: Replace `tiktok.com` with `moonlit.wastu.net` to the URL (example: <a href="https://moonlit.wastu.net/@etherealbia/video/7482838437075094790" target="_blank">moonlit.wastu.net/@etherealbia/video/7482838437075094790</a>)
-
-### Userscript
-
-Want a smoother experience? Install **Userscript** to add an "Open in Moonlit" button directly to YouTube and TikTok!
-
-[![Install Userscript](https://img.shields.io/badge/Install-Userscript-5F3DC4?style=for-the-badge&logo=tampermonkey&logoColor=white)](https://moonlit.wastu.net/moonlit-opener.user.js)
-
-1. Install [Tampermonkey](https://www.tampermonkey.net/) extension.
-2. Click the button above to install the script.
-
-# Demo (with audio 🔊)
 
 https://github.com/user-attachments/assets/a54716fb-35cb-4158-b789-74a74fc359dc
 
 # Features
 
-- **Customizable Playback**: Change playback speed, enabling "slowed & reverb" or "nightcore" effects.
 - **Pitch Lock & Shifting**: Change the speed without affecting pitch, or shift pitch independently (non lite mode).
 - **Reverb Effect**: Add ambiance to your tracks with adjustable reverb.
 - **Lyrics Support**: View synchronized lyrics while listening to your tracks.
 - **Multi-platform support**: Works with YouTube and TikTok.
 - **Client-Side Cookie Management**: Use your own YouTube cookies to bypass restrictions (e.g., age-gated content).
-- **Admin Dashboard**: A dedicated interface to manage system-wide cookies and verify yt-dlp connectivity.
 - **Export Options**: Download the original media or export your processed remix as a WAV file.
 - **Self-Hostable**: Run with a single Docker container or directly on your host.
 
-# How it Works 🛠️
-
-Moonlit leverages the **Web Audio API** to process audio real-time in the browser.
-
-- **Time & Pitch Manipulation**: We use the [signalsmith-stretch](https://github.com/Signalsmith-Audio/signalsmith-stretch) library to handle time-stretching and pitch-shifting with high quality and minimal artifacts.
-- **Reverb**: Implemented using a Convolution Reverb with a generated impulse response.
-- **Syncing**: The processed audio is played through an AudioContext while keeping the video element (muted) synchronized for visuals.
-
 # Quick start
 
-## Docker (single container)
+## Docker
 
 ```bash
 docker build -t moonlit .
