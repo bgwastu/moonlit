@@ -32,6 +32,8 @@ export default function LyricsPanel({
   const containerRef = useRef<HTMLDivElement>(null);
   const lineRefs = useRef<(HTMLDivElement | null)[]>([]);
   const ignoreScrollRef = useRef(false);
+  /** When user scrolls away from the active line, pause following playback until resync */
+  const followPausedRef = useRef(false);
   const scrollTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const [isOutOfSync, setIsOutOfSync] = useState(false);
   const currentTimeMs = currentTimeSeconds * 1000;
@@ -46,6 +48,7 @@ export default function LyricsPanel({
 
   const scrollToActive = useCallback(() => {
     if (activeIndex < 0) return;
+    followPausedRef.current = false;
     ignoreScrollRef.current = true;
     if (scrollTimeoutRef.current) clearTimeout(scrollTimeoutRef.current);
     lineRefs.current[activeIndex]?.scrollIntoView({
@@ -58,7 +61,7 @@ export default function LyricsPanel({
   }, [activeIndex]);
 
   useEffect(() => {
-    if (activeIndex < 0) return;
+    if (activeIndex < 0 || followPausedRef.current) return;
     const syncId = requestAnimationFrame(() => {
       setIsOutOfSync(false);
     });
@@ -77,6 +80,11 @@ export default function LyricsPanel({
     };
   }, [activeIndex]);
 
+  useEffect(() => {
+    followPausedRef.current = false;
+    queueMicrotask(() => setIsOutOfSync(false));
+  }, [lyrics]);
+
   const handleScroll = useCallback(() => {
     if (ignoreScrollRef.current) return;
     if (activeIndex < 0 || !containerRef.current || !lineRefs.current[activeIndex])
@@ -86,7 +94,10 @@ export default function LyricsPanel({
     const containerCenter = container.top + container.height / 2;
     const lineCenter = line.top + line.height / 2;
     const distance = Math.abs(containerCenter - lineCenter);
-    setIsOutOfSync(distance > SYNC_THRESHOLD_PX);
+    const outOfSync = distance > SYNC_THRESHOLD_PX;
+    if (outOfSync) followPausedRef.current = true;
+    else followPausedRef.current = false;
+    setIsOutOfSync(outOfSync);
   }, [activeIndex]);
 
   const handleSyncClick = useCallback(() => {
