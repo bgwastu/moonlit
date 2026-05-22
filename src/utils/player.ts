@@ -52,24 +52,6 @@ export function createDynamicTheme(
 }
 
 /**
- * Calculate effective playback rate combining speed and pitch.
- */
-export function getEffectiveRate(rate: number, semitones: number): number {
-  return rate * Math.pow(2, semitones / 12);
-}
-
-/**
- * Get high-resolution cover URL.
- */
-export function getHighResCoverUrl(coverUrl: string, platform?: string): string {
-  if (!coverUrl) return coverUrl;
-  if (platform === "youtube") {
-    return coverUrl.replace(/(?<!maxres)(hq|mq|sd)?default/, "maxresdefault");
-  }
-  return coverUrl;
-}
-
-/**
  * Get semitones that correspond to a given rate (for pitch lock).
  */
 export function getSemitonesFromRate(rate: number): number {

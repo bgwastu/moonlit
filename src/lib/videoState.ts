@@ -25,7 +25,7 @@ export function getModeFromRate(
 }
 
 /** Generate storage key from video URL */
-export function getVideoStorageKey(url: string): string {
+function getVideoStorageKey(url: string): string {
   try {
     const urlObj = new URL(url);
     if (urlObj.hostname.includes("youtube") || urlObj.hostname.includes("youtu.be")) {
@@ -88,13 +88,6 @@ export function getVideoState(url: string): State | null {
   } catch {
     return null;
   }
-}
-
-/** Clear video state for a URL */
-export function clearVideoState(url: string): void {
-  try {
-    localStorage.removeItem(getVideoStorageKey(url));
-  } catch {}
 }
 
 /** Remove oldest entries when exceeding storage limit */

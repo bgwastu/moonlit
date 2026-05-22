@@ -39,7 +39,7 @@ interface UseLyricsOptions {
   offsetSeconds?: number; // Offset to apply to lyrics timing
 }
 
-export interface DiscoveredLyrics {
+interface DiscoveredLyrics {
   id: number;
   trackName: string;
   artistName: string;

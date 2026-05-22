@@ -501,26 +501,6 @@ export async function downloadVideoToFile(
   }
 }
 
-/** Download video and return as Buffer */
-export async function downloadVideo(
-  url: string,
-  options: DownloadOptions = {},
-): Promise<Buffer> {
-  const { filePath, folderPath } = await downloadVideoToFile(url, options);
-
-  try {
-    return await fs.readFile(filePath);
-  } finally {
-    try {
-      const files = await fs.readdir(folderPath);
-      await Promise.all(
-        files.map((f) => fs.unlink(path.join(folderPath, f)).catch(() => {})),
-      );
-      await fs.rmdir(folderPath).catch(() => {});
-    } catch {}
-  }
-}
-
 /** Download audio to file. Caller must cleanup folderPath. */
 export async function downloadAudioToFile(
   url: string,
@@ -569,57 +549,4 @@ export async function downloadAudioToFile(
     } catch {}
     throw error;
   }
-}
-
-/** Download audio and return as Buffer */
-export async function downloadAudio(
-  url: string,
-  options: DownloadOptions = {},
-): Promise<Buffer> {
-  const { filePath, folderPath } = await downloadAudioToFile(url, options);
-
-  try {
-    return await fs.readFile(filePath);
-  } finally {
-    try {
-      const files = await fs.readdir(folderPath);
-      await Promise.all(
-        files.map((f) => fs.unlink(path.join(folderPath, f)).catch(() => {})),
-      );
-      await fs.rmdir(folderPath).catch(() => {});
-    } catch {}
-  }
-}
-
-/** Get direct video URL for streaming */
-export async function getVideoUrl(url: string, cookies?: string): Promise<string> {
-  const primaryFormat =
-    "best[height<=480][vcodec^=avc][acodec^=mp4a]/bestvideo[height<=480][vcodec^=avc]+bestaudio[acodec^=mp4a]/best[height<=480]";
-  const fallbackFormat = "best[height<=480]/best";
-
-  let result: ExecuteResult;
-  if (isYoutubeURL(url)) {
-    result = await executeYtDlp({
-      args: ["--format", primaryFormat, "--get-url", "--no-playlist", url],
-      cookies,
-    });
-    if (result.code !== 0 && isFormatNotAvailableError(result.stderr)) {
-      result = await executeYtDlp({
-        args: ["--format", fallbackFormat, "--get-url", "--no-playlist", url],
-        cookies,
-      });
-    }
-  } else {
-    result = await executeYtDlp({
-      args: ["--get-url", "--no-playlist", url],
-      cookies,
-    });
-  }
-
-  if (result.code !== 0) throw new Error(parseYtDlpError(result.stderr));
-
-  const videoUrl = result.stdout.trim();
-  if (!videoUrl) throw new Error("Failed to get video URL");
-
-  return videoUrl;
 }

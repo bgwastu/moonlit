@@ -1,5 +1,5 @@
 /** Hostnames allowed for image proxy (CORS-free cover images) */
-export const IMAGE_PROXY_ALLOWED_HOSTS = new Set([
+const IMAGE_PROXY_ALLOWED_HOSTS = new Set([
   "i.ytimg.com",
   "img.youtube.com",
   "p16-sign.tiktokcdn-us.com",
@@ -25,7 +25,7 @@ export function defaultYouTubeThumbnailById(videoId: string): string {
 }
 
 /** Upgrade YouTube thumbnail to maxres without doubling (avoid maxresmaxresdefault) */
-export function toMaxResCoverUrl(url: string): string {
+function toMaxResCoverUrl(url: string): string {
   if (!url) return url;
   return url.replace(/(?<!maxres)(hq|mq|sd)?default/, "maxresdefault");
 }
@@ -46,7 +46,7 @@ export function getImageUrlForCanvas(coverUrl: string): string {
 /**
  * Search listing thumbs: avoid maxres (smaller, consistent). Strip maxres URLs to hqdefault.
  */
-export function normalizeSearchThumbnailQuality(url: string): string {
+function normalizeSearchThumbnailQuality(url: string): string {
   if (!url) return url;
   return url
     .replace(/maxresdefault\.jpg/gi, "hqdefault.jpg")

@@ -1,7 +1,3 @@
-export const getSongLength = (bufferDuration: number, playbackRate: number) => {
-  return bufferDuration / playbackRate;
-};
-
 export function isYoutubeURL(url: string) {
   const youtubeRegex =
     /^.*(?:(?:youtu\.be\/|v\/|vi\/|u\/\w\/|embed\/|shorts\/)|(?:(?:watch)?\?v(?:i)?=|\&v(?:i)?=))([^#\&\?]*).*/;
@@ -55,12 +51,6 @@ export function getTikTokId(url: string) {
   return match ? match[2] : null;
 }
 
-export function getTikTokCreator(url: string) {
-  const tiktokRegex = /^https?:\/\/(www\.)?tiktok\.com\/@([\w.-]+)\/video\/\d+/;
-  const match = url.match(tiktokRegex);
-  return match ? match[2] : null;
-}
-
 export function getTikTokCreatorAndVideoId(url: string): {
   creator: string | null;
   videoId: string | null;
@@ -81,17 +71,6 @@ export function getFormattedTime(seconds: number) {
   const formattedSeconds = String(remainingSeconds).padStart(2, "0");
 
   return `${formattedMinutes}:${formattedSeconds}`;
-}
-
-export function parseISO8601Duration(duration: string): number {
-  const match = duration.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
-  if (!match) return 0;
-
-  const hours = parseInt(match[1] || "0");
-  const minutes = parseInt(match[2] || "0");
-  const seconds = parseInt(match[3] || "0");
-
-  return hours * 3600 + minutes * 60 + seconds;
 }
 
 export function timeAgo(timestamp: number): string {

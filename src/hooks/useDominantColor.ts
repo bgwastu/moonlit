@@ -2,10 +2,7 @@ import { useEffect, useState } from "react";
 import { getImageUrlForCanvas } from "@/lib/imageProxy";
 
 /** Extract dominant color from image using canvas pixel sampling */
-export function getDominantColorFromImage(
-  img: HTMLImageElement,
-  palenessFactor: number = 0.8,
-) {
+function getDominantColorFromImage(img: HTMLImageElement, palenessFactor: number = 0.8) {
   const canvas = document.createElement("canvas");
   const ctx = canvas.getContext("2d");
   if (!ctx) return "rgb(0,0,0)";

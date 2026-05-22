@@ -28,7 +28,7 @@ function looksLikeMozCookieHeader(line: string): boolean {
  * name, value). Tabs are canonical; pasted text often collapses tabs → spaces — fallback
  * uses structured whitespace (value is the remainder after cookie name).
  */
-export function splitNetscapeCookieLine(line: string): string[] | null {
+function splitNetscapeCookieLine(line: string): string[] | null {
   const trimmed = line.trim();
   if (!trimmed || trimmed.startsWith("#")) return null;
 
@@ -67,7 +67,7 @@ export function splitNetscapeCookieLine(line: string): string[] | null {
  * Rewrite pasted cookies into strict tab-separated Netscape format yt-dlp expects.
  * Prepends `# Netscape HTTP Cookie File` if missing when cookie rows are present.
  */
-export function canonicalizeCookiesContent(content: string): string {
+function canonicalizeCookiesContent(content: string): string {
   const normalized = content.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
   const rawLines = normalized.split("\n");
   let hasMozHeader = false;
@@ -109,12 +109,6 @@ export async function getUserCookies(): Promise<string> {
 /** Save user cookies to local storage (canonical tab-separated Moz format) */
 export async function setUserCookies(content: string): Promise<void> {
   await store.setItem(COOKIES_KEY, canonicalizeCookiesContent(content));
-}
-
-/** Check if user has configured cookies */
-export async function hasUserCookies(): Promise<boolean> {
-  const content = await getUserCookies();
-  return content.trim().length > 0;
 }
 
 /** Get custom cookies enabled preference */

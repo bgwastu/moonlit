@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-export type StretchPlayerState = "loading" | "ready" | "error";
+type StretchPlayerState = "loading" | "ready" | "error";
 
 interface UseStretchPlayerProps {
   fileUrl: string;

@@ -27,7 +27,7 @@ export function isAllowedMediaProxyUrl(url: string): boolean {
   }
 }
 
-export const MEDIA_PROXY_PATH = "/api/media/proxy";
+const MEDIA_PROXY_PATH = "/api/media/proxy";
 
 /** Build same-origin proxy URL for a direct media URL (avoids CORS). */
 export function getMediaProxyUrl(targetUrl: string): string {
