@@ -137,6 +137,7 @@ export function Player({ media, repeating }: { media: Media; repeating: boolean 
   );
   const [lyricsSearchModalOpened, setLyricsSearchModalOpened] = useState(false);
   const [lyricsSettingsModalOpened, setLyricsSettingsModalOpened] = useState(false);
+  const autoOpenedLyricsSearchForRef = useRef<string | null>(null);
 
   const dominantColor = useDominantColor(media.metadata.coverUrl);
   const { toast, showToast } = useToast();
@@ -217,6 +218,15 @@ export function Player({ media, repeating }: { media: Media; repeating: boolean 
 
   // Whether lyrics are available (either discovered or manually selected)
   const hasLyrics = lyricsState === "ready" && lyrics.length > 0;
+
+  // If automatic lyrics discovery fails, immediately show the manual search modal.
+  useEffect(() => {
+    if (!showLyrics || lyricsState !== "not_found" || !duration) return;
+    if (autoOpenedLyricsSearchForRef.current === sourceUrl) return;
+
+    autoOpenedLyricsSearchForRef.current = sourceUrl;
+    setLyricsSearchModalOpened(true);
+  }, [duration, lyricsState, showLyrics, sourceUrl]);
 
   // Lyrics handlers
   const handleSelectLyrics = useCallback(

@@ -57,16 +57,22 @@ export async function POST(request: Request) {
 
       // Test URL extraction
       return new Promise<Response>((resolve) => {
-        const args = ["--skip-download", "-J", "--no-playlist", url];
+        const args = [
+          "--sleep-requests",
+          "1",
+          "--sleep-interval",
+          "2",
+          "--max-sleep-interval",
+          "8",
+          "--skip-download",
+          "-J",
+          "--no-playlist",
+          url,
+        ];
 
         // Add system cookies if available
         if (existsSync(SYSTEM_COOKIES_PATH)) {
           args.unshift("--cookies", SYSTEM_COOKIES_PATH);
-        }
-
-        // Add proxy if configured
-        if (process.env.PROXY) {
-          args.unshift("--proxy", process.env.PROXY);
         }
 
         const proc = spawn("yt-dlp", args);

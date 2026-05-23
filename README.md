@@ -37,8 +37,6 @@ docker run -d \
   moonlit
 ```
 
-Optional: set `PROXY` if yt-dlp should use an external proxy.
-
 ## Native host (no Docker)
 
 Prerequisites:
@@ -56,8 +54,6 @@ bun install
 bun run build
 NODE_ENV=production bun run start
 ```
-
-If needed, set `PROXY` to route yt-dlp through any external proxy.
 
 # Credits
 
