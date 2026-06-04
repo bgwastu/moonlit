@@ -18,6 +18,26 @@ export interface DownloadState {
   message?: string;
 }
 
+interface DownloadPreload {
+  metadata?: Partial<Media["metadata"]>;
+  duration?: number;
+}
+
+function buildMetadata(
+  id: string | null,
+  preload: Partial<Media["metadata"]>,
+  fallback: Partial<Media["metadata"]> = {},
+): Media["metadata"] {
+  return {
+    id,
+    title: preload.title || fallback.title || "Unknown",
+    author: preload.author || fallback.author || "Unknown",
+    ...(preload.artist != null && { artist: preload.artist }),
+    ...(preload.album != null && { album: preload.album }),
+    coverUrl: preload.coverUrl || fallback.coverUrl || "",
+  };
+}
+
 export async function downloadWithProgress(
   url: string,
   preload: Partial<Media["metadata"]>,
@@ -25,6 +45,7 @@ export async function downloadWithProgress(
   abortSignal?: AbortSignal,
   videoMode?: boolean,
   quality?: "high" | "low",
+  preloaded?: DownloadPreload,
 ): Promise<Media> {
   // Direct MP3/MP4 links: use proxy only when different origin (avoid CORS)
   if (isDirectMediaURL(url)) {
@@ -59,14 +80,7 @@ export async function downloadWithProgress(
       fileUrl = getMediaProxyUrl(url);
     }
 
-    const baseMeta: Media["metadata"] = {
-      id: null,
-      title: preload.title ?? fallbackTitle,
-      author: preload.author ?? "Unknown",
-      coverUrl: preload.coverUrl ?? "",
-      ...(preload.artist != null && { artist: preload.artist }),
-      ...(preload.album != null && { album: preload.album }),
-    };
+    const baseMeta = buildMetadata(null, preload, { title: fallbackTitle });
 
     // In browser, try to read embedded ID3 metadata from MP3 (first 128KB)
     if (
@@ -153,14 +167,7 @@ export async function downloadWithProgress(
       return {
         fileUrl: blobUrl,
         sourceUrl: url,
-        metadata: {
-          id,
-          title: mergedMeta.title || "Unknown",
-          author: mergedMeta.author || "Unknown",
-          coverUrl: mergedMeta.coverUrl || "",
-          ...(mergedMeta.artist != null && { artist: mergedMeta.artist }),
-          ...(mergedMeta.album != null && { album: mergedMeta.album }),
-        },
+        metadata: buildMetadata(id, mergedMeta),
       };
     }
 
@@ -174,14 +181,7 @@ export async function downloadWithProgress(
       return {
         fileUrl: audioUrl,
         sourceUrl: url,
-        metadata: {
-          id,
-          title: mergedMeta.title || "Unknown",
-          author: mergedMeta.author || "Unknown",
-          coverUrl: mergedMeta.coverUrl || "",
-          ...(mergedMeta.artist != null && { artist: mergedMeta.artist }),
-          ...(mergedMeta.album != null && { album: mergedMeta.album }),
-        },
+        metadata: buildMetadata(id, mergedMeta),
       };
     }
   }
@@ -207,7 +207,16 @@ export async function downloadWithProgress(
     fetch("/api/media/stream", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ url, cookies, videoMode, quality }),
+      body: JSON.stringify({
+        url,
+        cookies,
+        videoMode,
+        quality,
+        preload: {
+          metadata: preloaded?.metadata ?? preload,
+          duration: preloaded?.duration,
+        },
+      }),
       signal: controller.signal,
     })
       .then((response) => {
@@ -271,35 +280,22 @@ export async function downloadWithProgress(
 
                       onProgress({ status: "complete", percent: 100 });
 
-                      let blob: Blob;
-
-                      if (data.downloadUrl) {
-                        onProgress({
-                          status: "processing",
-                          percent: 100,
-                          message: "Downloading media file...",
-                        });
-
-                        const res = await fetch(data.downloadUrl);
-                        if (!res.ok) throw new Error("Failed to retrieve media file");
-                        blob = await res.blob();
-
-                        // Set correct type if provided
-                        if (data.contentType) {
-                          blob = new Blob([blob], { type: data.contentType });
-                        }
-                      } else if (data.data) {
-                        // Legacy base64 support
-                        const binaryString = atob(data.data);
-                        const bytes = new Uint8Array(binaryString.length);
-                        for (let i = 0; i < binaryString.length; i++) {
-                          bytes[i] = binaryString.charCodeAt(i);
-                        }
-                        blob = new Blob([bytes], {
-                          type: data.contentType,
-                        });
-                      } else {
+                      if (!data.downloadUrl) {
                         throw new Error("No media data received");
+                      }
+
+                      onProgress({
+                        status: "processing",
+                        percent: 100,
+                        message: "Downloading media file...",
+                      });
+
+                      const res = await fetch(data.downloadUrl);
+                      if (!res.ok) throw new Error("Failed to retrieve media file");
+                      let blob = await res.blob();
+
+                      if (data.contentType) {
+                        blob = new Blob([blob], { type: data.contentType });
                       }
                       const blobUrl = URL.createObjectURL(blob);
 
@@ -307,14 +303,11 @@ export async function downloadWithProgress(
                       const serverAuthor = data.author || "";
                       const serverThumbnail = data.thumbnail || "";
 
-                      const resolvedMetadata: Media["metadata"] = {
-                        id: id || "unknown",
-                        title: preload.title || serverTitle || "Unknown",
-                        author: preload.author || serverAuthor || "Unknown",
-                        ...(preload.artist != null && { artist: preload.artist }),
-                        ...(preload.album != null && { album: preload.album }),
-                        coverUrl: preload.coverUrl || serverThumbnail || "",
-                      };
+                      const resolvedMetadata = buildMetadata(id || "unknown", preload, {
+                        title: serverTitle,
+                        author: serverAuthor,
+                        coverUrl: serverThumbnail,
+                      });
 
                       // Cache the media
                       if (id) {

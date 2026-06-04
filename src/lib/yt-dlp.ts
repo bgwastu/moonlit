@@ -40,6 +40,7 @@ export interface DownloadOptions {
   cookies?: string;
   quality?: "high" | "low";
   onProgress?: (progress: DownloadProgress) => void;
+  signal?: AbortSignal;
 }
 
 interface ExecuteResult {
@@ -55,6 +56,7 @@ interface ExecuteOptions {
   youtube?: boolean;
   onStdout?: (data: string) => void;
   onStderr?: (data: string) => void;
+  signal?: AbortSignal;
 }
 
 interface TempDownloadContext {
@@ -65,7 +67,8 @@ interface TempDownloadContext {
 const DATA_DIR = path.join(process.cwd(), "data");
 const SYSTEM_COOKIES_PATH = path.join(DATA_DIR, "cookies.txt");
 
-const MAX_CONCURRENT_YTDLP = 2;
+const MAX_CONCURRENT_INFO = 2;
+const MAX_CONCURRENT_DOWNLOAD = 1;
 const PROCESS_RETRIES = 2;
 const PROCESS_RETRY_BASE_DELAY_MS = 2000;
 const VIDEO_INFO_TTL_MS = 5 * 60 * 1000;
@@ -151,7 +154,8 @@ class Semaphore {
   }
 }
 
-const ytdlpSemaphore = new Semaphore(MAX_CONCURRENT_YTDLP);
+const infoSemaphore = new Semaphore(MAX_CONCURRENT_INFO);
+const downloadSemaphore = new Semaphore(MAX_CONCURRENT_DOWNLOAD);
 const videoInfoCache = new TtlCache<VideoInfo>(VIDEO_INFO_TTL_MS);
 const searchCache = new TtlCache<YouTubeSearchResult[]>(SEARCH_TTL_MS);
 
@@ -254,17 +258,20 @@ export async function searchYouTube(
   if (!cleanQuery) return [];
 
   const limit = Math.min(Math.max(options.limit ?? 3, 1), 10);
-  const cacheKey = `q=${cleanQuery}|limit=${limit}`;
+  const cacheKey = `q=${cleanQuery}|limit=${limit}|${cookieCacheKey("cookies", options.cookies)}`;
   const cached = searchCache.get(cacheKey);
   if (cached) return cached;
 
   const target = isYoutubeURL(cleanQuery) ? cleanQuery : `ytsearch${limit}:${cleanQuery}`;
-  const result = await executeYtDlp({
-    target,
-    youtube: true,
-    cookies: options.cookies,
-    args: ["--skip-download", "--flat-playlist", "-J", target],
-  });
+  const result = await executeYtDlp(
+    {
+      target,
+      youtube: true,
+      cookies: options.cookies,
+      args: ["--skip-download", "--flat-playlist", "-J", target],
+    },
+    infoSemaphore,
+  );
 
   throwIfFailed(result);
 
@@ -277,20 +284,24 @@ export async function searchYouTube(
 /** Get video metadata without downloading. For music (YouTube Music, etc.) extracts track, artist, album. */
 export async function getVideoInfo(url: string, cookies?: string): Promise<VideoInfo> {
   const canCache = isYoutubeURL(url);
-  const cached = canCache ? videoInfoCache.get(url) : undefined;
+  const cacheKey = canCache ? cookieCacheKey(url, cookies) : undefined;
+  const cached = cacheKey ? videoInfoCache.get(cacheKey) : undefined;
   if (cached) return cached;
 
-  const result = await executeYtDlp({
-    target: url,
-    youtube: canCache,
-    cookies,
-    args: ["--skip-download", "-J", url],
-  });
+  const result = await executeYtDlp(
+    {
+      target: url,
+      youtube: canCache,
+      cookies,
+      args: ["--skip-download", "-J", url],
+    },
+    infoSemaphore,
+  );
 
   throwIfFailed(result);
 
   const videoInfo = parseVideoInfoJson(result.stdout);
-  if (canCache) videoInfoCache.set(url, videoInfo);
+  if (cacheKey) videoInfoCache.set(cacheKey, videoInfo);
   return videoInfo;
 }
 
@@ -309,6 +320,7 @@ export async function downloadVideoToFile(
       cookies: options.cookies,
       onProgress: options.onProgress,
       video: true,
+      signal: options.signal,
     });
 
     if (
@@ -317,6 +329,8 @@ export async function downloadVideoToFile(
       preferredFormat &&
       isFormatNotAvailableError(result.stderr)
     ) {
+      if (options.signal?.aborted)
+        throw new DOMException("Download cancelled", "AbortError");
       result = await runDownload({
         url,
         outputTemplate,
@@ -324,6 +338,7 @@ export async function downloadVideoToFile(
         cookies: options.cookies,
         onProgress: options.onProgress,
         video: true,
+        signal: options.signal,
       });
     }
 
@@ -343,10 +358,11 @@ export async function downloadAudioToFile(
     const result = await runDownload({
       url,
       outputTemplate,
-      format: "bestaudio/best",
+      format: "bestaudio[acodec^=mp4a]/bestaudio/best",
       cookies: options.cookies,
       onProgress: options.onProgress,
       video: false,
+      signal: options.signal,
     });
 
     throwIfFailed(result);
@@ -363,6 +379,7 @@ async function runDownload(options: {
   cookies?: string;
   onProgress?: (progress: DownloadProgress) => void;
   video: boolean;
+  signal?: AbortSignal;
 }): Promise<ExecuteResult> {
   const args = [
     ...(options.format ? ["--format", options.format] : []),
@@ -379,15 +396,19 @@ async function runDownload(options: {
     cookies: options.cookies,
     youtube: isYoutubeURL(options.url),
     onStdout: (data) => emitProgress(data, options.onProgress),
+    signal: options.signal,
   });
 }
 
-async function executeYtDlp(options: ExecuteOptions): Promise<ExecuteResult> {
+async function executeYtDlp(
+  options: ExecuteOptions,
+  semaphore: Semaphore = downloadSemaphore,
+): Promise<ExecuteResult> {
   const { path: cookiePath, isTemp } = await resolveCookiePath(options.cookies);
   const args = buildArgs(options, cookiePath);
 
   try {
-    return await ytdlpSemaphore.runExclusive(() => executeWithRetries(args, options));
+    return await semaphore.runExclusive(() => executeWithRetries(args, options));
   } finally {
     if (isTemp) await cleanupTempCookies(cookiePath);
   }
@@ -404,9 +425,13 @@ function buildArgs(options: ExecuteOptions, cookiePath: string | null): string[]
 
 async function executeWithRetries(
   args: string[],
-  handlers: Pick<ExecuteOptions, "onStdout" | "onStderr">,
+  handlers: Pick<ExecuteOptions, "onStdout" | "onStderr" | "signal">,
 ): Promise<ExecuteResult> {
   for (let attempt = 0; attempt <= PROCESS_RETRIES; attempt++) {
+    if (handlers.signal?.aborted) {
+      throw new DOMException("Download cancelled", "AbortError");
+    }
+
     const result = await spawnYtDlp(args, handlers);
     if (result.code === 0) return result;
 
@@ -430,12 +455,26 @@ async function executeWithRetries(
 
 async function spawnYtDlp(
   args: string[],
-  handlers: Pick<ExecuteOptions, "onStdout" | "onStderr">,
+  handlers: Pick<ExecuteOptions, "onStdout" | "onStderr" | "signal">,
 ): Promise<ExecuteResult> {
   return new Promise((resolve, reject) => {
     const proc = spawn("yt-dlp", args);
     let stdout = "";
     let stderr = "";
+
+    const abortYtDlp = () => {
+      proc.kill();
+      reject(new DOMException("Download cancelled", "AbortError"));
+    };
+
+    if (handlers.signal) {
+      if (handlers.signal.aborted) {
+        proc.kill();
+        reject(new DOMException("Download cancelled", "AbortError"));
+        return;
+      }
+      handlers.signal.addEventListener("abort", abortYtDlp, { once: true });
+    }
 
     proc.stdout.on("data", (data) => {
       const str = data.toString();
@@ -449,8 +488,12 @@ async function spawnYtDlp(
       handlers.onStderr?.(str);
     });
 
-    proc.on("close", (code) => resolve({ code: code ?? 1, stdout, stderr }));
+    proc.on("close", (code) => {
+      handlers.signal?.removeEventListener("abort", abortYtDlp);
+      resolve({ code: code ?? 1, stdout, stderr });
+    });
     proc.on("error", (error) => {
+      handlers.signal?.removeEventListener("abort", abortYtDlp);
       reject(new Error(`Failed to spawn yt-dlp: ${error.message}`));
     });
   });
@@ -688,6 +731,45 @@ function getDefaultVideoFormat(url: string, quality: "high" | "low"): string | u
 
 function getFallbackVideoFormat(quality: "high" | "low"): string {
   return quality === "high" ? "best[height<=720]/best" : "best[height<=480]/best";
+}
+
+function cookieCacheKey(base: string, cookies?: string): string {
+  if (!cookies?.trim()) {
+    return hasSystemCookies() ? `${base}::system` : `${base}::nocookies`;
+  }
+  return `${base}::user:${simpleHash(cookies)}`;
+}
+
+function simpleHash(s: string): string {
+  let hash = 0;
+  for (let i = 0; i < s.length; i++) {
+    hash = (hash << 5) - hash + s.charCodeAt(i);
+    hash |= 0;
+  }
+  return Math.abs(hash).toString(36).slice(0, 8);
+}
+
+/** Derive MIME type from downloaded file extension. */
+export function getContentType(filePath: string): string {
+  const ext = path.extname(filePath).toLowerCase();
+  switch (ext) {
+    case ".mp4":
+      return "video/mp4";
+    case ".m4a":
+      return "audio/mp4";
+    case ".mp3":
+      return "audio/mpeg";
+    case ".webm":
+      return "video/webm";
+    case ".ogg":
+      return "audio/ogg";
+    case ".opus":
+      return "audio/ogg";
+    case ".wav":
+      return "audio/wav";
+    default:
+      return "application/octet-stream";
+  }
 }
 
 function isYtSearchVideoRow(entry: YouTubeSearchResult): boolean {

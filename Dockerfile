@@ -31,13 +31,10 @@ WORKDIR /app
 RUN apk add --no-cache python3 py3-pip py3-setuptools ffmpeg curl bash
 
 # Configure yt-dlp: Node runtime + remote EJS (recommended upstream for YouTube JS challenges)
-# Rate-limit defaults reduce YouTube throttling: sleep 1s between requests, 2-8s between extractions
+# Rate-limit and args are managed by the app in src/lib/yt-dlp.ts to keep tuning in one place.
 RUN printf '%s\n' \
   "--js-runtimes node" \
   "--remote-components ejs:github" \
-  "--sleep-requests 1" \
-  "--sleep-interval 2" \
-  "--max-sleep-interval 8" \
   > /etc/yt-dlp.conf
 
 ENV NODE_ENV=production

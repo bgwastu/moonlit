@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -39,8 +39,7 @@ import { useAppContext } from "@/context/AppContext";
 import { useMediaDownloader } from "@/hooks/useMediaDownloader";
 import useNoSleep from "@/hooks/useNoSleep";
 import { HistoryItem, Media } from "@/interfaces";
-import { getPlatform, getTikTokId, getYouTubeId, isYoutubeURL } from "@/utils";
-import { getMedia } from "@/utils/cache";
+import { getPlatform, isYoutubeURL } from "@/utils";
 
 interface InitialPlayerProps {
   url?: string;
@@ -107,41 +106,25 @@ export default function InitialPlayer({
     downloadStarted.current = true;
 
     async function checkAndStart() {
-      // Check cache
-      let videoKey: string | null = null;
-      let audioKey: string | null = null;
-
-      if (isYouTube) {
-        const id = getYouTubeId(url!);
-        if (id) {
-          videoKey = `yt:${id}:video`;
-          audioKey = `yt:${id}:audio`;
-        }
-      } else {
-        const id = getTikTokId(url!);
-        if (id) {
-          videoKey = `tt:${id}:video`;
-        }
-      }
-
-      const cachedVideo = videoKey ? await getMedia(videoKey) : null;
-      const cachedAudio = audioKey ? await getMedia(audioKey) : null;
-
-      if (cachedVideo || cachedAudio) {
-        startDownload(undefined, "high");
-        return;
-      }
-
       // If duration > 10 mins (YouTube), ask permission
       if (isYouTube && duration && duration > 600) {
         setConfirmationOpened(true);
       } else {
-        startDownload(true, "high");
+        startDownload(true, "high", { metadata, duration });
       }
     }
 
     checkAndStart();
-  }, [url, duration, router, startDownload, isYouTube, isLocalFile, metadataLoadError]);
+  }, [
+    url,
+    duration,
+    router,
+    startDownload,
+    isYouTube,
+    isLocalFile,
+    metadata,
+    metadataLoadError,
+  ]);
 
   const handleGoToPlayer = () => {
     setIsPlayer(true);
@@ -296,7 +279,7 @@ export default function InitialPlayer({
           <Button
             onClick={() => {
               setConfirmationOpened(false);
-              startDownload(includeVideo, quality);
+              startDownload(includeVideo, quality, { metadata, duration });
             }}
           >
             Download
@@ -456,7 +439,7 @@ export default function InitialPlayer({
                 <Button
                   variant="filled"
                   fullWidth
-                  onClick={() => startDownload(true, "high")}
+                  onClick={() => startDownload(true, "high", { metadata, duration })}
                 >
                   Try again
                 </Button>

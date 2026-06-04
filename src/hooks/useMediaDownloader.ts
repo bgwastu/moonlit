@@ -16,7 +16,11 @@ export function useMediaDownloader(url: string, metadata: Partial<Media["metadat
   });
 
   const startDownload = useCallback(
-    (withVideo?: boolean, downloadQuality: "high" | "low" = "high") => {
+    (
+      withVideo?: boolean,
+      downloadQuality: "high" | "low" = "high",
+      preload?: { metadata?: Partial<Media["metadata"]>; duration?: number },
+    ) => {
       if (!isSupportedURL(url)) {
         notifications.show({
           title: "Error",
@@ -33,11 +37,12 @@ export function useMediaDownloader(url: string, metadata: Partial<Media["metadat
 
       downloadWithProgress(
         url,
-        metadata,
+        preload?.metadata ?? metadata,
         setDownloadState,
         abortController.signal,
         withVideo,
         downloadQuality,
+        preload,
       )
         .then((downloadedMedia: Media) => {
           setMedia(downloadedMedia);

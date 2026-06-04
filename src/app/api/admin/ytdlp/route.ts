@@ -1,11 +1,8 @@
 import { NextResponse } from "next/server";
-import { execSync, spawn } from "child_process";
-import { existsSync } from "fs";
-import path from "path";
+import { execSync } from "child_process";
+import { getVideoInfo } from "@/lib/yt-dlp";
 
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
-const DATA_DIR = path.join(process.cwd(), "data");
-const SYSTEM_COOKIES_PATH = path.join(DATA_DIR, "cookies.txt");
 
 function verifyPassword(request: Request): boolean {
   const authHeader = request.headers.get("Authorization");
@@ -37,12 +34,10 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  // Check if admin is enabled
   if (!ADMIN_PASSWORD) {
     return NextResponse.json({ error: "Admin not configured" }, { status: 403 });
   }
 
-  // Verify password
   if (!verifyPassword(request)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -55,94 +50,23 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: "URL is required for test" }, { status: 400 });
       }
 
-      // Test URL extraction
-      return new Promise<Response>((resolve) => {
-        const args = [
-          "--sleep-requests",
-          "1",
-          "--sleep-interval",
-          "2",
-          "--max-sleep-interval",
-          "8",
-          "--skip-download",
-          "-J",
-          "--no-playlist",
-          url,
-        ];
-
-        // Add system cookies if available
-        if (existsSync(SYSTEM_COOKIES_PATH)) {
-          args.unshift("--cookies", SYSTEM_COOKIES_PATH);
-        }
-
-        const proc = spawn("yt-dlp", args);
-        let stdout = "";
-        let stderr = "";
-
-        proc.stdout.on("data", (data) => {
-          stdout += data.toString();
+      try {
+        const info = await getVideoInfo(url);
+        return NextResponse.json({
+          success: true,
+          title: info.title,
+          author: info.author,
+          ...(info.artist && { artist: info.artist }),
+          ...(info.album && { album: info.album }),
+          duration: info.lengthSeconds,
         });
-
-        proc.stderr.on("data", (data) => {
-          stderr += data.toString();
-        });
-
-        proc.on("close", (code) => {
-          if (code === 0) {
-            try {
-              const info = JSON.parse(stdout);
-              const artists = info.artists;
-              const artist =
-                Array.isArray(artists) && artists.length > 0
-                  ? artists.join(", ")
-                  : info.artist;
-              const author = artist || info.uploader || info.channel;
-              resolve(
-                NextResponse.json({
-                  success: true,
-                  title: info.track || info.title,
-                  author,
-                  ...(artist && { artist }),
-                  ...(info.album && { album: info.album }),
-                  duration: info.duration,
-                }),
-              );
-            } catch {
-              resolve(
-                NextResponse.json(
-                  { error: "Failed to parse video info" },
-                  { status: 500 },
-                ),
-              );
-            }
-          } else {
-            resolve(
-              NextResponse.json(
-                {
-                  error: "Test failed",
-                  details: stderr.substring(0, 500),
-                },
-                { status: 400 },
-              ),
-            );
-          }
-        });
-
-        proc.on("error", (error) => {
-          resolve(
-            NextResponse.json(
-              { error: `Failed to run test: ${error.message}` },
-              { status: 500 },
-            ),
-          );
-        });
-
-        // Timeout after 30 seconds
-        setTimeout(() => {
-          proc.kill();
-          resolve(NextResponse.json({ error: "Test timed out" }, { status: 504 }));
-        }, 30000);
-      });
+      } catch (e) {
+        const message = e instanceof Error ? e.message : "Test failed";
+        return NextResponse.json(
+          { error: "Test failed", details: message },
+          { status: 400 },
+        );
+      }
     }
 
     return NextResponse.json({ error: "Invalid action" }, { status: 400 });
