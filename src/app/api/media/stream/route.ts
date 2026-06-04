@@ -15,8 +15,14 @@ const MEDIA_DIR = path.join(getTempDir(), "moonlit-media");
 const ABANDONED_TTL_MS = 30 * 60 * 1000;
 const CLEANUP_INTERVAL_MS = 5 * 60 * 1000;
 
+const cleanupState = globalThis as typeof globalThis & {
+  __moonlitMediaCleanupTimer?: ReturnType<typeof setInterval>;
+};
+
 /** Periodically remove abandoned media files older than TTL. */
 function startAbandonedCleanup(): void {
+  if (cleanupState.__moonlitMediaCleanupTimer) return;
+
   const sweep = async () => {
     try {
       if (!existsSync(MEDIA_DIR)) return;
@@ -36,8 +42,13 @@ function startAbandonedCleanup(): void {
       );
     } catch {}
   };
-  sweep();
-  setInterval(sweep, CLEANUP_INTERVAL_MS);
+
+  void sweep();
+  const timer = setInterval(() => {
+    void sweep();
+  }, CLEANUP_INTERVAL_MS);
+  timer.unref?.();
+  cleanupState.__moonlitMediaCleanupTimer = timer;
 }
 startAbandonedCleanup();
 

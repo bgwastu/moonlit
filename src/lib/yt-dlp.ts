@@ -1,5 +1,5 @@
 import { spawn } from "child_process";
-import { existsSync, promises as fs, readFileSync } from "fs";
+import { existsSync, promises as fs, readFileSync, statSync } from "fs";
 import os from "os";
 import path from "path";
 import { isYoutubeURL } from "@/utils";
@@ -735,9 +735,18 @@ function getFallbackVideoFormat(quality: "high" | "low"): string {
 
 function cookieCacheKey(base: string, cookies?: string): string {
   if (!cookies?.trim()) {
-    return hasSystemCookies() ? `${base}::system` : `${base}::nocookies`;
+    return `${base}::${getSystemCookieCacheKey()}`;
   }
   return `${base}::user:${simpleHash(cookies)}`;
+}
+
+function getSystemCookieCacheKey(): string {
+  if (!hasSystemCookies()) return "nocookies";
+  try {
+    return `system:${statSync(SYSTEM_COOKIES_PATH).mtimeMs}`;
+  } catch {
+    return "system";
+  }
 }
 
 function simpleHash(s: string): string {

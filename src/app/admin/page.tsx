@@ -11,20 +11,10 @@ import {
   PasswordInput,
   Stack,
   Text,
-  TextInput,
   Textarea,
   Title,
 } from "@mantine/core";
-import {
-  IconAlertCircle,
-  IconCheck,
-  IconCookie,
-  IconDownload,
-  IconRefresh,
-  IconTestPipe,
-} from "@tabler/icons-react";
-
-const DEFAULT_TEST_URL = "https://www.youtube.com/watch?v=XgSobzBJFtg";
+import { IconAlertCircle, IconCheck, IconCookie } from "@tabler/icons-react";
 
 export default function AdminPage() {
   const [password, setPassword] = useState("");
@@ -38,19 +28,6 @@ export default function AdminPage() {
   const [cookiesError, setCookiesError] = useState<string | null>(null);
   const [cookiesSuccess, setCookiesSuccess] = useState(false);
 
-  // yt-dlp state
-  const [ytdlpVersion, setYtdlpVersion] = useState<string | null>(null);
-  const [ytdlpLoading, setYtdlpLoading] = useState(false);
-  const [ytdlpError, setYtdlpError] = useState<string | null>(null);
-
-  // Test state
-  const [testUrl, setTestUrl] = useState(DEFAULT_TEST_URL);
-  const [testLoading, setTestLoading] = useState(false);
-  const [testResult, setTestResult] = useState<{
-    success: boolean;
-    message: string;
-  } | null>(null);
-
   const authHeaders = {
     Authorization: `Bearer ${password}`,
     "Content-Type": "application/json",
@@ -61,10 +38,7 @@ export default function AdminPage() {
     setLoginError(null);
 
     try {
-      // Test authentication by fetching yt-dlp version
-      const res = await fetch("/api/admin/ytdlp", {
-        headers: { Authorization: `Bearer ${password}` },
-      });
+      const res = await fetch("/api/admin/cookies", { headers: authHeaders });
 
       if (res.status === 401) {
         setLoginError("Incorrect password");
@@ -80,37 +54,12 @@ export default function AdminPage() {
       }
 
       const data = await res.json();
-      setYtdlpVersion(data.version);
+      setCookies(data.cookies || "");
       setIsLoggedIn(true);
-
-      // Load cookies
-      loadCookies();
     } catch {
       setLoginError("Failed to connect to server");
     } finally {
       setLoginLoading(false);
-    }
-  };
-
-  const loadCookies = async () => {
-    setCookiesLoading(true);
-    setCookiesError(null);
-
-    try {
-      const res = await fetch("/api/admin/cookies", {
-        headers: authHeaders,
-      });
-
-      if (res.ok) {
-        const data = await res.json();
-        setCookies(data.cookies || "");
-      } else {
-        setCookiesError("Failed to load cookies");
-      }
-    } catch {
-      setCookiesError("Failed to connect to server");
-    } finally {
-      setCookiesLoading(false);
     }
   };
 
@@ -136,62 +85,6 @@ export default function AdminPage() {
       setCookiesError("Failed to connect to server");
     } finally {
       setCookiesLoading(false);
-    }
-  };
-
-  const refreshVersion = async () => {
-    setYtdlpLoading(true);
-    setYtdlpError(null);
-
-    try {
-      const res = await fetch("/api/admin/ytdlp", {
-        headers: authHeaders,
-      });
-
-      if (res.ok) {
-        const data = await res.json();
-        setYtdlpVersion(data.version);
-      } else {
-        setYtdlpError("Failed to get version");
-      }
-    } catch {
-      setYtdlpError("Failed to connect to server");
-    } finally {
-      setYtdlpLoading(false);
-    }
-  };
-
-  const testDownload = async () => {
-    setTestLoading(true);
-    setTestResult(null);
-
-    try {
-      const res = await fetch("/api/admin/ytdlp", {
-        method: "POST",
-        headers: authHeaders,
-        body: JSON.stringify({ action: "test", url: testUrl }),
-      });
-
-      const data = await res.json();
-
-      if (res.ok) {
-        setTestResult({
-          success: true,
-          message: `✓ Working! "${data.title}" by ${data.author} (${Math.floor(data.duration / 60)}:${(data.duration % 60).toString().padStart(2, "0")})`,
-        });
-      } else {
-        setTestResult({
-          success: false,
-          message: data.details || data.error || "Test failed",
-        });
-      }
-    } catch {
-      setTestResult({
-        success: false,
-        message: "Failed to connect to server",
-      });
-    } finally {
-      setTestLoading(false);
     }
   };
 
@@ -277,79 +170,6 @@ export default function AdminPage() {
               loading={cookiesLoading}
             >
               Save Cookies
-            </Button>
-          </Stack>
-        </Card>
-
-        {/* yt-dlp Management */}
-        <Card withBorder>
-          <Stack>
-            <Flex align="center" gap="xs">
-              <IconDownload size={20} />
-              <Title order={4}>yt-dlp Management</Title>
-            </Flex>
-
-            <Flex align="center" gap="md">
-              <Text>
-                Version:{" "}
-                <Text component="span" weight={600}>
-                  {ytdlpVersion || "Unknown"}
-                </Text>
-              </Text>
-              <Button
-                size="xs"
-                variant="subtle"
-                leftIcon={<IconRefresh size={14} />}
-                onClick={refreshVersion}
-                loading={ytdlpLoading}
-              >
-                Refresh
-              </Button>
-            </Flex>
-
-            {ytdlpError && (
-              <Alert icon={<IconAlertCircle size={16} />} color="red" variant="light">
-                {ytdlpError}
-              </Alert>
-            )}
-
-            <Text size="sm" color="dimmed">
-              Updates are managed outside the app runtime. Install or update yt-dlp on the
-              host/container image, then refresh this version.
-            </Text>
-
-            <Text size="sm" weight={600} mt="md">
-              Test URL
-            </Text>
-            <TextInput
-              value={testUrl}
-              onChange={(e) => setTestUrl(e.currentTarget.value)}
-              placeholder="Enter YouTube URL to test"
-            />
-
-            {testResult && (
-              <Alert
-                icon={
-                  testResult.success ? (
-                    <IconCheck size={16} />
-                  ) : (
-                    <IconAlertCircle size={16} />
-                  )
-                }
-                color={testResult.success ? "green" : "red"}
-                variant="light"
-              >
-                <Text style={{ wordBreak: "break-word" }}>{testResult.message}</Text>
-              </Alert>
-            )}
-
-            <Button
-              leftIcon={<IconTestPipe size={16} />}
-              onClick={testDownload}
-              loading={testLoading}
-              variant="outline"
-            >
-              Test Download
             </Button>
           </Stack>
         </Card>
