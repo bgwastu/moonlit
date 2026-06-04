@@ -1,5 +1,6 @@
 import { Metadata } from "next";
 import InitialPlayer from "@/components/InitialPlayer";
+import LocalInitialPlayer from "@/components/LocalInitialPlayer";
 import { readId3FromPublicPath } from "@/lib/id3Server";
 import { getVideoInfo, hasSystemCookies } from "@/lib/yt-dlp";
 import { isDirectMediaURL, isTikTokURL, isYoutubeURL } from "@/utils";
@@ -81,7 +82,7 @@ export default async function Page({
 
   // Local File Player (No URL)
   if (!url) {
-    return <InitialPlayer isLocalFile />;
+    return <LocalInitialPlayer />;
   }
 
   // Direct MP3/MP4: use URL as source, minimal metadata
@@ -96,56 +97,9 @@ export default async function Page({
     );
   }
 
-  // YouTube and TikTok: use getVideoInfo for metadata (includes music: title, artist, album).
-  // yt-dlp works without cookies for public videos; cookies are only needed for restricted content.
+  // YouTube and TikTok metadata is resolved by the client download stream so this
+  // page can render immediately instead of blocking on yt-dlp during SSR.
   if (isYoutubeURL(url) || isTikTokURL(url)) {
-    let playerProps:
-      | {
-          variant: "ok";
-          metadata: Parameters<typeof InitialPlayer>[0]["metadata"];
-          duration?: number;
-        }
-      | { variant: "youtube_error"; message: string }
-      | { variant: "tiktok_error" };
-
-    try {
-      const info = await getVideoInfo(url);
-      const metadata: Parameters<typeof InitialPlayer>[0]["metadata"] = {
-        title: info.title,
-        author: info.author,
-        coverUrl: info.thumbnail,
-      };
-      if (info.artist) metadata.artist = info.artist;
-      if (info.album) metadata.album = info.album;
-      playerProps = { variant: "ok", metadata, duration: info.lengthSeconds };
-    } catch (e) {
-      if (isYoutubeURL(url)) {
-        const message =
-          e instanceof Error && typeof e.message === "string" ? e.message.trim() : "";
-        const detail =
-          message ||
-          "That video appears to be unavailable, deleted, private, or the server could not read its metadata.";
-        playerProps = { variant: "youtube_error", message: detail };
-      } else {
-        console.error("Metadata fetch error:", e);
-        playerProps = { variant: "tiktok_error" };
-      }
-    }
-
-    if (playerProps.variant === "ok") {
-      return (
-        <InitialPlayer
-          url={url}
-          metadata={playerProps.metadata}
-          duration={playerProps.duration}
-        />
-      );
-    }
-    if (playerProps.variant === "youtube_error") {
-      return (
-        <InitialPlayer url={url} metadata={{}} metadataLoadError={playerProps.message} />
-      );
-    }
     return <InitialPlayer url={url} metadata={{}} />;
   }
 

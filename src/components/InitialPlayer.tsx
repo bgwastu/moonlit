@@ -39,13 +39,12 @@ import { useAppContext } from "@/context/AppContext";
 import { useMediaDownloader } from "@/hooks/useMediaDownloader";
 import useNoSleep from "@/hooks/useNoSleep";
 import { HistoryItem, Media } from "@/interfaces";
-import { getPlatform, isYoutubeURL } from "@/utils";
+import { isYoutubeURL } from "@/utils";
 
 interface InitialPlayerProps {
   url?: string;
   metadata?: Partial<Media["metadata"]>;
   duration?: number;
-  isLocalFile?: boolean; // Deprecated but kept for compatibility during transition if needed
   /** Server could not resolve this URL (yt-dlp / API). Shows same error UX as failed download without starting fetch. */
   metadataLoadError?: string;
 }
@@ -54,7 +53,6 @@ export default function InitialPlayer({
   url,
   metadata,
   duration,
-  isLocalFile = false,
   metadataLoadError,
 }: InitialPlayerProps) {
   const router = useRouter();
@@ -87,16 +85,9 @@ export default function InitialPlayer({
     }
   }, [media?.metadata?.title]);
 
-  // Handle local file mode - redirect if no media
-  useEffect(() => {
-    if (isLocalFile && (!media || getPlatform(media.sourceUrl) !== "local")) {
-      router.replace("/");
-    }
-  }, [isLocalFile, media, router]);
-
   // Handle URL-based download
   useEffect(() => {
-    if (isLocalFile || metadataLoadError || downloadStarted.current) return;
+    if (metadataLoadError || downloadStarted.current) return;
     if (!url) {
       notifications.show({ title: "Error", message: "No URL provided." });
       router.push("/");
@@ -110,21 +101,15 @@ export default function InitialPlayer({
       if (isYouTube && duration && duration > 600) {
         setConfirmationOpened(true);
       } else {
-        startDownload(true, "high", { metadata, duration });
+        startDownload(duration == null ? undefined : true, "high", {
+          metadata,
+          duration,
+        });
       }
     }
 
     checkAndStart();
-  }, [
-    url,
-    duration,
-    router,
-    startDownload,
-    isYouTube,
-    isLocalFile,
-    metadata,
-    metadataLoadError,
-  ]);
+  }, [url, duration, router, startDownload, isYouTube, metadata, metadataLoadError]);
 
   const handleGoToPlayer = () => {
     setIsPlayer(true);
@@ -151,59 +136,18 @@ export default function InitialPlayer({
 
   // Show player
   if (isPlayer && media) {
-    const isShortForm = isLocalFile ? false : !isYouTube || url?.includes("/shorts/");
+    const isShortForm = !isYouTube || url?.includes("/shorts/");
     return <Player key={media.fileUrl} media={media} repeating={isShortForm} />;
-  }
-
-  // Local file mode - waiting for user to click play
-  if (isLocalFile) {
-    if (!media) return null;
-
-    return (
-      <Container size="xs">
-        <Flex h="100dvh" align="stretch" justify="center" gap="md" direction="column">
-          <Link href="/" style={{ textDecoration: "none", color: "inherit" }}>
-            <Flex gap={12} align="center" mb="sm">
-              <Icon size={18} />
-              <Text fz={rem(20)} fw="bold" lts={rem(0.2)} style={{ userSelect: "none" }}>
-                Moonlit
-              </Text>
-            </Flex>
-          </Link>
-          <Text weight={600} color="dimmed">
-            Local File
-          </Text>
-          <Flex gap="md" align="center">
-            <Image
-              src={media.metadata.coverUrl}
-              radius="sm"
-              height={48}
-              width={48}
-              withPlaceholder
-              placeholder={
-                <Center>
-                  <IconMusic />
-                </Center>
-              }
-              alt="cover image"
-            />
-            <Flex direction="column">
-              <Text weight={600}>{media.metadata.title}</Text>
-              <Text>
-                {media.metadata.artist ?? media.metadata.author}
-                {media.metadata.album && ` · ${media.metadata.album}`}
-              </Text>
-            </Flex>
-          </Flex>
-          <Button onClick={handleGoToPlayer}>Play</Button>
-        </Flex>
-      </Container>
-    );
   }
 
   // URL mode - download screen (use media.metadata once loaded so ID3 etc. is shown)
   const displayMetadata = media?.metadata ?? metadata ?? {};
-  const hasMetadataContent = metadataLoadError || media || Boolean(displayMetadata.title);
+  const liveMetadata = downloadState.metadata ?? displayMetadata;
+  const hasMetadataContent =
+    metadataLoadError ||
+    media ||
+    Boolean(displayMetadata.title) ||
+    Boolean(liveMetadata.title);
 
   const getStatusText = () => {
     switch (downloadState.status) {
@@ -337,7 +281,7 @@ export default function InitialPlayer({
             </Text>
             <Flex gap="md" align="center">
               <Image
-                src={displayMetadata.coverUrl}
+                src={liveMetadata.coverUrl}
                 radius="sm"
                 height={48}
                 width={48}
@@ -351,11 +295,11 @@ export default function InitialPlayer({
               />
               <Flex direction="column">
                 <Text weight={600}>
-                  {metadataLoadError ? "Video unavailable" : displayMetadata.title}
+                  {metadataLoadError ? "Video unavailable" : liveMetadata.title}
                 </Text>
                 <Text>
-                  {displayMetadata.artist ?? displayMetadata.author ?? "—"}
-                  {displayMetadata.album ? ` · ${displayMetadata.album}` : ""}
+                  {liveMetadata.artist ?? liveMetadata.author ?? "—"}
+                  {liveMetadata.album ? ` · ${liveMetadata.album}` : ""}
                 </Text>
               </Flex>
             </Flex>

@@ -35,10 +35,19 @@ export function useMediaDownloader(url: string, metadata: Partial<Media["metadat
 
       const abortController = new AbortController();
 
+      const updateDownloadState = (next: DownloadState) => {
+        setDownloadState((prev) => ({
+          ...prev,
+          ...next,
+          metadata: next.metadata ?? prev.metadata,
+          duration: next.duration ?? prev.duration,
+        }));
+      };
+
       downloadWithProgress(
         url,
         preload?.metadata ?? metadata,
-        setDownloadState,
+        updateDownloadState,
         abortController.signal,
         withVideo,
         downloadQuality,

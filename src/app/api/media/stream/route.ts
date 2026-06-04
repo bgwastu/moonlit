@@ -14,6 +14,7 @@ import { getTempDir } from "@/utils/server";
 const MEDIA_DIR = path.join(getTempDir(), "moonlit-media");
 const ABANDONED_TTL_MS = 30 * 60 * 1000;
 const CLEANUP_INTERVAL_MS = 5 * 60 * 1000;
+const META_SUFFIX = ".json";
 
 const cleanupState = globalThis as typeof globalThis & {
   __moonlitMediaCleanupTimer?: ReturnType<typeof setInterval>;
@@ -30,12 +31,13 @@ function startAbandonedCleanup(): void {
       const entries = await fs.readdir(MEDIA_DIR, { withFileTypes: true });
       await Promise.all(
         entries.map(async (entry) => {
-          if (!entry.isFile()) return;
+          if (!entry.isFile() || entry.name.endsWith(META_SUFFIX)) return;
           const fp = path.join(MEDIA_DIR, entry.name);
           try {
             const stat = await fs.stat(fp);
             if (now - stat.mtimeMs > ABANDONED_TTL_MS) {
               await fs.unlink(fp);
+              await fs.unlink(`${fp}${META_SUFFIX}`).catch(() => {});
             }
           } catch {}
         }),
@@ -111,6 +113,14 @@ export async function POST(req: Request) {
           finalQuality = lengthSeconds != null && lengthSeconds < 600 ? "high" : "low";
         }
 
+        send({
+          type: "metadata",
+          title: videoTitle,
+          author: videoAuthor,
+          thumbnail: videoThumbnail,
+          duration: lengthSeconds,
+        });
+
         // Download with progress
         send({ type: "status", message: "Starting download..." });
 
@@ -155,6 +165,14 @@ export async function POST(req: Request) {
         const targetPath = path.join(MEDIA_DIR, fileId);
 
         await fs.rename(filePath, targetPath);
+        await fs.writeFile(
+          `${targetPath}${META_SUFFIX}`,
+          JSON.stringify({
+            contentType,
+            filename: buildDownloadFilename(videoTitle, filePath),
+          }),
+          "utf-8",
+        );
 
         // Cleanup the original temp folder
         await fs.rmdir(folderPath).catch(() => {});
@@ -190,4 +208,14 @@ export async function POST(req: Request) {
       Connection: "keep-alive",
     },
   });
+}
+
+function buildDownloadFilename(title: string, filePath: string): string {
+  const ext = path.extname(filePath) || ".media";
+  const safeTitle = title
+    .trim()
+    .replace(/[\\/:*?"<>|]+/g, "")
+    .replace(/\s+/g, " ")
+    .slice(0, 120);
+  return `${safeTitle || "moonlit-media"}${ext}`;
 }

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { promises as fs } from "fs";
 import { existsSync } from "fs";
 import path from "path";
+import { canonicalizeCookiesContent, validateCookiesContent } from "@/lib/cookieFormat";
 
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
 const DATA_DIR = path.join(process.cwd(), "data");
@@ -18,10 +19,7 @@ function verifyPassword(request: Request): boolean {
 
 export async function GET(request: Request) {
   if (!ADMIN_PASSWORD) {
-    return NextResponse.json(
-      { error: "Admin not configured" },
-      { status: 403 },
-    );
+    return NextResponse.json({ error: "Admin not configured" }, { status: 403 });
   }
 
   if (!verifyPassword(request)) {
@@ -36,19 +34,13 @@ export async function GET(request: Request) {
     return NextResponse.json({ cookies: "" });
   } catch (error) {
     console.error("[Moonlit] Error reading system cookies:", error);
-    return NextResponse.json(
-      { error: "Failed to read cookies" },
-      { status: 500 },
-    );
+    return NextResponse.json({ error: "Failed to read cookies" }, { status: 500 });
   }
 }
 
 export async function POST(request: Request) {
   if (!ADMIN_PASSWORD) {
-    return NextResponse.json(
-      { error: "Admin not configured" },
-      { status: 403 },
-    );
+    return NextResponse.json({ error: "Admin not configured" }, { status: 403 });
   }
 
   if (!verifyPassword(request)) {
@@ -65,16 +57,23 @@ export async function POST(request: Request) {
     if (!cookies || !cookies.trim()) {
       await fs.writeFile(SYSTEM_COOKIES_PATH, "", "utf-8");
     } else {
-      const normalized = cookies.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
-      await fs.writeFile(SYSTEM_COOKIES_PATH, normalized, "utf-8");
+      const validation = validateCookiesContent(cookies);
+      if (!validation.valid) {
+        return NextResponse.json(
+          { error: validation.error || "Invalid cookie format" },
+          { status: 400 },
+        );
+      }
+      await fs.writeFile(
+        SYSTEM_COOKIES_PATH,
+        canonicalizeCookiesContent(cookies),
+        "utf-8",
+      );
     }
 
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error("[Moonlit] Error writing system cookies:", error);
-    return NextResponse.json(
-      { error: "Failed to save cookies" },
-      { status: 500 },
-    );
+    return NextResponse.json({ error: "Failed to save cookies" }, { status: 500 });
   }
 }

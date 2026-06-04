@@ -19,6 +19,7 @@ export default function useNoSleep() {
   );
   const noSleepReadyRef = useRef<Promise<void> | null>(null);
   const iosVideoRef = useRef<HTMLVideoElement | null>(null);
+  const pendingEnableRef = useRef(false);
 
   // Preload NoSleep so it's ready when enable() is called (avoids race on first tap)
   useEffect(() => {
@@ -62,6 +63,13 @@ export default function useNoSleep() {
   const enable = useCallback(async () => {
     if (typeof window === "undefined") return;
 
+    if (document.visibilityState !== "visible") {
+      pendingEnableRef.current = true;
+      return;
+    }
+
+    pendingEnableRef.current = false;
+
     // Ensure NoSleep is loaded before we might need it
     if (noSleepReadyRef.current) {
       await noSleepReadyRef.current;
@@ -100,6 +108,10 @@ export default function useNoSleep() {
         await noSleepRef.current.enable();
         setEnabledState(true);
       } catch (err) {
+        if (err instanceof DOMException && err.name === "NotAllowedError") {
+          pendingEnableRef.current = true;
+          return;
+        }
         console.warn("NoSleep.js failed", err);
       }
     }
@@ -110,6 +122,7 @@ export default function useNoSleep() {
       wakeLockRef.current.release().catch(console.error);
       wakeLockRef.current = null;
     }
+    pendingEnableRef.current = false;
     if (noSleepRef.current) {
       noSleepRef.current.disable();
     }
@@ -120,6 +133,10 @@ export default function useNoSleep() {
   useEffect(() => {
     const handleVisibilityChange = async () => {
       if (document.visibilityState !== "visible") return;
+      if (pendingEnableRef.current) {
+        await enable();
+        return;
+      }
       if (!enabled) return;
 
       if ("wakeLock" in navigator && !wakeLockRef.current) {
@@ -142,7 +159,7 @@ export default function useNoSleep() {
       if (noSleepRef.current) noSleepRef.current.disable();
       disableIosVideo();
     };
-  }, [enabled, disableIosVideo]);
+  }, [enabled, disableIosVideo, enable]);
 
   return [enabled, { enable, disable }] as const;
 }

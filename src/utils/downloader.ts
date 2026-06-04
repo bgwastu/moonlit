@@ -16,6 +16,8 @@ export interface DownloadState {
   speed?: string;
   eta?: string;
   message?: string;
+  metadata?: Partial<Media["metadata"]>;
+  duration?: number;
 }
 
 interface DownloadPreload {
@@ -137,7 +139,7 @@ export async function downloadWithProgress(
     };
   }
 
-  // For backward compat with YT/TikTok, we can still try to extract IDs
+  // Stable platform IDs let the browser cache reused media blobs.
   const isYouTube = isYoutubeURL(url);
   const isTikTok = isTikTokURL(url);
 
@@ -157,8 +159,7 @@ export async function downloadWithProgress(
     const videoKey = `${prefix}:${id}:video`;
     const audioKey = `${prefix}:${id}:audio`;
 
-    // Check video cache first if videoMode is requested or generic check
-    const cachedVideo = await getMedia(videoKey);
+    const cachedVideo = videoMode !== false ? await getMedia(videoKey) : null;
     if (cachedVideo) {
       const storedMeta = await getMeta<Partial<Media["metadata"]>>(`${prefix}:${id}`);
       const blobUrl = URL.createObjectURL(cachedVideo);
@@ -171,8 +172,7 @@ export async function downloadWithProgress(
       };
     }
 
-    // Check audio cache
-    const cachedAudio = await getMedia(audioKey);
+    const cachedAudio = videoMode !== true ? await getMedia(audioKey) : null;
     if (cachedAudio) {
       const storedMeta = await getMeta<Partial<Media["metadata"]>>(`${prefix}:${id}`);
       const audioUrl = URL.createObjectURL(cachedAudio);
@@ -254,6 +254,20 @@ export async function downloadWithProgress(
                         status: "fetching",
                         percent: 0,
                         message: data.message,
+                      });
+                      break;
+
+                    case "metadata":
+                      onProgress({
+                        status: "fetching",
+                        percent: 0,
+                        message: "Video info loaded.",
+                        duration: data.duration,
+                        metadata: {
+                          title: data.title,
+                          author: data.author,
+                          coverUrl: data.thumbnail,
+                        },
                       });
                       break;
 
