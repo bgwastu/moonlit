@@ -104,8 +104,12 @@ async function audioBufferToMp3(
 
   const mp3Data: Uint8Array[] = [];
   const blockSize = 1152;
+  const yieldInterval = 10;
 
   for (let i = 0; i < leftInt16.length; i += blockSize) {
+    if (i % (blockSize * yieldInterval) === 0) {
+      await new Promise((r) => setTimeout(r, 0));
+    }
     const leftChunk = leftInt16.subarray(i, i + blockSize);
     const rightChunk = rightInt16.subarray(i, i + blockSize);
     const encoded =
