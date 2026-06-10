@@ -78,6 +78,48 @@ function audioBufferToWav(buffer: AudioBuffer): Blob {
 
   return new Blob([wavFile], { type: "audio/wav" });
 }
+async function audioBufferToMp3(
+  buffer: AudioBuffer,
+  bitrate: number = 128,
+): Promise<Blob> {
+  const { Mp3Encoder } = await import("@breezystack/lamejs");
+
+  const numChannels = buffer.numberOfChannels;
+  const sampleRate = buffer.sampleRate;
+  const encoder = new Mp3Encoder(numChannels === 1 ? 1 : 2, sampleRate, bitrate);
+
+  const toInt16 = (float32: Float32Array): Int16Array => {
+    const int16 = new Int16Array(float32.length);
+    for (let i = 0; i < float32.length; i++) {
+      const s = Math.max(-1, Math.min(1, float32[i]));
+      int16[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
+    }
+    return int16;
+  };
+
+  const left = buffer.getChannelData(0);
+  const right = numChannels === 2 ? buffer.getChannelData(1) : left;
+  const leftInt16 = toInt16(left);
+  const rightInt16 = toInt16(right);
+
+  const mp3Data: Uint8Array[] = [];
+  const blockSize = 1152;
+
+  for (let i = 0; i < leftInt16.length; i += blockSize) {
+    const leftChunk = leftInt16.subarray(i, i + blockSize);
+    const rightChunk = rightInt16.subarray(i, i + blockSize);
+    const encoded =
+      numChannels === 2
+        ? encoder.encodeBuffer(leftChunk, rightChunk)
+        : encoder.encodeBuffer(leftChunk);
+    if (encoded.length > 0) mp3Data.push(new Uint8Array(encoded.buffer));
+  }
+
+  const flushed = encoder.flush();
+  if (flushed.length > 0) mp3Data.push(new Uint8Array(flushed.buffer));
+
+  return new Blob(mp3Data as BlobPart[], { type: "audio/mpeg" });
+}
 
 // Generate impulse response for reverb
 function generateImpulseResponse(
@@ -109,8 +151,14 @@ export default function DownloadModal({
   currentReverbAmount,
 }: DownloadModalProps) {
   const [version, setVersion] = useState<"current" | "original">("current");
+  const [format, setFormat] = useState<"wav" | "mp3">("wav");
   const [isProcessing, setIsProcessing] = useState(false);
   const messageRef = useRef<HTMLDivElement>(null);
+
+  const encodeBuffer = async (buffer: AudioBuffer): Promise<Blob> => {
+    if (format === "mp3") return audioBufferToMp3(buffer);
+    return audioBufferToWav(buffer);
+  };
 
   const exportOriginal = async (): Promise<{ blob: Blob; ext: string }> => {
     if (messageRef.current) messageRef.current.innerText = "Downloading source...";
@@ -120,14 +168,16 @@ export default function DownloadModal({
     if (messageRef.current) messageRef.current.innerText = "Decoding audio...";
     const audioContext = new AudioContext();
     const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+    await audioContext.close();
 
-    if (messageRef.current) messageRef.current.innerText = "Encoding to WAV...";
-    const wavBlob = audioBufferToWav(audioBuffer);
+    if (messageRef.current)
+      messageRef.current.innerText = `Encoding to ${format.toUpperCase()}...`;
+    const blob = await encodeBuffer(audioBuffer);
 
-    return { blob: wavBlob, ext: "wav" };
+    return { blob, ext: format };
   };
 
-  const exportCurrentSettingsAsWav = async (): Promise<{ blob: Blob; ext: string }> => {
+  const exportCurrentSettings = async (): Promise<{ blob: Blob; ext: string }> => {
     if (messageRef.current) messageRef.current.innerText = "Downloading source...";
     const response = await fetch(media.fileUrl);
     const arrayBuffer = await response.arrayBuffer();
@@ -217,8 +267,11 @@ export default function DownloadModal({
 
     const renderedBuffer = await offlineCtx.startRendering();
 
-    if (messageRef.current) messageRef.current.innerText = "Encoding to WAV...";
-    return { blob: audioBufferToWav(renderedBuffer), ext: "wav" };
+    if (messageRef.current)
+      messageRef.current.innerText = `Encoding to ${format.toUpperCase()}...`;
+    const blob = await encodeBuffer(renderedBuffer);
+
+    return { blob, ext: format };
   };
 
   const handleDownload = async () => {
@@ -226,9 +279,7 @@ export default function DownloadModal({
 
     try {
       const { blob, ext } =
-        version === "original"
-          ? await exportOriginal()
-          : await exportCurrentSettingsAsWav();
+        version === "original" ? await exportOriginal() : await exportCurrentSettings();
 
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -265,7 +316,7 @@ export default function DownloadModal({
     if (currentReverbAmount > 0) {
       parts.push(`${Math.round(currentReverbAmount * 100)}% reverb`);
     }
-    return `${parts.join(", ")} — export as WAV`;
+    return `${parts.join(", ")} — export as ${format.toUpperCase()}`;
   };
 
   return (
@@ -273,8 +324,8 @@ export default function DownloadModal({
       <Stack>
         <Alert icon={<IconInfoCircle size={16} />} variant="light">
           {version === "original"
-            ? "Converting original file to WAV"
-            : "Only WAV export is supported for remixes."}
+            ? `Converting original file to ${format.toUpperCase()}`
+            : `Exporting remix as ${format.toUpperCase()}`}
         </Alert>
 
         <Radio.Group
@@ -292,9 +343,20 @@ export default function DownloadModal({
             <Radio
               value="original"
               label="Original"
-              description="Download original file as WAV"
+              description={`Download original file as ${format.toUpperCase()}`}
             />
           </Stack>
+        </Radio.Group>
+
+        <Radio.Group
+          label="Format"
+          value={format}
+          onChange={(v) => setFormat(v as "wav" | "mp3")}
+        >
+          <Group mt="xs">
+            <Radio value="wav" label="WAV" description="Lossless, big file" />
+            <Radio value="mp3" label="MP3" description="Compressed, smaller file" />
+          </Group>
         </Radio.Group>
 
         {isProcessing && (

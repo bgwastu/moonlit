@@ -1,6 +1,10 @@
 import localforage from "localforage";
 
-const store = localforage.createInstance({ name: "moonlit", storeName: "media" });
+const store = localforage.createInstance({
+  name: "moonlit",
+  storeName: "media",
+  driver: [localforage.INDEXEDDB, localforage.LOCALSTORAGE],
+});
 const MEDIA_CACHE_INDEX_KEY = "meta:__media-cache-index";
 const MAX_MEDIA_ITEMS = 20;
 const MAX_MEDIA_BYTES = 750 * 1024 * 1024;
@@ -11,23 +15,37 @@ interface MediaCacheEntry {
   updatedAt: number;
 }
 
+store.ready().catch(() => {});
+
 export async function getMedia(key: string): Promise<Blob | null> {
-  const value = await store.getItem<Blob>(key);
-  return value ?? null;
+  try {
+    const value = await store.getItem<Blob>(key);
+    return value ?? null;
+  } catch {
+    return null;
+  }
 }
 
 export async function setMedia(key: string, blob: Blob): Promise<void> {
-  await store.setItem(key, blob);
-  await updateMediaCacheIndex(key, blob.size);
+  try {
+    await store.setItem(key, blob);
+    await updateMediaCacheIndex(key, blob.size);
+  } catch {}
 }
 
 export async function getMeta<T = unknown>(key: string): Promise<T | null> {
-  const value = await store.getItem<T>(`meta:${key}`);
-  return value ?? null;
+  try {
+    const value = await store.getItem<T>(`meta:${key}`);
+    return value ?? null;
+  } catch {
+    return null;
+  }
 }
 
 export async function setMeta<T = unknown>(key: string, data: T): Promise<void> {
-  await store.setItem(`meta:${key}`, data as any);
+  try {
+    await store.setItem(`meta:${key}`, data as any);
+  } catch {}
 }
 
 async function updateMediaCacheIndex(key: string, size: number): Promise<void> {
