@@ -51,7 +51,6 @@ import Icon from "@/components/Icon";
 import LoadingOverlay from "@/components/LoadingOverlay";
 import ResetModal from "@/components/ResetModal";
 import { useAppContext } from "@/context/AppContext";
-import useNoSleep from "@/hooks/useNoSleep";
 import type { Media } from "@/interfaces";
 import {
   getTikTokCreatorAndVideoId,
@@ -105,22 +104,17 @@ function LocalUpload({ dropzoneMinHeight }: { dropzoneMinHeight: number }) {
   const [fullScreenActive, setFullScreenActive] = useState(false);
   const { setMedia } = useAppContext();
   const { push } = useRouter();
-  const [, noSleep] = useNoSleep();
   const theme = useMantineTheme();
   const isMobile = useMediaQuery(`(max-width: ${theme.breakpoints.sm})`);
 
   const handleDrop = async (files: File[]) => {
     if (!files.length) return;
-    setLoading({ status: true, message: "Saving to library..." });
+    setLoading({ status: true, message: "Loading file..." });
     setFullScreenActive(false);
 
     const fileId = `local-${Date.now()}`;
     const sourceUrl = `local:${fileId}:video`;
-    const [{ setMedia: cacheSetMedia, setMeta }, tags] = await Promise.all([
-      import("@/utils/cache"),
-      convertFileToBuffer(files[0]).then(parse),
-    ]);
-    await cacheSetMedia(sourceUrl, files[0]);
+    const tags = await convertFileToBuffer(files[0]).then(parse);
     const metadata: Media["metadata"] =
       tags !== false
         ? {
@@ -135,11 +129,9 @@ function LocalUpload({ dropzoneMinHeight }: { dropzoneMinHeight: number }) {
           }
         : { id: fileId, title: files[0].name, author: "Unknown", coverUrl: "" };
 
-    await setMeta(`local:${fileId}`, metadata);
     setMedia({ fileUrl: URL.createObjectURL(files[0]), sourceUrl, metadata });
     push("/player");
     setLoading({ status: false, message: null });
-    noSleep.enable();
   };
 
   return (
