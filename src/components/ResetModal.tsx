@@ -12,13 +12,10 @@ interface ResetModalProps {
 
 export default function ResetModal({ opened, onClose }: ResetModalProps) {
   const [resetting, setResetting] = useState(false);
-  const [options, setOptions] = useState({
-    media: true,
-    settings: true,
-  });
+  const [settings, setSettings] = useState(true);
 
   const handleReset = async () => {
-    if (!options.media && !options.settings) {
+    if (!settings) {
       notifications.show({
         title: "No selection",
         message: "Please select at least one item to delete.",
@@ -28,7 +25,7 @@ export default function ResetModal({ opened, onClose }: ResetModalProps) {
     }
 
     setResetting(true);
-    const success = await resetAllData(options);
+    const success = await resetAllData({ settings });
     if (success) {
       notifications.show({
         title: "Data Reset",
@@ -54,20 +51,10 @@ export default function ResetModal({ opened, onClose }: ResetModalProps) {
 
         <Stack spacing="xs">
           <Checkbox
-            label="Delete all of the cached media"
-            description="Removes downloaded YouTube/TikTok videos and local uploads"
-            checked={options.media}
-            onChange={(event) =>
-              setOptions({ ...options, media: event.currentTarget.checked })
-            }
-          />
-          <Checkbox
             label="Delete configurations & history"
             description="Clears YouTube cookies, playback history, and saved settings"
-            checked={options.settings}
-            onChange={(event) =>
-              setOptions({ ...options, settings: event.currentTarget.checked })
-            }
+            checked={settings}
+            onChange={(event) => setSettings(event.currentTarget.checked)}
           />
         </Stack>
 
@@ -83,7 +70,7 @@ export default function ResetModal({ opened, onClose }: ResetModalProps) {
             color="red"
             onClick={handleReset}
             loading={resetting}
-            disabled={!options.media && !options.settings}
+            disabled={!settings}
           >
             Clear Selected Data
           </Button>
