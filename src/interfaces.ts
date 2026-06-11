@@ -1,13 +1,12 @@
 export interface Media {
   fileUrl: string;
   sourceUrl: string;
+  streamToken?: string;
   metadata: {
     id: string | null;
     title: string;
     author: string;
-    /** Artist(s) for music content */
     artist?: string;
-    /** Album name for music content */
     album?: string;
     coverUrl: string;
   };
@@ -27,19 +26,13 @@ export interface LyricsSettings {
 }
 
 export interface State {
-  position: number;
   rate: number;
   semitones: number;
   reverbAmount: number;
-  pitchLockedToSpeed: boolean;
   isRepeat: boolean;
   volume: number;
   lastUpdated: number;
   lyrics?: LyricsSettings | null;
-  /** When true, video is hidden and album art is shown instead */
-  videoDisabled?: boolean;
   /** Whether lyrics should be shown */
   showLyrics?: boolean;
-  /** Lite mode: native video playback only (no pitch/reverb), much more stable; default on */
-  liteMode?: boolean;
 }

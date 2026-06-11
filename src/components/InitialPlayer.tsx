@@ -15,8 +15,6 @@ import {
   Modal,
   Paper,
   Progress,
-  SegmentedControl,
-  Switch,
   Text,
   Tooltip,
   rem,
@@ -36,8 +34,7 @@ import LoadingOverlay from "@/components/LoadingOverlay";
 import { Player } from "@/components/Player";
 import ResetModal from "@/components/ResetModal";
 import { useAppContext } from "@/context/AppContext";
-import { useMediaDownloader } from "@/hooks/useMediaDownloader";
-import useNoSleep from "@/hooks/useNoSleep";
+import { useMediaStreamer } from "@/hooks/useMediaStreamer";
 import { HistoryItem, Media } from "@/interfaces";
 import { isYoutubeURL } from "@/utils";
 
@@ -45,7 +42,6 @@ interface InitialPlayerProps {
   url?: string;
   metadata?: Partial<Media["metadata"]>;
   duration?: number;
-  /** Server could not resolve this URL (yt-dlp / API). Shows same error UX as failed download without starting fetch. */
   metadataLoadError?: string;
 }
 
@@ -58,23 +54,19 @@ export default function InitialPlayer({
   const router = useRouter();
   const { media, history, setHistory } = useAppContext();
   const [isPlayer, setIsPlayer] = useState(false);
-  const [noSleepEnabled, noSleepControls] = useNoSleep();
 
-  const { downloadState, startDownload } = useMediaDownloader(url || "", metadata || {});
+  const { streamState, startStream } = useMediaStreamer(url || "", metadata || {});
 
   const [confirmationOpened, setConfirmationOpened] = useState(false);
-  const [includeVideo, setIncludeVideo] = useState(false);
-  const [quality, setQuality] = useState<"low" | "high">("low");
   const [cookiesOpened, setCookiesOpened] = useState(false);
   const [historyOpened, setHistoryOpened] = useState(false);
   const [resetOpened, setResetOpened] = useState(false);
   const [historyLoading, setHistoryLoading] = useState(false);
 
-  const downloadStarted = useRef(false);
+  const streamStarted = useRef(false);
   const isLoading = !media;
   const isYouTube = url ? isYoutubeURL(url) : false;
 
-  // Update document title when media metadata is available
   useEffect(() => {
     if (media?.metadata?.title) {
       const prev = document.title;
@@ -85,41 +77,27 @@ export default function InitialPlayer({
     }
   }, [media?.metadata?.title]);
 
-  // Handle URL-based download
   useEffect(() => {
-    if (metadataLoadError || downloadStarted.current) return;
+    if (metadataLoadError || streamStarted.current) return;
     if (!url) {
       notifications.show({ title: "Error", message: "No URL provided." });
       router.push("/");
       return;
     }
 
-    downloadStarted.current = true;
+    streamStarted.current = true;
 
-    async function checkAndStart() {
-      // If duration > 10 mins (YouTube), ask permission
-      if (isYouTube && duration && duration > 600) {
-        setConfirmationOpened(true);
-      } else {
-        startDownload(duration == null ? undefined : true, "high", {
-          metadata,
-          duration,
-        });
-      }
+    if (isYouTube && duration && duration > 600) {
+      setTimeout(() => setConfirmationOpened(true), 0);
+    } else {
+      startStream();
     }
-
-    checkAndStart();
-  }, [url, duration, router, startDownload, isYouTube, metadata, metadataLoadError]);
+  }, [url, duration, router, startStream, isYouTube, metadataLoadError]);
 
   const handleGoToPlayer = () => {
     setIsPlayer(true);
-    if (!noSleepEnabled) {
-      noSleepControls.enable();
-    }
 
-    // Add to history (works for both URL and local files)
     if (media) {
-      // For local files, videoUrl is no longer used, sourceUrl is the key
       const historyUrl = url || media.sourceUrl;
 
       setHistory((prev) => {
@@ -134,15 +112,13 @@ export default function InitialPlayer({
     }
   };
 
-  // Show player
   if (isPlayer && media) {
     const isShortForm = !isYouTube || url?.includes("/shorts/");
     return <Player key={media.fileUrl} media={media} repeating={isShortForm} />;
   }
 
-  // URL mode - download screen (use media.metadata once loaded so ID3 etc. is shown)
   const displayMetadata = media?.metadata ?? metadata ?? {};
-  const liveMetadata = downloadState.metadata ?? displayMetadata;
+  const liveMetadata = streamState.metadata ?? displayMetadata;
   const hasMetadataContent =
     metadataLoadError ||
     media ||
@@ -150,33 +126,20 @@ export default function InitialPlayer({
     Boolean(liveMetadata.title);
 
   const getStatusText = () => {
-    switch (downloadState.status) {
-      case "fetching":
-        return downloadState.message || "Fetching info...";
-      case "downloading":
-        if (downloadState.percent > 0) {
-          let text = `Downloading: ${downloadState.percent.toFixed(1)}%`;
-          if (downloadState.speed) text += ` • ${downloadState.speed}`;
-          if (downloadState.eta) text += ` • ETA: ${downloadState.eta}`;
-          return text;
-        }
-        return "Starting download...";
-      case "processing":
-        return downloadState.message || "Processing media...";
-      case "complete":
-        return "Download complete!";
+    switch (streamState.status) {
+      case "extracting":
+        return streamState.message || "Extracting stream...";
+      case "ready":
+        return "Ready!";
       case "error":
-        return downloadState.message || "Download failed";
+        return streamState.message || "Stream failed";
       default:
         return "Preparing...";
     }
   };
 
   const isIndeterminate =
-    downloadState.status === "fetching" ||
-    downloadState.status === "processing" ||
-    downloadState.status === "idle" ||
-    (downloadState.status === "downloading" && downloadState.percent === 0);
+    streamState.status === "extracting" || streamState.status === "idle";
 
   return (
     <Container size="xs">
@@ -196,26 +159,8 @@ export default function InitialPlayer({
         centered
       >
         <Text size="sm" mb="md">
-          This video is longer than 10 minutes. Do you want to continue downloading?
+          This video is longer than 10 minutes. Stream anyway?
         </Text>
-        <Switch
-          label="Include Video (Larger file size)"
-          checked={includeVideo}
-          onChange={(event) => setIncludeVideo(event.currentTarget.checked)}
-          mb="sm"
-        />
-        {includeVideo && (
-          <SegmentedControl
-            value={quality}
-            onChange={(value) => setQuality(value as "low" | "high")}
-            data={[
-              { label: "Low Quality (480p)", value: "low" },
-              { label: "High Quality (720p)", value: "high" },
-            ]}
-            mb="xl"
-            fullWidth
-          />
-        )}
         <Group position="right">
           <Button variant="default" onClick={() => router.push("/")}>
             Cancel
@@ -223,10 +168,10 @@ export default function InitialPlayer({
           <Button
             onClick={() => {
               setConfirmationOpened(false);
-              startDownload(includeVideo, quality, { metadata, duration });
+              startStream();
             }}
           >
-            Download
+            Stream
           </Button>
         </Group>
       </Modal>
@@ -298,8 +243,8 @@ export default function InitialPlayer({
                   {metadataLoadError ? "Video unavailable" : liveMetadata.title}
                 </Text>
                 <Text>
-                  {liveMetadata.artist ?? liveMetadata.author ?? "—"}
-                  {liveMetadata.album ? ` · ${liveMetadata.album}` : ""}
+                  {liveMetadata.artist ?? liveMetadata.author ?? "\u2014"}
+                  {liveMetadata.album ? ` \u00b7 ${liveMetadata.album}` : ""}
                 </Text>
               </Flex>
             </Flex>
@@ -346,7 +291,7 @@ export default function InitialPlayer({
               </Flex>
             </Flex>
           </Paper>
-        ) : downloadState.status === "error" ? (
+        ) : streamState.status === "error" ? (
           <Paper
             p="md"
             radius="md"
@@ -356,7 +301,7 @@ export default function InitialPlayer({
             <Flex direction="column" gap="md">
               <Alert
                 icon={<IconAlertCircle size={20} />}
-                title="Download failed"
+                title="Stream failed"
                 color="red"
                 variant="light"
               >
@@ -364,7 +309,7 @@ export default function InitialPlayer({
                   size="sm"
                   style={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}
                 >
-                  {downloadState.message || "Something went wrong."}
+                  {streamState.message || "Something went wrong."}
                 </Text>
                 <Text size="sm" color="dimmed" mt="xs">
                   Try configuring cookies from a logged-in account in the app settings if
@@ -380,11 +325,7 @@ export default function InitialPlayer({
                 >
                   Go home
                 </Button>
-                <Button
-                  variant="filled"
-                  fullWidth
-                  onClick={() => startDownload(true, "high", { metadata, duration })}
-                >
+                <Button variant="filled" fullWidth onClick={() => startStream()}>
                   Try again
                 </Button>
               </Flex>
@@ -393,7 +334,7 @@ export default function InitialPlayer({
         ) : isLoading ? (
           <Flex direction="column" gap="sm">
             <Progress
-              value={isIndeterminate ? 100 : downloadState.percent}
+              value={100}
               size="lg"
               radius="xl"
               striped={isIndeterminate}
