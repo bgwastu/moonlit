@@ -86,24 +86,4 @@ export function useMediaSession({
       } catch {}
     };
   }, [media, onPlay, onPause, onSeekBackward, onSeekForward, onSeek]);
-
-  // Update playback state and position state together
-  useEffect(() => {
-    if (!("mediaSession" in navigator)) return;
-    navigator.mediaSession.playbackState = isPlaying ? "playing" : "paused";
-
-    // Also update position state (playbackRate cannot be 0 per spec; use 1 when paused)
-    if ("setPositionState" in navigator.mediaSession) {
-      try {
-        const safeRate = Math.max(0.25, isPlaying ? rate : 1);
-        navigator.mediaSession.setPositionState({
-          duration: Math.max(0, duration),
-          playbackRate: safeRate,
-          position: Math.max(0, Math.min(currentTime, duration)),
-        });
-      } catch (e) {
-        console.error("Error setting position state:", e);
-      }
-    }
-  }, [isPlaying, currentTime, duration, rate]);
 }
