@@ -61,7 +61,7 @@ export default function HistoryModal({
           ...item,
           fileUrl: blobUrl,
           sourceUrl: key,
-          metadata: { ...item.metadata },
+          metadata: { ...(item.metadata ?? {}) } as Media["metadata"],
         };
 
         setMedia(media);
@@ -157,6 +157,7 @@ export default function HistoryModal({
                   .map((item, index) => {
                     const itemKey = item.sourceUrl;
                     const isHovered = hoveredItem === itemKey;
+                    const meta = item.metadata ?? ({} as Media["metadata"]);
                     return (
                       <Box
                         key={itemKey}
@@ -194,7 +195,7 @@ export default function HistoryModal({
                         >
                           <Box style={{ position: "relative", flexShrink: 0 }}>
                             <Avatar
-                              src={item.metadata.coverUrl}
+                              src={meta.coverUrl}
                               size={60}
                               radius="md"
                               styles={{ image: { objectFit: "cover" } }}
@@ -222,7 +223,7 @@ export default function HistoryModal({
 
                           <Box style={{ flex: 1, minWidth: 0 }}>
                             <Text size="sm" weight={600} truncate mb={2}>
-                              {item.metadata.title}
+                              {meta.title}
                             </Text>
                             <Group spacing={6} noWrap>
                               <Text
@@ -231,8 +232,8 @@ export default function HistoryModal({
                                 truncate
                                 style={{ maxWidth: 200 }}
                               >
-                                {item.metadata.artist ?? item.metadata.author}
-                                {item.metadata.album && ` · ${item.metadata.album}`}
+                                {meta.artist ?? meta.author}
+                                {meta.album && ` · ${meta.album}`}
                               </Text>
                               <Text size="xs" color="dimmed" style={{ flexShrink: 0 }}>
                                 •

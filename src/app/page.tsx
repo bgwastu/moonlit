@@ -59,6 +59,7 @@ import {
   isTikTokURL,
   isYoutubeURL,
 } from "@/utils";
+import { setMediaCache } from "@/utils/cache";
 
 const LOCAL_FILE_ACCEPT = ["audio/mpeg", "video/mp4", "audio/wav"];
 
@@ -129,6 +130,7 @@ function LocalUpload({ dropzoneMinHeight }: { dropzoneMinHeight: number }) {
           }
         : { id: fileId, title: files[0].name, author: "Unknown", coverUrl: "" };
 
+    await setMediaCache(sourceUrl, files[0]);
     setMedia({ fileUrl: URL.createObjectURL(files[0]), sourceUrl, metadata });
     push("/player");
     setLoading({ status: false, message: null });
