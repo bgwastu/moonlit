@@ -17,13 +17,14 @@ import {
   MantineProvider,
   MediaQuery,
   Menu,
+  Progress,
   SegmentedControl,
   Slider,
   Text,
   Transition,
   useMantineTheme,
 } from "@mantine/core";
-import { useDisclosure, useHotkeys, useMediaQuery, useOs } from "@mantine/hooks";
+import { useDisclosure, useHotkeys, useMediaQuery } from "@mantine/hooks";
 import { notifications } from "@mantine/notifications";
 import {
   IconAdjustments,
@@ -187,11 +188,6 @@ export function Player({
   const [customRate, setCustomRate] = useState(initialRate);
   const [customSemitones, setCustomSemitones] = useState(initialSemitones);
 
-  // Lite mode: native playback, default on mobile for reliable background playback
-  const os = useOs();
-  const isMobileOs = os === "ios" || os === "android";
-  const [liteMode, setLiteMode] = useState(isMobileOs);
-
   // Volume UI state (actual volume is managed by useStretchPlayer)
   const [isMuted, setIsMuted] = useState(false);
   const [isVolumeHovered, setIsVolumeHovered] = useState(false);
@@ -239,12 +235,12 @@ export function Player({
     state: stretchState,
     isPlaying,
     currentTime,
-    buffered,
     duration,
     rate,
     semitones,
     reverbAmount,
     volume,
+    progress,
     // Controls
     play,
     pause,
@@ -256,7 +252,6 @@ export function Player({
     seek,
   } = useStretchPlayer({
     fileUrl: media?.fileUrl || "",
-    liteMode,
     initialRate: initialRate,
     initialSemitones: savedState?.semitones ?? 0,
     initialReverbAmount: savedState?.reverbAmount ?? 0,
@@ -336,10 +331,6 @@ export function Player({
     duration > 0 &&
     !isPlaying &&
     !isRepeat;
-
-  const handleLiteModeChange = useCallback((enabled: boolean) => {
-    setLiteMode(enabled);
-  }, []);
 
   const handleReset = useCallback(() => {
     setRate(1);
@@ -753,8 +744,6 @@ export function Player({
       <CustomizePlaybackModal
         opened={modalOpened}
         onClose={closeModal}
-        liteMode={liteMode}
-        onLiteModeChange={handleLiteModeChange}
         rate={rate}
         onSpeedChangeEnd={handleRateChange}
         semitones={semitones}
@@ -1007,7 +996,7 @@ export function Player({
                     </Text>
                   </Box>
                 )}
-                {/* Toast-style loading indicator */}
+                {/* Loading overlay with progress */}
                 {stretchState === "loading" && (
                   <Box
                     style={{
@@ -1020,7 +1009,33 @@ export function Player({
                       pointerEvents: "none",
                     }}
                   >
-                    <Loader size="lg" color="white" />
+                    <Box
+                      style={{
+                        background: "rgba(0, 0, 0, 0.45)",
+                        backdropFilter: "blur(12px)",
+                        borderRadius: theme.radius.sm,
+                        padding: "16px 24px",
+                        boxShadow: "0 8px 32px rgba(0, 0, 0, 0.2)",
+                        display: "flex",
+                        flexDirection: "column",
+                        alignItems: "center",
+                        gap: 12,
+                      }}
+                    >
+                      <Text style={{ color: "white" }} fw={600}>
+                        Processing the audio...
+                      </Text>
+                      <Box style={{ width: 200 }}>
+                        <Progress
+                          value={progress?.percent ?? 100}
+                          striped
+                          animate
+                          color="rgba(255, 255, 255, 0.7)"
+                          bg="rgba(255, 255, 255, 0.1)"
+                          size="sm"
+                        />
+                      </Box>
+                    </Box>
                   </Box>
                 )}
               </Box>
@@ -1189,34 +1204,7 @@ export function Player({
             </Flex>
           </Flex>
 
-          <Box style={{ paddingRight: 8, position: "relative" }}>
-            {duration > 0 && buffered > 0 && (
-              <Box
-                style={{
-                  position: "absolute",
-                  top: 0,
-                  left: 8,
-                  right: 8,
-                  height: 4,
-                  pointerEvents: "none",
-                  zIndex: 0,
-                }}
-              >
-                <Box
-                  style={{
-                    position: "absolute",
-                    top: 0,
-                    left: 0,
-                    height: "100%",
-                    width: `${(buffered / duration) * 100}%`,
-                    backgroundColor: barColor,
-                    opacity: 0.25,
-                    borderRadius: theme.radius.xs,
-                    transition: "width 0.3s ease-out",
-                  }}
-                />
-              </Box>
-            )}
+          <Box style={{ paddingRight: 8 }}>
             <Slider
               disabled={isLoading}
               value={isSeeking ? seekPosition : currentTime}

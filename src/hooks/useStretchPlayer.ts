@@ -2,9 +2,13 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 type StretchPlayerState = "loading" | "ready" | "error";
 
+export type LoadProgress =
+  | { phase: "downloading"; percent: number }
+  | { phase: "processing"; percent: number }
+  | null;
+
 interface UseStretchPlayerProps {
   fileUrl: string;
-  liteMode?: boolean;
   initialRate?: number;
   initialSemitones?: number;
   initialPosition?: number;
@@ -21,13 +25,12 @@ interface UseStretchPlayerReturn {
   state: StretchPlayerState;
   isPlaying: boolean;
   currentTime: number;
-  buffered: number;
   duration: number;
   rate: number;
   semitones: number;
   reverbAmount: number;
   volume: number;
-  isNativeFallback: boolean;
+  progress: LoadProgress;
   play: (startTime?: number) => void;
   pause: () => void;
   togglePlayback: () => void;
@@ -80,7 +83,11 @@ interface PlayerRuntime {
 const UI_UPDATE_INTERVAL = 100;
 const DRIFT_THRESHOLD = 0.25;
 
-async function fetchFileInChunks(url: string, chunkSize: number): Promise<ArrayBuffer> {
+async function fetchFileInChunks(
+  url: string,
+  chunkSize: number,
+  onProgress?: (loaded: number, total: number) => void,
+): Promise<ArrayBuffer> {
   const head = await fetch(url, { method: "HEAD" });
   const length = parseInt(head.headers.get("content-length") || "0", 10);
   if (!length) {
@@ -88,18 +95,19 @@ async function fetchFileInChunks(url: string, chunkSize: number): Promise<ArrayB
     return fallback.arrayBuffer();
   }
   const totalChunks = Math.ceil(length / chunkSize);
-  const buffers: ArrayBuffer[] = await Promise.all(
-    Array.from({ length: totalChunks }, async (_, i) => {
-      const start = i * chunkSize;
-      const end = Math.min(start + chunkSize, length) - 1;
-      const res = await fetch(url, {
-        headers: { Range: `bytes=${start}-${end}` },
-      });
-      if (!res.ok && res.status !== 206)
-        throw new Error(`Chunk fetch failed: ${res.status}`);
-      return res.arrayBuffer();
-    }),
-  );
+  const buffers: ArrayBuffer[] = [];
+  for (let i = 0; i < totalChunks; i++) {
+    const start = i * chunkSize;
+    const end = Math.min(start + chunkSize, length) - 1;
+    const res = await fetch(url, {
+      headers: { Range: `bytes=${start}-${end}` },
+    });
+    if (!res.ok && res.status !== 206)
+      throw new Error(`Chunk fetch failed: ${res.status}`);
+    const buf = await res.arrayBuffer();
+    buffers.push(buf);
+    onProgress?.(Math.min((i + 1) * chunkSize, length), length);
+  }
   const total = buffers.reduce((s, b) => s + b.byteLength, 0);
   const merged = new Uint8Array(total);
   let offset = 0;
@@ -125,7 +133,6 @@ function generateImpulseResponse(context: AudioContext, dur = 2, decay = 2): Aud
 
 export function useStretchPlayer({
   fileUrl,
-  liteMode = false,
   initialRate = 1,
   initialSemitones = 0,
   initialPosition = 0,
@@ -141,12 +148,12 @@ export function useStretchPlayer({
   const [state, setState] = useState<StretchPlayerState>("loading");
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
-  const [buffered, setBuffered] = useState(0);
   const [duration, setDuration] = useState(0);
   const [rateState, setRateState] = useState(initialRate);
   const [semitonesState, setSemitonesState] = useState(initialSemitones);
   const [reverbAmountState, setReverbAmountState] = useState(initialReverbAmount);
   const [volumeState, setVolumeState] = useState(initialVolume);
+  const [progress, setProgress] = useState<LoadProgress>(null);
 
   const runtime = useRef<PlayerRuntime>({
     audioContext: null,
@@ -167,17 +174,12 @@ export function useStretchPlayer({
     lastUiUpdateMs: 0,
   });
 
-  const liteCleanupRef = useRef<(() => void) | null>(null);
-
   useEffect(() => {
     runtime.current.repeat = isRepeat;
     runtime.current.onEnded = onEnded;
   }, [isRepeat, onEnded]);
 
   const cleanup = useCallback(() => {
-    liteCleanupRef.current?.();
-    liteCleanupRef.current = null;
-
     const rt = runtime.current;
     if (rt.rafId !== null) {
       cancelAnimationFrame(rt.rafId);
@@ -208,48 +210,6 @@ export function useStretchPlayer({
     rt.isPlaying = false;
   }, []);
 
-  const setupLite = useCallback(
-    (audio: HTMLAudioElement, pos: number) => {
-      audio.muted = false;
-      audio.volume = initialVolume;
-      audio.playbackRate = initialRate;
-      (audio as any).preservesPitch = false;
-      (audio as any).mozPreservesPitch = false;
-      (audio as any).webkitPreservesPitch = false;
-
-      const onTime = () => {
-        setCurrentTime(audio.currentTime);
-        if (audio.buffered.length > 0)
-          setBuffered(audio.buffered.end(audio.buffered.length - 1));
-      };
-      const onProg = () => {
-        if (audio.buffered.length > 0)
-          setBuffered(audio.buffered.end(audio.buffered.length - 1));
-      };
-      const onEnd = () => {
-        if (runtime.current.repeat) {
-          audio.currentTime = 0;
-          audio.play().catch(() => {});
-        } else {
-          setIsPlaying(false);
-          setCurrentTime(audio.duration);
-          runtime.current.onEnded?.();
-        }
-      };
-      audio.addEventListener("timeupdate", onTime);
-      audio.addEventListener("progress", onProg);
-      audio.addEventListener("ended", onEnd);
-      liteCleanupRef.current = () => {
-        audio.removeEventListener("timeupdate", onTime);
-        audio.removeEventListener("progress", onProg);
-        audio.removeEventListener("ended", onEnd);
-      };
-      if (pos > 0) audio.currentTime = pos;
-      setCurrentTime(pos);
-    },
-    [initialRate, initialVolume],
-  );
-
   const setupFull = useCallback(
     async (audio: HTMLAudioElement, pos: number) => {
       const rt = runtime.current;
@@ -258,21 +218,34 @@ export function useStretchPlayer({
       const audioContext = new AudioContextClass();
       rt.audioContext = audioContext;
 
-      const arrayBuffer = await fetchFileInChunks(fileUrl, 2 * 1024 * 1024);
+      setProgress({ phase: "downloading", percent: 0 });
+      const arrayBuffer = await fetchFileInChunks(
+        fileUrl,
+        2 * 1024 * 1024,
+        (loaded, total) => {
+          const pct = Math.round((loaded / total) * 70);
+          setProgress({ phase: "downloading", percent: pct });
+        },
+      );
+
+      setProgress({ phase: "processing", percent: 70 });
       const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
       rt.buffer = audioBuffer;
       rt.duration = audioBuffer.duration;
       setDuration(audioBuffer.duration);
 
+      setProgress({ phase: "processing", percent: 80 });
       const SignalsmithStretch = (await import("signalsmith-stretch")).default;
       const stretch = await SignalsmithStretch(audioContext);
       rt.stretch = stretch;
 
+      setProgress({ phase: "processing", percent: 85 });
       const channelBuffers: Float32Array[] = [];
       for (let c = 0; c < audioBuffer.numberOfChannels; c++) {
         channelBuffers.push(audioBuffer.getChannelData(c));
       }
       await stretch.addBuffers(channelBuffers);
+      setProgress({ phase: "processing", percent: 95 });
 
       const convolver = audioContext.createConvolver();
       const dryGain = audioContext.createGain();
@@ -374,7 +347,6 @@ export function useStretchPlayer({
     if (!audio) return;
     let aborted = false;
 
-    // Capture current position before re-init
     const rt = runtime.current;
     const currentPos = rt.stretch?.inputTime ?? audio.currentTime ?? 0;
     posBeforeSwitch.current = Number.isFinite(currentPos) ? currentPos : 0;
@@ -382,72 +354,40 @@ export function useStretchPlayer({
     const init = async () => {
       cleanup();
       setState("loading");
+      setProgress(null);
 
       try {
         const resumePos =
           posBeforeSwitch.current > 0 ? posBeforeSwitch.current : initialPosition;
 
-        if (liteMode) {
-          audio.muted = false;
-          audio.src = fileUrl;
-          audio.preload = "metadata";
-          audio.load();
-          await new Promise<void>((resolve, reject) => {
-            if (audio.readyState >= 3) {
-              resolve();
-              return;
-            }
-            const onCanPlay = () => {
-              audio.removeEventListener("canplay", onCanPlay);
-              audio.removeEventListener("error", onError);
-              resolve();
-            };
-            const onError = (e: Event) => {
-              audio.removeEventListener("canplay", onCanPlay);
-              audio.removeEventListener("error", onError);
-              reject(new Error((e.target as HTMLAudioElement)?.error?.message || e.type));
-            };
-            audio.addEventListener("canplay", onCanPlay);
-            audio.addEventListener("error", onError);
-          });
-          if (aborted) return;
-          setDuration(audio.duration);
-          setBuffered(0);
-          setupLite(audio, resumePos);
-        } else {
-          audio.src = fileUrl;
-          audio.load();
-          await initFullMode(audio, resumePos);
-          if (aborted) return;
-        }
+        audio.src = fileUrl;
+        audio.load();
+        await initFullMode(audio, resumePos);
+        if (aborted) return;
 
         setState("ready");
+        setProgress(null);
         if (autoPlay || posBeforeSwitch.current > 0) {
           setTimeout(() => {
-            if (liteMode) {
-              if (resumePos > 0) audio.currentTime = resumePos;
-              audio.play().catch(() => {});
+            const rt2 = runtime.current;
+            if (rt2.stretch && rt2.audioContext) {
+              if (rt2.audioContext.state === "suspended") rt2.audioContext.resume();
+              rt2.stretch.schedule({
+                active: true,
+                input: resumePos,
+                rate: rt2.rate,
+                semitones: rt2.semitones,
+              });
+              rt2.isPlaying = true;
               setIsPlaying(true);
-            } else {
-              const rt2 = runtime.current;
-              if (rt2.stretch && rt2.audioContext) {
-                if (rt2.audioContext.state === "suspended") rt2.audioContext.resume();
-                rt2.stretch.schedule({
-                  active: true,
-                  input: resumePos,
-                  rate: rt2.rate,
-                  semitones: rt2.semitones,
-                });
-                rt2.isPlaying = true;
-                setIsPlaying(true);
-                audio.muted = true;
-                audio.play().catch(() => {});
-              }
+              audio.muted = true;
+              audio.play().catch(() => {});
             }
           }, 50);
         }
       } catch (error) {
         if (!aborted) {
+          setProgress(null);
           const msg = error instanceof Error ? error.message : String(error);
           console.error("StretchPlayer:", msg);
           setState("error");
@@ -461,109 +401,87 @@ export function useStretchPlayer({
       aborted = true;
       cleanup();
     };
-  }, [
-    fileUrl,
-    liteMode,
-    initialPosition,
-    autoPlay,
-    onPlayerError,
-    cleanup,
-    setupLite,
-    initFullMode,
-  ]);
+  }, [fileUrl, initialPosition, autoPlay, onPlayerError, cleanup, initFullMode]);
 
   useEffect(() => cleanup, [cleanup]);
 
-  const play = useCallback(
-    async (startTime?: number) => {
-      const a = audioRef.current;
-      if (!a) return;
-      const rt = runtime.current;
-      if ("mediaSession" in navigator) navigator.mediaSession.playbackState = "playing";
+  const play = useCallback(async (startTime?: number) => {
+    const a = audioRef.current;
+    if (!a) return;
+    const rt = runtime.current;
+    if ("mediaSession" in navigator) navigator.mediaSession.playbackState = "playing";
 
-      if (liteMode) {
-        try {
-          await a.play();
-          setIsPlaying(true);
-        } catch {
-          setIsPlaying(false);
-        }
+    if (!rt.audioContext || !rt.stretch) return;
+    if (rt.audioContext.state === "suspended") {
+      try {
+        await rt.audioContext.resume();
+      } catch {
+        setIsPlaying(false);
         return;
       }
-      if (!rt.audioContext || !rt.stretch) return;
-      if (rt.audioContext.state === "suspended") {
-        try {
-          await rt.audioContext.resume();
-        } catch {
-          setIsPlaying(false);
+    }
+    const t =
+      startTime !== undefined && Number.isFinite(startTime)
+        ? Math.max(0, Math.min(startTime, rt.duration))
+        : (rt.stretch.inputTime ?? 0);
+    rt.stretch.schedule({
+      active: true,
+      input: t,
+      rate: rt.rate,
+      semitones: rt.semitones,
+    });
+    rt.isPlaying = true;
+    setIsPlaying(true);
+    a.muted = true;
+    a.play().catch(() => {});
+    if (rt.rafId === null) {
+      const tick = () => {
+        if (!rt.isPlaying || !rt.stretch) {
+          rt.rafId = null;
           return;
         }
-      }
-      const t =
-        startTime !== undefined && Number.isFinite(startTime)
-          ? Math.max(0, Math.min(startTime, rt.duration))
-          : (rt.stretch.inputTime ?? 0);
-      rt.stretch.schedule({
-        active: true,
-        input: t,
-        rate: rt.rate,
-        semitones: rt.semitones,
-      });
-      rt.isPlaying = true;
-      setIsPlaying(true);
-      // Also play native element so OS detects playback (even muted, it registers as active)
-      a.muted = true;
-      a.play().catch(() => {});
-      if (rt.rafId === null) {
-        const tick = () => {
-          if (!rt.isPlaying || !rt.stretch) {
+        const t2 = rt.stretch.inputTime ?? 0;
+        const now = performance.now();
+        if (now - rt.lastUiUpdateMs > UI_UPDATE_INTERVAL) {
+          const clamped = Number.isFinite(t2) ? Math.min(t2, rt.duration) : 0;
+          setCurrentTime(clamped);
+          if (
+            "mediaSession" in navigator &&
+            "setPositionState" in navigator.mediaSession
+          ) {
+            try {
+              navigator.mediaSession.setPositionState({
+                duration: rt.duration,
+                playbackRate: Math.max(0.25, rt.rate),
+                position: clamped,
+              });
+            } catch {}
+          }
+          rt.lastUiUpdateMs = now;
+        }
+        if (t2 >= rt.duration - 0.05) {
+          if (rt.repeat) {
+            rt.stretch.schedule({
+              input: 0,
+              rate: rt.rate,
+              semitones: rt.semitones,
+              active: true,
+            });
+          } else {
+            rt.stretch.schedule({ active: false });
+            rt.isPlaying = false;
+            setIsPlaying(false);
+            setCurrentTime(rt.duration);
+            rt.onEnded?.();
             rt.rafId = null;
             return;
           }
-          const t2 = rt.stretch.inputTime ?? 0;
-          const now = performance.now();
-          if (now - rt.lastUiUpdateMs > UI_UPDATE_INTERVAL) {
-            const clamped = Number.isFinite(t2) ? Math.min(t2, rt.duration) : 0;
-            setCurrentTime(clamped);
-            if (
-              "mediaSession" in navigator &&
-              "setPositionState" in navigator.mediaSession
-            ) {
-              try {
-                navigator.mediaSession.setPositionState({
-                  duration: rt.duration,
-                  playbackRate: Math.max(0.25, rt.rate),
-                  position: clamped,
-                });
-              } catch {}
-            }
-            rt.lastUiUpdateMs = now;
-          }
-          if (t2 >= rt.duration - 0.05) {
-            if (rt.repeat) {
-              rt.stretch.schedule({
-                input: 0,
-                rate: rt.rate,
-                semitones: rt.semitones,
-                active: true,
-              });
-            } else {
-              rt.stretch.schedule({ active: false });
-              rt.isPlaying = false;
-              setIsPlaying(false);
-              setCurrentTime(rt.duration);
-              rt.onEnded?.();
-              rt.rafId = null;
-              return;
-            }
-          }
-          rt.rafId = requestAnimationFrame(tick);
-        };
+        }
         rt.rafId = requestAnimationFrame(tick);
-      }
-    },
-    [liteMode],
-  );
+      };
+      rt.rafId = requestAnimationFrame(tick);
+    }
+  }, []);
 
   const pause = useCallback(() => {
     const rt = runtime.current;
@@ -580,11 +498,6 @@ export function useStretchPlayer({
         } catch {}
       }
     }
-    if (liteMode) {
-      audioRef.current?.pause();
-      setIsPlaying(false);
-      return;
-    }
     rt.isPlaying = false;
     setIsPlaying(false);
     if (rt.stretch) rt.stretch.schedule({ active: false });
@@ -593,51 +506,32 @@ export function useStretchPlayer({
       rt.rafId = null;
     }
     audioRef.current?.pause();
-  }, [liteMode]);
+  }, []);
 
   const togglePlayback = useCallback(() => {
     isPlaying ? pause() : play();
   }, [isPlaying, play, pause]);
 
-  const seek = useCallback(
-    (t: number) => {
-      if (!Number.isFinite(t)) return;
-      const rt = runtime.current;
-      if (liteMode) {
-        const a = audioRef.current;
-        if (!a) return;
-        const clamped = Math.max(0, Math.min(t, a.duration || 0));
-        a.currentTime = clamped;
-        setCurrentTime(clamped);
-        return;
-      }
-      const clamped = Math.max(0, Math.min(t, rt.duration));
-      setCurrentTime(clamped);
-      if (rt.stretch)
-        rt.stretch.schedule({
-          input: clamped,
-          rate: rt.rate,
-          semitones: rt.semitones,
-          active: rt.isPlaying,
-        });
-    },
-    [liteMode],
-  );
+  const seek = useCallback((t: number) => {
+    if (!Number.isFinite(t)) return;
+    const rt = runtime.current;
+    const clamped = Math.max(0, Math.min(t, rt.duration));
+    setCurrentTime(clamped);
+    if (rt.stretch)
+      rt.stretch.schedule({
+        input: clamped,
+        rate: rt.rate,
+        semitones: rt.semitones,
+        active: rt.isPlaying,
+      });
+  }, []);
 
-  const setRate = useCallback(
-    (r: number) => {
-      const rt = runtime.current;
-      rt.rate = r;
-      setRateState(r);
-      if (liteMode) {
-        const a = audioRef.current;
-        if (a) a.playbackRate = r;
-        return;
-      }
-      if (rt.stretch) rt.stretch.schedule({ rate: r, semitones: rt.semitones });
-    },
-    [liteMode],
-  );
+  const setRate = useCallback((r: number) => {
+    const rt = runtime.current;
+    rt.rate = r;
+    setRateState(r);
+    if (rt.stretch) rt.stretch.schedule({ rate: r, semitones: rt.semitones });
+  }, []);
 
   const setSemitones = useCallback((s: number) => {
     const rt = runtime.current;
@@ -657,34 +551,25 @@ export function useStretchPlayer({
     }
   }, []);
 
-  const setVolume = useCallback(
-    (v: number) => {
-      const c = Math.max(0, Math.min(1, v));
-      const rt = runtime.current;
-      rt.volume = c;
-      setVolumeState(c);
-      if (liteMode) {
-        const a = audioRef.current;
-        if (a) a.volume = c;
-        return;
-      }
-      if (rt.masterGain) rt.masterGain.gain.value = c;
-    },
-    [liteMode],
-  );
+  const setVolume = useCallback((v: number) => {
+    const c = Math.max(0, Math.min(1, v));
+    const rt = runtime.current;
+    rt.volume = c;
+    setVolumeState(c);
+    if (rt.masterGain) rt.masterGain.gain.value = c;
+  }, []);
 
   return {
     audioRef,
     state,
     isPlaying,
     currentTime,
-    buffered,
     duration,
     rate: rateState,
     semitones: semitonesState,
     reverbAmount: reverbAmountState,
     volume: volumeState,
-    isNativeFallback: liteMode,
+    progress,
     play,
     pause,
     togglePlayback,
