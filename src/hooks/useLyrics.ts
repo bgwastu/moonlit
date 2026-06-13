@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Lyric,
   LyricsSearchRecord,
@@ -12,7 +12,6 @@ import {
 const LRCLIB_BASE = "https://lrclib.net/api";
 const USER_AGENT = "Moonlit (https://github.com/bgwastu/moonlit)";
 
-/** Require lyrics duration to match track duration 1:1 (within 1 second) */
 function durationMatches(trackSeconds: number, recordSeconds: number): boolean {
   return Math.abs((recordSeconds ?? 0) - trackSeconds) <= 1;
 }
@@ -35,8 +34,8 @@ interface UseLyricsOptions {
   artistName: string;
   durationSeconds: number;
   enabled: boolean;
-  selectedSyncedLyrics?: string | null; // If provided, use this instead of fetching
-  offsetSeconds?: number; // Offset to apply to lyrics timing
+  selectedSyncedLyrics?: string | null;
+  offsetSeconds?: number;
 }
 
 interface DiscoveredLyrics {
@@ -53,7 +52,6 @@ interface UseLyricsReturn {
   error: string | null;
   discoveredLyrics: DiscoveredLyrics | null;
   searchResults: LyricsSearchRecord[];
-  refetch: () => void;
 }
 
 /** Apply offset to parsed lyrics */
@@ -67,6 +65,40 @@ function applyOffset(lyrics: Lyric[], offsetMs: number): Lyric[] {
       startTimeMs: part.startTimeMs + offsetMs,
     })),
   }));
+}
+
+// --- In-memory session cache ---
+interface CachedLyrics {
+  lyrics: Lyric[];
+  discovered: DiscoveredLyrics | null;
+  searchResults: LyricsSearchRecord[];
+}
+
+const lyricsCache = new Map<string, CachedLyrics>();
+
+function cacheKey(track: string, artist: string, duration: number): string {
+  return `${track}||${artist}||${duration}`;
+}
+
+function setCached(key: string, data: CachedLyrics): void {
+  lyricsCache.set(key, data);
+}
+
+function getCached(key: string): CachedLyrics | undefined {
+  return lyricsCache.get(key);
+}
+
+async function fetchJson<T>(url: string, signal?: AbortSignal): Promise<T | null> {
+  try {
+    const res = await fetch(url, {
+      headers: { "Lrclib-Client": USER_AGENT },
+      signal,
+    });
+    if (!res.ok) return null;
+    return (await res.json()) as T;
+  } catch {
+    return null;
+  }
 }
 
 export function useLyrics({
@@ -84,153 +116,181 @@ export function useLyrics({
   const [searchResults, setSearchResults] = useState<LyricsSearchRecord[]>([]);
 
   const offsetMs = offsetSeconds * 1000;
+  const trackRef = useRef({ trackName, artistName, durationSeconds });
 
-  const fetchLyrics = useCallback(async () => {
-    const titleForLyrics = stripVideoTitleFiller(trackName) || trackName.trim();
-
-    if (!titleForLyrics || !artistName?.trim() || durationSeconds <= 0) {
-      setLyrics([]);
-      setState("idle");
-      setDiscoveredLyrics(null);
-      setSearchResults([]);
-      return;
-    }
-    setState("loading");
-    setError(null);
-
-    const getParams = new URLSearchParams({
-      track_name: titleForLyrics,
-      artist_name: artistName.trim(),
-      album_name: "",
-      duration: String(Math.round(durationSeconds)),
-    });
-
-    const searchParams = new URLSearchParams({
-      q: `${titleForLyrics} ${artistName.trim()}`,
-      track_name: titleForLyrics,
-      artist_name: artistName.trim(),
-    });
-
-    try {
-      // Run both requests in parallel
-      const [getRes, searchRes] = await Promise.allSettled([
-        fetch(`${LRCLIB_BASE}/get?${getParams}`, {
-          headers: { "Lrclib-Client": USER_AGENT },
-        }),
-        fetch(`${LRCLIB_BASE}/search?${searchParams}`, {
-          headers: { "Lrclib-Client": USER_AGENT },
-        }),
-      ]);
-
-      let searchRecords: LyricsSearchRecord[] = [];
-      if (searchRes.status === "fulfilled" && searchRes.value.ok) {
-        try {
-          const searchData = (await searchRes.value.json()) as LyricsSearchRecord[];
-          searchRecords = Array.isArray(searchData) ? searchData : [];
-        } catch {
-          searchRecords = [];
-        }
-      }
-      setSearchResults(searchRecords);
-
-      // -- Direct /get when duration and synced lyrics match --
-      if (getRes.status === "fulfilled" && getRes.value.ok) {
-        const data: LrclibResponse = await getRes.value.json();
-        const recordDuration = data.duration ?? 0;
-        const synced = data.syncedLyrics?.trim();
-        if (synced && durationMatches(durationSeconds, recordDuration)) {
-          const durationMs = recordDuration * 1000;
-          const parsed = parseLRC(synced, durationMs);
-          setLyrics(applyOffset(parsed, offsetMs));
-          setState(parsed.length > 0 ? "ready" : "not_found");
-          if (parsed.length > 0 && data.id) {
-            setDiscoveredLyrics({
-              id: data.id,
-              trackName: data.trackName ?? titleForLyrics,
-              artistName: data.artistName ?? artistName.trim(),
-              albumName: data.albumName,
-              syncedLyrics: synced,
-            });
-          } else {
-            setDiscoveredLyrics(null);
-          }
-          return;
-        }
-      }
-
-      // -- Fallback: auto-pick best search hit (same order as manual modal) --
-      const ranked = sortLyricsSearchRecordsForTrack(searchRecords, durationSeconds);
-      const best = ranked[0];
-      const bestSynced = best?.syncedLyrics?.trim();
-      if (best && bestSynced) {
-        const recordDuration = best.duration ?? 0;
-        const durationMs = Math.max(0, recordDuration) * 1000;
-        const parsed = parseLRC(bestSynced, durationMs);
-        setLyrics(applyOffset(parsed, offsetMs));
-        setState(parsed.length > 0 ? "ready" : "not_found");
-        if (parsed.length > 0) {
-          setDiscoveredLyrics({
-            id: best.id,
-            trackName: best.trackName,
-            artistName: best.artistName,
-            albumName: best.albumName,
-            syncedLyrics: bestSynced,
-          });
-        } else {
-          setDiscoveredLyrics(null);
-        }
-        return;
-      }
-
-      setLyrics([]);
-      setDiscoveredLyrics(null);
-      if (getRes.status === "rejected") {
-        throw new Error("Network error");
-      }
-      if (
-        getRes.status === "fulfilled" &&
-        !getRes.value.ok &&
-        getRes.value.status !== 404
-      ) {
-        throw new Error(`LRCLib ${getRes.value.status}`);
-      }
-      setState("not_found");
-    } catch (e) {
-      setLyrics([]);
-      setSearchResults([]);
-      setState("error");
-      setError(e instanceof Error ? e.message : "Failed to load lyrics");
-      setDiscoveredLyrics(null);
-    }
-  }, [trackName, artistName, durationSeconds, offsetMs]);
-
-  // Handle selected synced lyrics (user-selected override)
   useEffect(() => {
-    let cancelled = false;
-    const id = requestAnimationFrame(() => {
-      if (!enabled) {
+    trackRef.current = { trackName, artistName, durationSeconds };
+  }, [trackName, artistName, durationSeconds]);
+
+  const fetchLyrics = useCallback(
+    async (signal?: AbortSignal) => {
+      const { trackName: t, artistName: a, durationSeconds: d } = trackRef.current;
+      const titleForLyrics = stripVideoTitleFiller(t) || t.trim();
+
+      if (!titleForLyrics || !a?.trim() || d <= 0) {
         setLyrics([]);
         setState("idle");
-        setError(null);
+        setDiscoveredLyrics(null);
+        setSearchResults([]);
         return;
       }
 
-      if (selectedSyncedLyrics) {
-        const durationMs = durationSeconds * 1000;
-        const parsed = parseLRC(selectedSyncedLyrics, durationMs);
+      const cacheK = cacheKey(titleForLyrics, a.trim(), d);
+      const cached = getCached(cacheK);
+      if (cached) {
+        setLyrics(cached.lyrics);
+        setDiscoveredLyrics(cached.discovered);
+        setSearchResults(cached.searchResults);
+        setState(cached.lyrics.length > 0 ? "ready" : "not_found");
+        return;
+      }
+
+      setState("loading");
+      setError(null);
+
+      // Fire both GET-cached and search in parallel
+      const getParams = new URLSearchParams({
+        track_name: titleForLyrics,
+        artist_name: a.trim(),
+        album_name: "",
+        duration: String(Math.round(d)),
+      });
+
+      const searchParams = new URLSearchParams({
+        track_name: titleForLyrics,
+        artist_name: a.trim(),
+      });
+
+      const getUrl = `${LRCLIB_BASE}/get-cached?${getParams}`;
+      const searchUrl = `${LRCLIB_BASE}/search?${searchParams}`;
+
+      const searchPromise = fetchJson<LyricsSearchRecord[]>(searchUrl, signal);
+
+      // Try GET-cached first (fast, no external lookups)
+      const getData = await fetchJson<LrclibResponse>(getUrl, signal);
+      if (signal?.aborted) return;
+
+      if (getData?.syncedLyrics?.trim() && durationMatches(d, getData.duration ?? 0)) {
+        const parsed = parseLRC(getData.syncedLyrics, (getData.duration ?? d) * 1000);
+        const finalLyrics = applyOffset(parsed, offsetMs);
+        const discovered: DiscoveredLyrics | null =
+          parsed.length > 0 && getData.id
+            ? {
+                id: getData.id,
+                trackName: getData.trackName ?? titleForLyrics,
+                artistName: getData.artistName ?? a.trim(),
+                albumName: getData.albumName,
+                syncedLyrics: getData.syncedLyrics,
+              }
+            : null;
+
+        // Await search for pre-populating the manual modal (background)
+        const searchData = await searchPromise;
+        const results = Array.isArray(searchData) ? searchData : [];
+
+        setLyrics(finalLyrics);
+        setDiscoveredLyrics(discovered);
+        setSearchResults(results);
+        setState(parsed.length > 0 ? "ready" : "not_found");
+
+        setCached(cacheK, { lyrics: finalLyrics, discovered, searchResults: results });
+        return;
+      }
+
+      // GET-cached missed — try GET (may access external sources)
+      const getUrlUncached = `${LRCLIB_BASE}/get?${getParams}`;
+      const getDataUncached = await fetchJson<LrclibResponse>(getUrlUncached, signal);
+      if (signal?.aborted) return;
+
+      if (
+        getDataUncached?.syncedLyrics?.trim() &&
+        durationMatches(d, getDataUncached.duration ?? 0)
+      ) {
+        const parsed = parseLRC(
+          getDataUncached.syncedLyrics,
+          (getDataUncached.duration ?? d) * 1000,
+        );
+        const finalLyrics = applyOffset(parsed, offsetMs);
+        const discovered: DiscoveredLyrics | null =
+          parsed.length > 0 && getDataUncached.id
+            ? {
+                id: getDataUncached.id,
+                trackName: getDataUncached.trackName ?? titleForLyrics,
+                artistName: getDataUncached.artistName ?? a.trim(),
+                albumName: getDataUncached.albumName,
+                syncedLyrics: getDataUncached.syncedLyrics,
+              }
+            : null;
+
+        const searchData = await searchPromise;
+        const results = Array.isArray(searchData) ? searchData : [];
+
+        setLyrics(finalLyrics);
+        setDiscoveredLyrics(discovered);
+        setSearchResults(results);
+        setState(parsed.length > 0 ? "ready" : "not_found");
+
+        setCached(cacheK, { lyrics: finalLyrics, discovered, searchResults: results });
+        return;
+      }
+
+      // No direct match — use search results
+      const searchData = await searchPromise;
+      const records = Array.isArray(searchData) ? searchData : [];
+      setSearchResults(records);
+
+      const ranked = sortLyricsSearchRecordsForTrack(records, d);
+      const best = ranked[0];
+      const bestSynced = best?.syncedLyrics?.trim();
+
+      if (best && bestSynced) {
+        const parsed = parseLRC(bestSynced, (best.duration ?? d) * 1000);
+        const finalLyrics = applyOffset(parsed, offsetMs);
+        const discovered: DiscoveredLyrics | null =
+          parsed.length > 0
+            ? {
+                id: best.id,
+                trackName: best.trackName,
+                artistName: best.artistName,
+                albumName: best.albumName,
+                syncedLyrics: bestSynced,
+              }
+            : null;
+
+        setLyrics(finalLyrics);
+        setDiscoveredLyrics(discovered);
+        setState("ready");
+
+        setCached(cacheK, { lyrics: finalLyrics, discovered, searchResults: records });
+        return;
+      }
+
+      // Nothing found
+      setLyrics([]);
+      setDiscoveredLyrics(null);
+      setState("not_found");
+      setCached(cacheK, { lyrics: [], discovered: null, searchResults: records });
+    },
+    [offsetMs],
+  );
+
+  // Main effect: pre-fetch lyrics immediately when enabled
+  useEffect(() => {
+    if (!enabled) return;
+
+    if (selectedSyncedLyrics) {
+      const parsed = parseLRC(selectedSyncedLyrics, durationSeconds * 1000);
+      queueMicrotask(() => {
         setLyrics(applyOffset(parsed, offsetMs));
         setState(parsed.length > 0 ? "ready" : "not_found");
-        return;
-      }
+      });
+      return;
+    }
 
-      if (!cancelled) void fetchLyrics();
-    });
-
-    return () => {
-      cancelled = true;
-      cancelAnimationFrame(id);
-    };
+    const controller = new AbortController();
+    fetchLyrics(controller.signal);
+    return () => controller.abort();
   }, [enabled, selectedSyncedLyrics, durationSeconds, offsetMs, fetchLyrics]);
 
-  return { lyrics, state, error, discoveredLyrics, searchResults, refetch: fetchLyrics };
+  return { lyrics, state, error, discoveredLyrics, searchResults };
 }
