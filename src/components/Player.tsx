@@ -191,7 +191,6 @@ export function Player({
   const os = useOs();
   const isMobileOs = os === "ios" || os === "android";
   const [liteMode, setLiteMode] = useState(isMobileOs);
-  const [pitchLockedToSpeed, setPitchLockedToSpeed] = useState(true);
 
   // Volume UI state (actual volume is managed by useStretchPlayer)
   const [isMuted, setIsMuted] = useState(false);
@@ -342,22 +341,11 @@ export function Player({
     setLiteMode(enabled);
   }, []);
 
-  const handleLockToggle = useCallback(
-    (locked: boolean) => {
-      setPitchLockedToSpeed(locked);
-      if (locked) {
-        setSemitones(getSemitonesFromRate(rate));
-      }
-    },
-    [rate, setSemitones],
-  );
-
   const handleReset = useCallback(() => {
     setRate(1);
     setSemitones(0);
     setReverbAmount(0);
     setVolume(1);
-    setPitchLockedToSpeed(true);
     setPlaybackMode("normal");
     setSlowedRate(0.8);
     setNormalRate(1);
@@ -798,8 +786,6 @@ export function Player({
         onClose={closeModal}
         liteMode={liteMode}
         onLiteModeChange={handleLiteModeChange}
-        pitchLockedToSpeed={pitchLockedToSpeed}
-        onLockToggle={handleLockToggle}
         rate={rate}
         onSpeedChangeEnd={handleRateChange}
         semitones={semitones}
