@@ -48,16 +48,12 @@ import {
 } from "@tabler/icons-react";
 import { useDominantColor } from "@/hooks/useDominantColor";
 import { useLyrics } from "@/hooks/useLyrics";
-import { useMediaSession } from "@/hooks/useMediaSession";
 import { usePlayerTapGestures } from "@/hooks/usePlayerTapGestures";
 import { useStretchPlayer } from "@/hooks/useStretchPlayer";
-import { useToast } from "@/hooks/useToast";
-import { useVideoStatePersistence } from "@/hooks/useVideoStatePersistence";
 import { Media } from "@/interfaces";
 import { LyricsSettings } from "@/interfaces";
 import { LyricsSearchRecord, stripVideoTitleFiller } from "@/lib/lyrics";
-import { getModeFromRate, getVideoState } from "@/lib/videoState";
-import { saveVideoState } from "@/lib/videoState";
+import { getModeFromRate, getVideoState, saveVideoState } from "@/lib/videoState";
 import { getFormattedTime, getPlatform } from "@/utils";
 import {
   createDynamicTheme,
@@ -118,6 +114,7 @@ export function Player({ media, repeating }: { media: Media; repeating: boolean 
   const os = useOs();
   const isMobileOs = os === "ios" || os === "android";
   const [liteMode, setLiteMode] = useState(isMobileOs);
+  const [pitchLockedToSpeed, setPitchLockedToSpeed] = useState(true);
 
   // Volume UI state (actual volume is managed by useStretchPlayer)
   const [isMuted, setIsMuted] = useState(false);
@@ -137,7 +134,24 @@ export function Player({ media, repeating }: { media: Media; repeating: boolean 
     if (dominantColor === "rgba(0,0,0,0)") return theme.colors.violet[5];
     return generateColors(dominantColor)[5];
   }, [dominantColor, theme.colors.violet]);
-  const { toast, showToast } = useToast();
+
+  // Inlined useToast
+  const [toast, setToast] = useState<{
+    message: React.ReactNode;
+    visible: boolean;
+    isCircular?: boolean;
+  }>({
+    message: null,
+    visible: false,
+  });
+  const toastTimeoutRef = useRef<NodeJS.Timeout | undefined>(undefined);
+  const showToast = useCallback((message: React.ReactNode, isCircular?: boolean) => {
+    if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
+    setToast({ message, visible: true, isCircular });
+    toastTimeoutRef.current = setTimeout(() => {
+      setToast((prev) => ({ ...prev, visible: false }));
+    }, 1200);
+  }, []);
 
   // Initialize state loaded flag
   useEffect(() => {
@@ -187,7 +201,7 @@ export function Player({ media, repeating }: { media: Media; repeating: boolean 
     trackName: media.metadata.title,
     artistName: media.metadata.artist ?? media.metadata.author,
     durationSeconds: duration,
-    enabled: showLyrics && duration > 0,
+    enabled: duration > 0,
     selectedSyncedLyrics: lyricsSettings?.syncedLyrics,
     offsetSeconds: lyricsSettings?.offset ?? 0,
   });
@@ -263,6 +277,30 @@ export function Player({ media, repeating }: { media: Media; repeating: boolean 
     setLiteMode(enabled);
   }, []);
 
+  const handleLockToggle = useCallback(
+    (locked: boolean) => {
+      setPitchLockedToSpeed(locked);
+      if (locked) {
+        setSemitones(getSemitonesFromRate(rate));
+      }
+    },
+    [rate, setSemitones],
+  );
+
+  const handleReset = useCallback(() => {
+    setRate(1);
+    setSemitones(0);
+    setReverbAmount(0);
+    setVolume(1);
+    setPitchLockedToSpeed(true);
+    setPlaybackMode("normal");
+    setSlowedRate(0.8);
+    setNormalRate(1);
+    setSpeedupRate(1.25);
+    setCustomRate(1);
+    setCustomSemitones(0);
+  }, [setRate, setSemitones, setReverbAmount, setVolume]);
+
   // Media session (browser controls)
   const handleBackward = useCallback(() => {
     const newTime = Math.max(0, currentTime - 5);
@@ -286,31 +324,142 @@ export function Player({ media, repeating }: { media: Media; repeating: boolean 
     );
   }, [currentTime, duration, seek, showToast]);
 
-  useMediaSession({
-    media,
-    isPlaying,
-    currentTime,
-    duration,
-    rate,
-    onPlay: play,
-    onPause: pause,
-    onSeekBackward: handleBackward,
-    onSeekForward: handleForward,
-    onSeek: seek,
-  });
+  // Inlined useMediaSession
+  useEffect(() => {
+    if (!("mediaSession" in navigator)) return;
 
-  // Video state persistence (lyrics are saved separately on change)
-  useVideoStatePersistence({
-    sourceUrl,
+    let highResCover = media.metadata.coverUrl;
+    const platform =
+      media.sourceUrl.includes("youtube") || media.sourceUrl.includes("youtu.be")
+        ? "youtube"
+        : "";
+    if (platform === "youtube") {
+      highResCover =
+        media.metadata.coverUrl?.replace(
+          /(?<!maxres)(hq|mq|sd)?default/,
+          "maxresdefault",
+        ) || media.metadata.coverUrl;
+    }
+
+    navigator.mediaSession.metadata = new MediaMetadata({
+      title: media.metadata.title,
+      artist: media.metadata.artist ?? media.metadata.author,
+      album: media.metadata.album ?? "",
+      artwork: [{ src: highResCover, sizes: "512x512", type: "image/jpeg" }],
+    });
+
+    navigator.mediaSession.setActionHandler("play", () => play());
+    navigator.mediaSession.setActionHandler("pause", () => pause());
+    navigator.mediaSession.setActionHandler("seekbackward", () => handleBackward());
+    navigator.mediaSession.setActionHandler("seekforward", () => handleForward());
+    navigator.mediaSession.setActionHandler("previoustrack", () => handleBackward());
+    navigator.mediaSession.setActionHandler("nexttrack", () => handleForward());
+    try {
+      navigator.mediaSession.setActionHandler("seekto", (details) => {
+        if (details.seekTime !== undefined) seek(details.seekTime);
+      });
+    } catch {}
+
+    return () => {
+      for (const a of [
+        "play",
+        "pause",
+        "seekbackward",
+        "seekforward",
+        "previoustrack",
+        "nexttrack",
+      ]) {
+        navigator.mediaSession.setActionHandler(a as MediaSessionAction, null);
+      }
+      try {
+        navigator.mediaSession.setActionHandler("seekto", null);
+      } catch {}
+    };
+  }, [media, play, pause, handleBackward, handleForward, seek]);
+
+  // Inlined useVideoStatePersistence
+  const lastSaveRef = useRef<number>(0);
+  useEffect(() => {
+    if (!stateLoaded || !isReady) return;
+    const now = Date.now();
+    if (now - lastSaveRef.current < 5000) return;
+    lastSaveRef.current = now;
+    saveVideoState(sourceUrl, {
+      rate,
+      semitones,
+      reverbAmount,
+      isRepeat,
+      volume,
+      showLyrics,
+    });
+  }, [
     rate,
     semitones,
     reverbAmount,
     isRepeat,
     volume,
+    sourceUrl,
+    stateLoaded,
     isReady,
+    showLyrics,
+  ]);
+
+  // Wake Lock API: keep screen on during playback
+  const wakeLockRef = useRef<WakeLockSentinel | null>(null);
+  useEffect(() => {
+    const acquireWakeLock = async () => {
+      try {
+        if (wakeLockRef.current) return;
+        wakeLockRef.current = await navigator.wakeLock.request("screen");
+      } catch {}
+    };
+    const releaseWakeLock = async () => {
+      try {
+        await wakeLockRef.current?.release();
+      } catch {}
+      wakeLockRef.current = null;
+    };
+
+    if (isPlaying && stateLoaded) acquireWakeLock();
+    else releaseWakeLock();
+
+    return () => {
+      releaseWakeLock();
+    };
+  }, [isPlaying, stateLoaded]);
+
+  useEffect(() => {
+    const saveState = () => {
+      if (!stateLoaded) return;
+      saveVideoState(sourceUrl, {
+        rate,
+        semitones,
+        reverbAmount,
+        isRepeat,
+        volume,
+        showLyrics,
+      });
+    };
+    const handler = () => {
+      if (document.hidden) saveState();
+    };
+    window.addEventListener("beforeunload", saveState);
+    document.addEventListener("visibilitychange", handler);
+    return () => {
+      saveState();
+      window.removeEventListener("beforeunload", saveState);
+      document.removeEventListener("visibilitychange", handler);
+    };
+  }, [
+    rate,
+    semitones,
+    reverbAmount,
+    isRepeat,
+    volume,
+    sourceUrl,
     stateLoaded,
     showLyrics,
-  });
+  ]);
 
   // Modal controls
   const [modalOpened, { open: openModal, close: closeModal }] = useDisclosure(false);
@@ -540,12 +689,15 @@ export function Player({ media, repeating }: { media: Media; repeating: boolean 
         onClose={closeModal}
         liteMode={liteMode}
         onLiteModeChange={handleLiteModeChange}
+        pitchLockedToSpeed={pitchLockedToSpeed}
+        onLockToggle={handleLockToggle}
         rate={rate}
         onSpeedChangeEnd={handleRateChange}
         semitones={semitones}
         onPitchChangeEnd={handleSemitonesChange}
         reverbAmount={reverbAmount}
         onReverbChange={setReverbAmount}
+        onReset={handleReset}
       />
 
       <DownloadModal
