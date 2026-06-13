@@ -2,7 +2,6 @@ import {
   type YouTubeSearchResult,
   searchYouTube as searchYouTubeYtDlp,
 } from "@/lib/yt-dlp";
-import { isTikTokURL } from "@/utils";
 
 const YT_THUMB_BASE = "https://i.ytimg.com/vi";
 
@@ -60,10 +59,6 @@ export async function GET(request: Request) {
   const limit = Number(searchParams.get("limit") ?? 3);
 
   if (!query) {
-    return Response.json({ results: [] });
-  }
-
-  if (isTikTokURL(query)) {
     return Response.json({ results: [] });
   }
 

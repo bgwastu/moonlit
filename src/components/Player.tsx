@@ -3,7 +3,8 @@
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { SiTiktok, SiYoutube, SiYoutubemusic } from "@icons-pack/react-simple-icons";
+import { useRouter } from "next/navigation";
+import { SiYoutube } from "@icons-pack/react-simple-icons";
 import { generateColors } from "@mantine/colors-generator";
 import {
   ActionIcon,
@@ -65,7 +66,6 @@ import {
   createDynamicTheme,
   getOriginalPlatformUrl,
   getSemitonesFromRate,
-  getYouTubeMusicUrl,
   toMaxResCoverUrl,
 } from "@/utils/player";
 import { StreamState, streamWithProgress } from "@/utils/streamer";
@@ -773,7 +773,6 @@ export function Player({
   if (!media) return null;
 
   const originalPlatformUrl = getOriginalPlatformUrl(media, currentTime);
-  const youtubeMusicUrl = getYouTubeMusicUrl(media);
 
   return (
     <MantineProvider theme={dynamicTheme} inherit>
@@ -1193,30 +1192,13 @@ export function Player({
                   </Menu.Item>
                   {originalPlatformUrl && (
                     <Menu.Item
-                      icon={
-                        getPlatform(media.sourceUrl) === "youtube" ? (
-                          <SiYoutube size={14} />
-                        ) : (
-                          <SiTiktok size={14} />
-                        )
-                      }
+                      icon={<SiYoutube size={14} />}
                       component="a"
                       href={originalPlatformUrl}
                       rightSection={<IconExternalLink size={12} />}
                       target="_blank"
                     >
-                      {getPlatform(media.sourceUrl) === "youtube" ? "YouTube" : "TikTok"}
-                    </Menu.Item>
-                  )}
-                  {youtubeMusicUrl && (
-                    <Menu.Item
-                      icon={<SiYoutubemusic size={14} />}
-                      component="a"
-                      href={youtubeMusicUrl}
-                      rightSection={<IconExternalLink size={12} />}
-                      target="_blank"
-                    >
-                      YouTube Music
+                      YouTube
                     </Menu.Item>
                   )}
                   <Menu.Divider />

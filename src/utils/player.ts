@@ -11,24 +11,6 @@ export function getOriginalPlatformUrl(media: Media, currentTime: number): strin
     const realSeconds = Math.floor(currentTime);
     return `https://www.youtube.com/watch?v=${media.metadata.id}&t=${realSeconds}s`;
   }
-  if (getPlatform(media.sourceUrl) === "tiktok" && media.metadata.id) {
-    const currentUrl = typeof window !== "undefined" ? window.location.pathname : "";
-    const match = currentUrl.match(/\/(@[^/]+)\/video\/(\d+)/);
-    if (match) {
-      const [, creator, videoId] = match;
-      return `https://www.tiktok.com/${creator}/video/${videoId}`;
-    }
-  }
-  return null;
-}
-
-/**
- * Get YouTube Music URL for a video.
- */
-export function getYouTubeMusicUrl(media: Media): string | null {
-  if (getPlatform(media.sourceUrl) === "youtube" && media.metadata.id) {
-    return `https://music.youtube.com/watch?v=${media.metadata.id}`;
-  }
   return null;
 }
 

@@ -1,6 +1,6 @@
 import { Metadata } from "next";
 import { Player } from "@/components/Player";
-import { isDirectMediaURL, isTikTokURL, isYoutubeURL } from "@/utils";
+import { isDirectMediaURL, isYoutubeURL } from "@/utils";
 
 type SearchParams = { [key: string]: string | string[] | undefined };
 
@@ -18,7 +18,7 @@ export default async function Page({
 
   if (!url) return <Player />;
 
-  if (isDirectMediaURL(url) || isYoutubeURL(url) || isTikTokURL(url)) {
+  if (isDirectMediaURL(url) || isYoutubeURL(url)) {
     return <Player url={url} />;
   }
 

@@ -52,13 +52,7 @@ import LoadingOverlay from "@/components/LoadingOverlay";
 import ResetModal from "@/components/ResetModal";
 import { useAppContext } from "@/context/AppContext";
 import type { Media } from "@/interfaces";
-import {
-  getTikTokCreatorAndVideoId,
-  getYouTubeId,
-  isDirectMediaURL,
-  isTikTokURL,
-  isYoutubeURL,
-} from "@/utils";
+import { getYouTubeId, isDirectMediaURL, isYoutubeURL } from "@/utils";
 import { setMediaCache } from "@/utils/cache";
 
 const LOCAL_FILE_ACCEPT = ["audio/mpeg", "video/mp4", "audio/wav"];
@@ -254,7 +248,7 @@ function SearchPanel({
   const form = useForm({ initialValues: { query: "" } });
   const query = form.values.query.trim();
   const [debouncedQuery] = useDebouncedValue(query, 180);
-  const isLink = isYoutubeURL(query) || isDirectMediaURL(query) || isTikTokURL(query);
+  const isLink = isYoutubeURL(query) || isDirectMediaURL(query);
   const rightSectionWidth = isLink ? (isMobile ? 54 : 64) : isMobile ? 12 : 16;
 
   const showSkeleton =
@@ -272,8 +266,7 @@ function SearchPanel({
     const isPlainTextSearch =
       cleanQuery.length >= 2 &&
       !isYoutubeURL(cleanQuery) &&
-      !isDirectMediaURL(cleanQuery) &&
-      !isTikTokURL(cleanQuery);
+      !isDirectMediaURL(cleanQuery);
 
     setSearchActive(hasQuery && (nextFocused || hasVisibleResults || isPlainTextSearch));
   }
@@ -338,12 +331,7 @@ function SearchPanel({
     const controller = new AbortController();
     const value = debouncedQuery.trim();
 
-    if (
-      value.length < 2 ||
-      isYoutubeURL(value) ||
-      isDirectMediaURL(value) ||
-      isTikTokURL(value)
-    ) {
+    if (value.length < 2 || isYoutubeURL(value) || isDirectMediaURL(value)) {
       queueMicrotask(() => {
         setResults([]);
         setResultsForQuery("");
@@ -369,12 +357,6 @@ function SearchPanel({
     const clean = value.trim();
     if (!clean) return;
 
-    if (isTikTokURL(clean)) {
-      const { creator, videoId } = getTikTokCreatorAndVideoId(clean);
-      if (creator && videoId) push(`/@${creator}/video/${videoId}`);
-      return;
-    }
-
     if (isDirectMediaURL(clean)) {
       push(`/player?url=${encodeURIComponent(clean)}`);
       return;
@@ -390,10 +372,7 @@ function SearchPanel({
     }
 
     const isPlainSearch =
-      clean.length >= 2 &&
-      !isYoutubeURL(clean) &&
-      !isDirectMediaURL(clean) &&
-      !isTikTokURL(clean);
+      clean.length >= 2 && !isYoutubeURL(clean) && !isDirectMediaURL(clean);
     if (isPlainSearch && results.length > 0 && clean === resultsForQuery) {
       onLoadingStart(true);
       push(watchPath(results[0]));
@@ -413,7 +392,7 @@ function SearchPanel({
       <form onSubmit={form.onSubmit((values) => submit(values.query))}>
         <TextInput
           icon={<IconSearch size={isMobile ? 18 : 20} stroke={2.2} />}
-          placeholder="Search YouTube, TikTok, or paste a URL..."
+          placeholder="Search YouTube or paste a URL..."
           size={isMobile ? "md" : "lg"}
           radius="md"
           value={form.values.query}
@@ -424,14 +403,12 @@ function SearchPanel({
             setPendingSearch(
               nextQuery.trim().length >= 2 &&
                 !isYoutubeURL(nextQuery) &&
-                !isDirectMediaURL(nextQuery) &&
-                !isTikTokURL(nextQuery),
+                !isDirectMediaURL(nextQuery),
             );
             if (
               nextQuery.trim().length < 2 ||
               isYoutubeURL(nextQuery) ||
-              isDirectMediaURL(nextQuery) ||
-              isTikTokURL(nextQuery)
+              isDirectMediaURL(nextQuery)
             ) {
               setHasSearched(false);
             }
@@ -916,7 +893,7 @@ export default function UploadPage() {
                     })}
                   >
                     Apply slowed + reverb, nightcore, or custom pitch shifts instantly to
-                    YouTube links, TikToks, or local files.
+                    YouTube links or local files.
                   </Text>
                 </Stack>
 

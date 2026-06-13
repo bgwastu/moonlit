@@ -25,10 +25,6 @@ function getVideoStorageKey(url: string): string {
       const videoId = urlObj.searchParams.get("v") || urlObj.pathname.split("/").pop();
       return `${STORAGE_KEY_PREFIX}yt:${videoId}`;
     }
-    if (urlObj.hostname.includes("tiktok")) {
-      const match = urlObj.pathname.match(/video\/(\d+)/);
-      if (match) return `${STORAGE_KEY_PREFIX}tt:${match[1]}`;
-    }
     return `${STORAGE_KEY_PREFIX}${btoa(url).slice(0, 32)}`;
   } catch {
     return `${STORAGE_KEY_PREFIX}${btoa(url).slice(0, 32)}`;

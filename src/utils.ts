@@ -4,11 +4,6 @@ export function isYoutubeURL(url: string) {
   return youtubeRegex.test(url);
 }
 
-export function isTikTokURL(url: string) {
-  const tiktokRegex = /^https?:\/\/(www\.)?tiktok\.com\/@[\w.-]+\/video\/\d+/;
-  return tiktokRegex.test(url);
-}
-
 /** True for direct .mp3 / .m4a / .mp4 URLs (https or same-origin path) */
 export function isDirectMediaURL(url: string) {
   if (!url || typeof url !== "string") return false;
@@ -25,17 +20,16 @@ export function isDirectMediaURL(url: string) {
 
 export function getPlatform(
   url: string | undefined,
-): "youtube" | "tiktok" | "local" | "direct" | "unknown" {
+): "youtube" | "local" | "direct" | "unknown" {
   if (!url) return "unknown";
   if (url.startsWith("local:")) return "local";
   if (isYoutubeURL(url)) return "youtube";
-  if (isTikTokURL(url)) return "tiktok";
   if (isDirectMediaURL(url)) return "direct";
   return "unknown";
 }
 
 export function isSupportedURL(url: string) {
-  return isYoutubeURL(url) || isTikTokURL(url) || isDirectMediaURL(url);
+  return isYoutubeURL(url) || isDirectMediaURL(url);
 }
 
 export function getYouTubeId(url: string) {
@@ -43,23 +37,6 @@ export function getYouTubeId(url: string) {
     /^.*(?:(?:youtu\.be\/|v\/|vi\/|u\/\w\/|embed\/|shorts\/)|(?:(?:watch)?\?v(?:i)?=|\&v(?:i)?=))([^#\&\?]*).*/;
   const match = url.match(youtubeRegex);
   return match ? match[1] : null;
-}
-
-export function getTikTokId(url: string) {
-  const tiktokRegex = /^https?:\/\/(www\.)?tiktok\.com\/@[\w.-]+\/video\/(\d+)/;
-  const match = url.match(tiktokRegex);
-  return match ? match[2] : null;
-}
-
-export function getTikTokCreatorAndVideoId(url: string): {
-  creator: string | null;
-  videoId: string | null;
-} {
-  const tiktokRegex = /^https?:\/\/(www\.)?tiktok\.com\/@([\w.-]+)\/video\/(\d+)/;
-  const match = url.match(tiktokRegex);
-  return match
-    ? { creator: match[2], videoId: match[3] }
-    : { creator: null, videoId: null };
 }
 
 export function getFormattedTime(seconds: number) {

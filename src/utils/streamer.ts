@@ -1,12 +1,6 @@
 import { Media } from "@/interfaces";
 import { getCookiesToUse } from "@/lib/cookies";
-import {
-  getTikTokId,
-  getYouTubeId,
-  isDirectMediaURL,
-  isTikTokURL,
-  isYoutubeURL,
-} from "@/utils";
+import { getYouTubeId, isDirectMediaURL, isYoutubeURL } from "@/utils";
 
 export interface StreamState {
   status: "idle" | "extracting" | "ready" | "error";
@@ -116,7 +110,6 @@ export async function streamWithProgress(
   }
 
   const isYouTube = isYoutubeURL(url);
-  const isTikTok = isTikTokURL(url);
 
   onState({ status: "extracting", message: "Extracting stream..." });
 
@@ -140,7 +133,6 @@ export async function streamWithProgress(
 
   let id: string | null = null;
   if (isYouTube) id = getYouTubeId(url);
-  else if (isTikTok) id = getTikTokId(url);
 
   const resolvedMetadata = buildMetadata(id || "unknown", {
     title: data.metadata?.title || "",

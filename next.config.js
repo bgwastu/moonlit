@@ -17,10 +17,6 @@ const nextConfig = {
         ],
         destination: "/player?url=https://www.youtube.com/watch?v=:videoId",
       },
-      {
-        source: "/@:creator/video/:videoId",
-        destination: "/player?url=https://www.tiktok.com/@:creator/video/:videoId",
-      },
     ];
   },
   skipTrailingSlashRedirect: true,
