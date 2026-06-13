@@ -11,14 +11,12 @@ import {
   Box,
   Button,
   Center,
-  Container,
   Flex,
   Image,
   Loader,
   MantineProvider,
   MediaQuery,
   Menu,
-  Progress,
   SegmentedControl,
   Slider,
   Text,
@@ -71,6 +69,7 @@ import {
 import { StreamState, streamWithProgress } from "@/utils/streamer";
 import CustomizePlaybackModal from "./CustomizePlaybackModal";
 import DownloadModal from "./DownloadModal";
+import LoadingOverlay from "./LoadingOverlay";
 import LyricsModal from "./LyricsModal";
 import LyricsPanel from "./LyricsPanel";
 
@@ -103,6 +102,7 @@ export function Player({
   media?: Media;
   repeating?: boolean;
 }) {
+  const router = useRouter();
   const theme = useMantineTheme();
   const isMobile = useMediaQuery("(max-width: 1024px)");
   const { media: contextMedia, history, setHistory } = useAppContext();
@@ -711,50 +711,19 @@ export function Player({
     enabled: true,
   });
 
-  // === Extraction / Error UI (shown before player mounts) ===
-  if (isExtracting || streamState.status === "error" || metadataLoadError) {
-    const isError = !!(streamState.status === "error" || metadataLoadError);
-    const errorMsg = metadataLoadError || streamState.message || "";
-
-    if (isError) {
-      return (
-        <Flex h="100dvh" direction="column" align="center" justify="center" gap="md">
-          <Text fw={600} c="red" size="lg">
-            Something went wrong
-          </Text>
-          <Text
-            size="sm"
-            c="dimmed"
-            style={{ textAlign: "center", whiteSpace: "pre-wrap" }}
-          >
-            {errorMsg}
-          </Text>
-          <Flex gap="sm" mt="md">
-            <Button variant="light" component={Link} href="/">
-              Go home
-            </Button>
-            <Button
-              onClick={() => {
-                streamStarted.current = false;
-                startStream();
-              }}
-            >
-              Retry
-            </Button>
-          </Flex>
-        </Flex>
-      );
+  // Redirect to home on error (notification already shown by startStream)
+  useEffect(() => {
+    if (streamState.status === "error" || metadataLoadError) {
+      router.replace("/");
     }
+  }, [streamState.status, metadataLoadError, router]);
 
+  // === Extraction UI (shown before player mounts) ===
+  if (isExtracting) {
     return (
-      <Container size="xs">
-        <Flex h="100dvh" direction="column" align="center" justify="center" gap="lg">
-          <Progress value={100} animate striped w="100%" />
-          <Text size="sm" c="dimmed">
-            Getting the metadata...
-          </Text>
-        </Flex>
-      </Container>
+      <div style={{ position: "relative", height: "100dvh" }}>
+        <LoadingOverlay visible message="Extracting stream..." />
+      </div>
     );
   }
 
