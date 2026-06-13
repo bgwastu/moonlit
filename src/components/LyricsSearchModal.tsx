@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Badge,
   Box,
@@ -15,9 +15,11 @@ import {
   useMantineTheme,
 } from "@mantine/core";
 import { IconCheck, IconMusic, IconSearch } from "@tabler/icons-react";
-import { useLyricsSearch } from "@/hooks/useLyricsSearch";
 import { LyricsSearchRecord, sortLyricsSearchRecordsForTrack } from "@/lib/lyrics";
 import { getFormattedTime } from "@/utils";
+
+const LRCLIB_SEARCH = "https://lrclib.net/api/search";
+const USER_AGENT = "Moonlit (https://github.com/bgwastu/moonlit)";
 
 interface LyricsSearchModalProps {
   opened: boolean;
@@ -27,6 +29,12 @@ interface LyricsSearchModalProps {
   trackDurationSeconds: number;
   currentLyricsId: number | null;
   onSelectLyrics: (lyrics: LyricsSearchRecord) => void;
+}
+
+interface SearchState {
+  status: "idle" | "loading" | "ready" | "error";
+  results: LyricsSearchRecord[];
+  error: string | null;
 }
 
 export default function LyricsSearchModal({
@@ -41,17 +49,19 @@ export default function LyricsSearchModal({
   const theme = useMantineTheme();
   const primaryColor = theme.colors[theme.primaryColor]?.[6] ?? theme.colors.blue[6];
   const [searchQuery, setSearchQuery] = useState(initialSearchQuery);
-  const {
-    results: hookResults,
-    state: hookState,
-    error: hookError,
-    search,
-  } = useLyricsSearch();
+  const [searchState, setSearchState] = useState<SearchState>({
+    status: "idle",
+    results: [],
+    error: null,
+  });
+  const abortRef = useRef<AbortController | null>(null);
 
-  // Unified state that can come from props (initial) or search hook
-  const results = hookState === "ready" ? hookResults : initialResults;
-  const state = hookState === "idle" && initialResults.length > 0 ? "ready" : hookState;
-  const error = hookState === "error" ? hookError : null;
+  const results = searchState.status === "ready" ? searchState.results : initialResults;
+  const state =
+    searchState.status === "idle" && initialResults.length > 0
+      ? "ready"
+      : searchState.status;
+  const error = searchState.status === "error" ? searchState.error : null;
 
   useEffect(() => {
     if (!opened) return;
@@ -61,27 +71,46 @@ export default function LyricsSearchModal({
     return () => cancelAnimationFrame(id);
   }, [opened, initialSearchQuery]);
 
-  const handleSearch = useCallback(() => {
-    if (searchQuery.trim()) {
-      search({ q: searchQuery.trim() });
-    }
-  }, [searchQuery, search]);
+  const doSearch = useCallback(async (q: string) => {
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
 
-  const handleKeyDown = useCallback(
-    (e: React.KeyboardEvent) => {
-      if (e.key === "Enter") {
-        handleSearch();
-      }
-    },
-    [handleSearch],
-  );
+    setSearchState({ status: "loading", results: [], error: null });
+
+    try {
+      const params = new URLSearchParams({ q });
+      const res = await fetch(`${LRCLIB_SEARCH}?${params}`, {
+        headers: { "Lrclib-Client": USER_AGENT },
+        signal: controller.signal,
+      });
+
+      if (!res.ok) throw new Error(`LRCLib returned ${res.status}`);
+
+      const data = (await res.json()) as LyricsSearchRecord[];
+      setSearchState({
+        status: "ready",
+        results: Array.isArray(data) ? data : [],
+        error: null,
+      });
+    } catch (e) {
+      if (e instanceof DOMException && e.name === "AbortError") return;
+      setSearchState({
+        status: "error",
+        results: [],
+        error: e instanceof Error ? e.message : "Search failed",
+      });
+    }
+  }, []);
+
+  const handleSearch = useCallback(() => {
+    if (searchQuery.trim()) doSearch(searchQuery.trim());
+  }, [searchQuery, doSearch]);
 
   const filteredAndSortedResults = useMemo(
     () => sortLyricsSearchRecordsForTrack(results, trackDurationSeconds),
     [results, trackDurationSeconds],
   );
-
-  const formatDuration = (seconds: number) => getFormattedTime(seconds);
 
   const isDurationMatch = (recordDuration: number) =>
     Math.abs(recordDuration - trackDurationSeconds) <= 1;
@@ -93,18 +122,15 @@ export default function LyricsSearchModal({
       title="Select Lyrics"
       size="lg"
       centered
-      styles={{
-        title: { fontWeight: 600 },
-      }}
+      styles={{ title: { fontWeight: 600 } }}
     >
-      {/* Search Section */}
       <Box mb="md">
         <Flex gap="sm">
           <TextInput
             placeholder="Search by song title, artist..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.currentTarget.value)}
-            onKeyDown={handleKeyDown}
+            onKeyDown={(e) => e.key === "Enter" && handleSearch()}
             style={{ flex: 1 }}
           />
           <Button
@@ -122,7 +148,6 @@ export default function LyricsSearchModal({
         )}
       </Box>
 
-      {/* Results */}
       <ScrollArea h={350}>
         {state === "loading" && (
           <Flex justify="center" align="center" h={280} gap="xs">
@@ -148,7 +173,6 @@ export default function LyricsSearchModal({
             {filteredAndSortedResults.map((record) => {
               const isMatch = isDurationMatch(record.duration);
               const isSelected = record.id === currentLyricsId;
-
               return (
                 <Box
                   key={record.id}
@@ -191,7 +215,7 @@ export default function LyricsSearchModal({
                         color={isMatch ? theme.primaryColor : "gray"}
                         variant={isMatch ? "filled" : "outline"}
                       >
-                        {formatDuration(record.duration)}
+                        {getFormattedTime(record.duration)}
                       </Badge>
                     </Group>
                   </Flex>
@@ -208,7 +232,7 @@ export default function LyricsSearchModal({
                 Search for lyrics by song title or artist
               </Text>
               <Text c="dimmed" size="xs">
-                Track duration: {formatDuration(trackDurationSeconds)}
+                Track duration: {getFormattedTime(trackDurationSeconds)}
               </Text>
             </Box>
           </Flex>
