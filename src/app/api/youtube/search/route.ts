@@ -1,9 +1,21 @@
-import { defaultYouTubeThumbnailById, searchResultThumbnailUrl } from "@/lib/imageProxy";
 import {
   type YouTubeSearchResult,
   searchYouTube as searchYouTubeYtDlp,
 } from "@/lib/yt-dlp";
 import { isTikTokURL } from "@/utils";
+
+const YT_THUMB_BASE = "https://i.ytimg.com/vi";
+
+function defaultYouTubeThumbnailById(id: string): string {
+  return `${YT_THUMB_BASE}/${id}/hqdefault.jpg`;
+}
+
+function searchResultThumbnailUrl(raw: string): string {
+  if (!raw) return raw;
+  return raw
+    .replace(/maxresdefault\.jpg/gi, "hqdefault.jpg")
+    .replace(/\/vi\/([^/]+)\/maxres\.jpg/gi, "/vi/$1/hqdefault.jpg");
+}
 
 class YouTubeSearchUnavailableError extends Error {
   readonly code = "SEARCH_UNAVAILABLE" as const;
