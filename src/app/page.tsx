@@ -832,7 +832,7 @@ export default function UploadPage() {
 
   return (
     <>
-      <LoadingOverlay visible={globalLoading} message="Loading video..." />
+      <LoadingOverlay visible={globalLoading} message="Processing..." />
       <CookiesModal opened={cookiesOpened} onClose={() => setCookiesOpened(false)} />
       <HistoryModal
         opened={historyOpened}
