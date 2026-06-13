@@ -1,7 +1,7 @@
 import {
   type YouTubeSearchResult,
   searchYouTube as searchYouTubeYtDlp,
-} from "@/lib/yt-dlp";
+} from "@/lib/youtubei";
 
 const YT_THUMB_BASE = "https://i.ytimg.com/vi";
 
@@ -20,7 +20,7 @@ class YouTubeSearchUnavailableError extends Error {
   readonly code = "SEARCH_UNAVAILABLE" as const;
 
   constructor(
-    message: string = "Search is currently unavailable. Make sure yt-dlp is installed and add YouTube cookies in Settings (or data/cookies.txt) for restricted content.",
+    message: string = "Search is currently unavailable. Make sure the server can reach YouTube and try adding cookies in Settings (or data/cookies.txt) for restricted content.",
   ) {
     super(message);
     this.name = "YouTubeSearchUnavailableError";
@@ -48,7 +48,7 @@ async function searchYouTubeVideos(
     const rows = await searchYouTubeYtDlp(q, { limit: Math.min(limit, 10) });
     return withSearchThumbnails(rows);
   } catch (cause) {
-    console.error("[Moonlit] yt-dlp search failed.", cause);
+    console.error("[Moonlit] youtubei.js search failed.", cause);
     throw new YouTubeSearchUnavailableError();
   }
 }

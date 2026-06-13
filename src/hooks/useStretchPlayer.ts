@@ -80,6 +80,36 @@ interface PlayerRuntime {
 const UI_UPDATE_INTERVAL = 100;
 const DRIFT_THRESHOLD = 0.25;
 
+async function fetchFileInChunks(url: string, chunkSize: number): Promise<ArrayBuffer> {
+  const head = await fetch(url, { method: "HEAD" });
+  const length = parseInt(head.headers.get("content-length") || "0", 10);
+  if (!length) {
+    const fallback = await fetch(url);
+    return fallback.arrayBuffer();
+  }
+  const totalChunks = Math.ceil(length / chunkSize);
+  const buffers: ArrayBuffer[] = await Promise.all(
+    Array.from({ length: totalChunks }, async (_, i) => {
+      const start = i * chunkSize;
+      const end = Math.min(start + chunkSize, length) - 1;
+      const res = await fetch(url, {
+        headers: { Range: `bytes=${start}-${end}` },
+      });
+      if (!res.ok && res.status !== 206)
+        throw new Error(`Chunk fetch failed: ${res.status}`);
+      return res.arrayBuffer();
+    }),
+  );
+  const total = buffers.reduce((s, b) => s + b.byteLength, 0);
+  const merged = new Uint8Array(total);
+  let offset = 0;
+  for (const buf of buffers) {
+    merged.set(new Uint8Array(buf), offset);
+    offset += buf.byteLength;
+  }
+  return merged.buffer as ArrayBuffer;
+}
+
 function generateImpulseResponse(context: AudioContext, dur = 2, decay = 2): AudioBuffer {
   const length = context.sampleRate * dur;
   const impulse = context.createBuffer(2, length, context.sampleRate);
@@ -228,9 +258,7 @@ export function useStretchPlayer({
       const audioContext = new AudioContextClass();
       rt.audioContext = audioContext;
 
-      const response = await fetch(fileUrl);
-      if (!response.ok) throw new Error(`Fetch failed: ${response.status}`);
-      const arrayBuffer = await response.arrayBuffer();
+      const arrayBuffer = await fetchFileInChunks(fileUrl, 2 * 1024 * 1024);
       const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
       rt.buffer = audioBuffer;
       rt.duration = audioBuffer.duration;

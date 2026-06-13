@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+import http from "http";
+import https from "https";
 
 interface StreamToken {
   url: string;
@@ -7,6 +9,8 @@ interface StreamToken {
   sourceUrl: string;
   expiresAt: number;
 }
+
+const TOKEN_TTL_MS = 6 * 60 * 60 * 1000;
 
 const tokenStore = globalThis as typeof globalThis & {
   __moonlitStreamTokens?: Map<string, StreamToken>;
@@ -32,6 +36,49 @@ export async function OPTIONS() {
   return new Response(null, {
     status: 204,
     headers: corsHeaders(),
+  });
+}
+
+function upstreamFetch(
+  url: string,
+  headers: Record<string, string>,
+  signal?: AbortSignal,
+): Promise<{
+  status: number;
+  headers: Record<string, string>;
+  body: NodeJS.ReadableStream;
+}> {
+  return new Promise((resolve, reject) => {
+    const parsed = new URL(url);
+    const mod = parsed.protocol === "https:" ? https : http;
+    const abort = () => req.destroy();
+
+    if (signal) {
+      if (signal.aborted) {
+        reject(new DOMException("Aborted", "AbortError"));
+        return;
+      }
+      signal.addEventListener("abort", abort, { once: true });
+    }
+
+    const req = mod.get(url, { headers }, (res) => {
+      const status = res.statusCode || 502;
+      const respHeaders: Record<string, string> = {};
+      for (let i = 0; i < res.rawHeaders.length; i += 2) {
+        respHeaders[res.rawHeaders[i].toLowerCase()] = res.rawHeaders[i + 1];
+      }
+      resolve({ status, headers: respHeaders, body: res });
+    });
+
+    req.on("error", (e) => {
+      signal?.removeEventListener("abort", abort);
+      reject(e);
+    });
+
+    req.setTimeout(25_000, () => {
+      req.destroy();
+      reject(new Error("Upstream timeout"));
+    });
   });
 }
 
@@ -72,15 +119,11 @@ export async function GET(
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 30_000);
 
-    const upstreamRes = await fetch(entry.url, {
-      headers: upstreamHeaders,
-      signal: controller.signal,
-    });
-
+    const upstream = await upstreamFetch(entry.url, upstreamHeaders, controller.signal);
     clearTimeout(timeoutId);
 
-    if (!upstreamRes.ok && upstreamRes.status !== 206) {
-      if (upstreamRes.status === 403 || upstreamRes.status === 410) {
+    if (upstream.status !== 200 && upstream.status !== 206) {
+      if (upstream.status === 403 || upstream.status === 410) {
         store.delete(token);
         return new Response("Stream URL expired", {
           status: 410,
@@ -88,15 +131,15 @@ export async function GET(
         });
       }
       return NextResponse.json(
-        { error: `Upstream returned ${upstreamRes.status}` },
-        { status: upstreamRes.status === 404 ? 404 : 502, headers: corsHeaders() },
+        { error: `Upstream returned ${upstream.status}` },
+        { status: upstream.status === 404 ? 404 : 502, headers: corsHeaders() },
       );
     }
 
-    const contentLength = upstreamRes.headers.get("content-length");
-    const acceptRanges = upstreamRes.headers.get("accept-ranges");
-    const contentRange = upstreamRes.headers.get("content-range");
-    const upstreamContentType = upstreamRes.headers.get("content-type");
+    const contentLength = upstream.headers["content-length"];
+    const acceptRanges = upstream.headers["accept-ranges"];
+    const contentRange = upstream.headers["content-range"];
+    const upstreamContentType = upstream.headers["content-type"];
 
     const responseHeaders: Record<string, string> = {
       ...corsHeaders(),
@@ -108,8 +151,8 @@ export async function GET(
     else responseHeaders["Accept-Ranges"] = "bytes";
     if (contentRange) responseHeaders["Content-Range"] = contentRange;
 
-    return new Response(upstreamRes.body as any, {
-      status: upstreamRes.status,
+    return new Response(upstream.body as any, {
+      status: upstream.status,
       headers: responseHeaders,
     });
   } catch (e) {
@@ -119,7 +162,7 @@ export async function GET(
         { status: 504, headers: corsHeaders() },
       );
     }
-    console.error("[Moonlit] stream-proxy fetch error:", e);
+    console.error("[Moonlit] stream-proxy error:", e);
     return NextResponse.json(
       { error: "Failed to fetch stream" },
       { status: 502, headers: corsHeaders() },

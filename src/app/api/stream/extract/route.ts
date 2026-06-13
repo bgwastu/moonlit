@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import crypto from "crypto";
-import { extractStreamUrl } from "@/lib/yt-dlp";
+import { extractStreamUrl } from "@/lib/youtubei";
 
 interface StreamToken {
   url: string;
@@ -55,6 +55,7 @@ export async function POST(req: Request) {
 
     return NextResponse.json({
       token,
+      url: streamInfo.url,
       metadata: {
         title: streamInfo.title,
         author: streamInfo.author,

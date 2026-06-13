@@ -37,9 +37,6 @@ Prerequisites:
 
 - Bun (`bun install` / `bun run …`)
 - Node.js 24+ (see `engines` in `package.json`)
-- Python 3 + pip
-- ffmpeg
-- yt-dlp + yt-dlp-ejs
 
 Install dependencies and run:
 
