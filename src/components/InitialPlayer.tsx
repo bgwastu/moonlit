@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -34,9 +34,9 @@ import LoadingOverlay from "@/components/LoadingOverlay";
 import { Player } from "@/components/Player";
 import ResetModal from "@/components/ResetModal";
 import { useAppContext } from "@/context/AppContext";
-import { useMediaStreamer } from "@/hooks/useMediaStreamer";
 import { HistoryItem, Media } from "@/interfaces";
-import { isYoutubeURL } from "@/utils";
+import { getPlatform, isSupportedURL, isYoutubeURL } from "@/utils";
+import { StreamState, streamWithProgress } from "@/utils/streamer";
 
 interface InitialPlayerProps {
   url?: string;
@@ -52,21 +52,32 @@ export default function InitialPlayer({
   metadataLoadError,
 }: InitialPlayerProps) {
   const router = useRouter();
-  const { media, history, setHistory } = useAppContext();
+  const { media, history, setHistory, setMedia } = useAppContext();
   const [isPlayer, setIsPlayer] = useState(false);
 
-  const { streamState, startStream } = useMediaStreamer(url || "", metadata || {});
-
+  // For URL-based mode: stream state + start stream logic (inlined useMediaStreamer)
+  const [streamState, setStreamState] = useState<StreamState>({ status: "idle" });
   const [confirmationOpened, setConfirmationOpened] = useState(false);
+
+  const isLocalMode = !url;
+  const streamStarted = useRef(false);
+
+  // Modal states (shared between modes)
   const [cookiesOpened, setCookiesOpened] = useState(false);
   const [historyOpened, setHistoryOpened] = useState(false);
   const [resetOpened, setResetOpened] = useState(false);
   const [historyLoading, setHistoryLoading] = useState(false);
 
-  const streamStarted = useRef(false);
-  const isLoading = !media;
   const isYouTube = url ? isYoutubeURL(url) : false;
 
+  // Redirect if local mode but no media
+  useEffect(() => {
+    if (isLocalMode && !media) {
+      router.replace("/");
+    }
+  }, [isLocalMode, media, router]);
+
+  // Update document title
   useEffect(() => {
     if (media?.metadata?.title) {
       const prev = document.title;
@@ -77,8 +88,53 @@ export default function InitialPlayer({
     }
   }, [media?.metadata?.title]);
 
+  // Inline useMediaStreamer logic
+  const startStream = useCallback(() => {
+    if (!url || !isSupportedURL(url)) {
+      notifications.show({ title: "Error", message: "Invalid URL provided." });
+      router.push("/");
+      return () => {};
+    }
+
+    setMedia(null);
+    setStreamState({ status: "idle" });
+
+    const abortController = new AbortController();
+
+    const updateStreamState = (next: StreamState) => {
+      setStreamState((prev) => ({
+        ...prev,
+        ...next,
+        metadata: next.metadata ?? prev.metadata,
+        duration: next.duration ?? prev.duration,
+      }));
+    };
+
+    streamWithProgress(url, metadata || {}, updateStreamState, abortController.signal)
+      .then((streamedMedia: Media) => {
+        setMedia(streamedMedia);
+      })
+      .catch((e) => {
+        if (e.name === "AbortError") return;
+        console.error("Stream error:", e);
+        const message = e.message || "Could not process the media.";
+        setStreamState({ status: "error", message });
+        notifications.show({
+          title: "Stream failed",
+          message: `${message} Try configuring cookies from a logged-in account in the app settings if the problem persists.`,
+          color: "red",
+          autoClose: 10000,
+        });
+      });
+
+    return () => {
+      abortController.abort();
+    };
+  }, [url, router, setMedia, metadata]);
+
+  // Auto-start stream for URL mode
   useEffect(() => {
-    if (metadataLoadError || streamStarted.current) return;
+    if (isLocalMode || metadataLoadError || streamStarted.current) return;
     if (!url) {
       notifications.show({ title: "Error", message: "No URL provided." });
       router.push("/");
@@ -90,27 +146,21 @@ export default function InitialPlayer({
     if (isYouTube && duration && duration > 600) {
       setTimeout(() => setConfirmationOpened(true), 0);
     } else {
-      startStream();
+      setTimeout(() => startStream(), 0);
     }
-  }, [url, duration, router, startStream, isYouTube, metadataLoadError]);
+  }, [url, duration, router, startStream, isYouTube, metadataLoadError, isLocalMode]);
 
-  const handleGoToPlayer = () => {
+  const handleGoToPlayer = useCallback(() => {
     setIsPlayer(true);
 
     if (media) {
-      const historyUrl = url || media.sourceUrl;
-
       setHistory((prev) => {
-        const filtered = prev.filter((item) => item.sourceUrl !== historyUrl);
-        const newItem: HistoryItem = {
-          ...media,
-          playedAt: Date.now(),
-          sourceUrl: historyUrl,
-        };
+        const filtered = prev.filter((item) => item.sourceUrl !== media.sourceUrl);
+        const newItem: HistoryItem = { ...media, playedAt: Date.now() };
         return [newItem, ...filtered].slice(0, 50);
       });
     }
-  };
+  }, [media, setHistory]);
 
   if (isPlayer && media) {
     const isShortForm = !isYouTube || url?.includes("/shorts/");
@@ -152,29 +202,31 @@ export default function InitialPlayer({
       />
       <ResetModal opened={resetOpened} onClose={() => setResetOpened(false)} />
 
-      <Modal
-        opened={confirmationOpened}
-        onClose={() => router.push("/")}
-        title="Big file detected"
-        centered
-      >
-        <Text size="sm" mb="md">
-          This video is longer than 10 minutes. Stream anyway?
-        </Text>
-        <Group position="right">
-          <Button variant="default" onClick={() => router.push("/")}>
-            Cancel
-          </Button>
-          <Button
-            onClick={() => {
-              setConfirmationOpened(false);
-              startStream();
-            }}
-          >
-            Stream
-          </Button>
-        </Group>
-      </Modal>
+      {!isLocalMode && (
+        <Modal
+          opened={confirmationOpened}
+          onClose={() => router.push("/")}
+          title="Big file detected"
+          centered
+        >
+          <Text size="sm" mb="md">
+            This video is longer than 10 minutes. Stream anyway?
+          </Text>
+          <Group position="right">
+            <Button variant="default" onClick={() => router.push("/")}>
+              Cancel
+            </Button>
+            <Button
+              onClick={() => {
+                setConfirmationOpened(false);
+                startStream();
+              }}
+            >
+              Stream
+            </Button>
+          </Group>
+        </Modal>
+      )}
 
       <Flex h="100dvh" align="stretch" justify="center" gap="md" direction="column">
         <Flex justify="space-between" align="center" mb="sm">
@@ -186,43 +238,46 @@ export default function InitialPlayer({
               </Text>
             </Flex>
           </Link>
-          <Group spacing="xs">
-            <Tooltip label="Cookies Settings" position="bottom" withArrow>
-              <ActionIcon
-                variant="subtle"
-                color="gray"
-                size="lg"
-                onClick={() => setCookiesOpened(true)}
-              >
-                <IconCookie size={20} />
-              </ActionIcon>
-            </Tooltip>
-            <Tooltip label="History" position="bottom" withArrow>
-              <ActionIcon
-                variant="subtle"
-                color="gray"
-                size="lg"
-                onClick={() => setHistoryOpened(true)}
-              >
-                <IconHistory size={20} />
-              </ActionIcon>
-            </Tooltip>
-            <Tooltip label="Reset Data" position="bottom" withArrow>
-              <ActionIcon
-                variant="subtle"
-                color="red"
-                size="lg"
-                onClick={() => setResetOpened(true)}
-              >
-                <IconTrash size={20} />
-              </ActionIcon>
-            </Tooltip>
-          </Group>
+          {!isLocalMode && (
+            <Group spacing="xs">
+              <Tooltip label="Cookies Settings" position="bottom" withArrow>
+                <ActionIcon
+                  variant="subtle"
+                  color="gray"
+                  size="lg"
+                  onClick={() => setCookiesOpened(true)}
+                >
+                  <IconCookie size={20} />
+                </ActionIcon>
+              </Tooltip>
+              <Tooltip label="History" position="bottom" withArrow>
+                <ActionIcon
+                  variant="subtle"
+                  color="gray"
+                  size="lg"
+                  onClick={() => setHistoryOpened(true)}
+                >
+                  <IconHistory size={20} />
+                </ActionIcon>
+              </Tooltip>
+              <Tooltip label="Reset Data" position="bottom" withArrow>
+                <ActionIcon
+                  variant="subtle"
+                  color="red"
+                  size="lg"
+                  onClick={() => setResetOpened(true)}
+                >
+                  <IconTrash size={20} />
+                </ActionIcon>
+              </Tooltip>
+            </Group>
+          )}
         </Flex>
+
         {hasMetadataContent && (
           <>
             <Text weight={600} color="dimmed">
-              Video Details
+              {isLocalMode ? "Local File" : "Video Details"}
             </Text>
             <Flex gap="md" align="center">
               <Image
@@ -242,10 +297,12 @@ export default function InitialPlayer({
                 <Text weight={600}>
                   {metadataLoadError ? "Video unavailable" : liveMetadata.title}
                 </Text>
-                <Text>
-                  {liveMetadata.artist ?? liveMetadata.author ?? "\u2014"}
-                  {liveMetadata.album ? ` \u00b7 ${liveMetadata.album}` : ""}
-                </Text>
+                {(liveMetadata.artist ?? liveMetadata.author) && (
+                  <Text>
+                    {liveMetadata.artist ?? liveMetadata.author}
+                    {liveMetadata.album ? ` \u00b7 ${liveMetadata.album}` : ""}
+                  </Text>
+                )}
               </Flex>
             </Flex>
           </>
@@ -331,7 +388,7 @@ export default function InitialPlayer({
               </Flex>
             </Flex>
           </Paper>
-        ) : isLoading ? (
+        ) : !isLocalMode && url && !media ? (
           <Flex direction="column" gap="sm">
             <Progress
               value={100}
