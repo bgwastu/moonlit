@@ -1,7 +1,7 @@
-import { existsSync, readFileSync } from "fs";
+import { readFileSync } from "fs";
 import path from "path";
 import { Innertube, UniversalCache, YTNodes } from "youtubei.js";
-import { getYouTubeId, isYoutubeURL } from "@/utils";
+import { getYouTubeId } from "@/utils";
 
 export interface VideoInfo {
   title: string;
