@@ -47,7 +47,7 @@ export default function CustomizePlaybackModal({
       title="Customize Playback"
       keepMounted
     >
-      <Stack mt="xs">
+      <Stack mt="md">
         <Flex direction="column" mb={22} gap={2}>
           <Text size="sm">Speed: {speedSliderValue.toFixed(2)}x</Text>
           <Slider
