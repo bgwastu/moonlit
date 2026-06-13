@@ -7,19 +7,23 @@ const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
 const DATA_DIR = path.join(process.cwd(), "data");
 const SYSTEM_COOKIES_PATH = path.join(DATA_DIR, "cookies.txt");
 
-function verifyPassword(request: Request): boolean {
-  const authHeader = request.headers.get("Authorization");
-  if (!authHeader || !authHeader.startsWith("Bearer ")) return false;
-  return authHeader.slice(7) === ADMIN_PASSWORD;
-}
-
-export async function GET(request: Request) {
+function assertAdmin(request: Request): NextResponse | undefined {
   if (!ADMIN_PASSWORD) {
     return NextResponse.json({ error: "Admin not configured" }, { status: 403 });
   }
-  if (!verifyPassword(request)) {
+  const authHeader = request.headers.get("Authorization");
+  if (
+    !authHeader ||
+    !authHeader.startsWith("Bearer ") ||
+    authHeader.slice(7) !== ADMIN_PASSWORD
+  ) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+}
+
+export async function GET(request: Request) {
+  const err = assertAdmin(request);
+  if (err) return err;
 
   try {
     const cookies = existsSync(SYSTEM_COOKIES_PATH)
@@ -32,12 +36,8 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  if (!ADMIN_PASSWORD) {
-    return NextResponse.json({ error: "Admin not configured" }, { status: 403 });
-  }
-  if (!verifyPassword(request)) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const err = assertAdmin(request);
+  if (err) return err;
 
   try {
     const { cookies } = await request.json();

@@ -1,3 +1,5 @@
+"use client";
+
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
@@ -8,12 +10,14 @@ import {
   Box,
   Button,
   Center,
+  Container,
   Flex,
   Image,
   Loader,
   MantineProvider,
   MediaQuery,
   Menu,
+  Progress,
   SegmentedControl,
   Slider,
   Text,
@@ -21,6 +25,7 @@ import {
   useMantineTheme,
 } from "@mantine/core";
 import { useDisclosure, useHotkeys, useMediaQuery, useOs } from "@mantine/hooks";
+import { notifications } from "@mantine/notifications";
 import {
   IconAdjustments,
   IconChevronsLeft,
@@ -46,26 +51,28 @@ import {
   IconVolume3,
   IconVolumeOff,
 } from "@tabler/icons-react";
+import Icon from "@/components/Icon";
+import { useAppContext } from "@/context/AppContext";
 import { useDominantColor } from "@/hooks/useDominantColor";
 import { useLyrics } from "@/hooks/useLyrics";
 import { usePlayerTapGestures } from "@/hooks/usePlayerTapGestures";
 import { useStretchPlayer } from "@/hooks/useStretchPlayer";
-import { Media } from "@/interfaces";
-import { LyricsSettings } from "@/interfaces";
-import { LyricsSearchRecord, stripVideoTitleFiller } from "@/lib/lyrics";
+import { HistoryItem, LyricsSettings, Media } from "@/interfaces";
+import { stripVideoTitleFiller } from "@/lib/lyrics";
 import { getModeFromRate, getVideoState, saveVideoState } from "@/lib/videoState";
-import { getFormattedTime, getPlatform } from "@/utils";
+import { getFormattedTime, getPlatform, isSupportedURL } from "@/utils";
 import {
   createDynamicTheme,
   getOriginalPlatformUrl,
   getSemitonesFromRate,
   getYouTubeMusicUrl,
+  toMaxResCoverUrl,
 } from "@/utils/player";
+import { StreamState, streamWithProgress } from "@/utils/streamer";
 import CustomizePlaybackModal from "./CustomizePlaybackModal";
 import DownloadModal from "./DownloadModal";
+import LyricsModal from "./LyricsModal";
 import LyricsPanel from "./LyricsPanel";
-import LyricsSearchModal from "./LyricsSearchModal";
-import LyricsSettingsModal from "./LyricsSettingsModal";
 
 type PlaybackMode = "slowed" | "normal" | "speedup" | "custom";
 
@@ -83,12 +90,82 @@ const PLAYBACK_MODE_ICONS: Record<PlaybackMode, ReactNode> = {
   custom: <IconAdjustments size={24} />,
 };
 
-export function Player({ media, repeating }: { media: Media; repeating: boolean }) {
+export function Player({
+  url,
+  duration: propDuration,
+  metadataLoadError: propMetadataLoadError,
+  media: propMedia,
+  repeating,
+}: {
+  url?: string;
+  duration?: number;
+  metadataLoadError?: string;
+  media?: Media;
+  repeating?: boolean;
+}) {
   const theme = useMantineTheme();
   const isMobile = useMediaQuery("(max-width: 1024px)");
+  const { media: contextMedia, history, setHistory } = useAppContext();
+
+  // Phase management: extracting while URL is being resolved, then playing
+  const [extractedMedia, setExtractedMedia] = useState<Media | null>(null);
+  const [streamState, setStreamState] = useState<StreamState>({ status: "idle" });
+  const streamStarted = useRef(false);
+
+  const media = propMedia || extractedMedia || (url ? null : contextMedia);
+  const metadataLoadError = propMetadataLoadError;
+  const isExtracting = !media && !!url;
+
+  // Inlined extraction logic (was in InitialPlayer + useMediaStreamer)
+  const startStream = useCallback(() => {
+    if (!url || !isSupportedURL(url)) {
+      notifications.show({ title: "Error", message: "Invalid URL provided." });
+      return () => {};
+    }
+    setStreamState({ status: "idle" });
+    const abortController = new AbortController();
+    const updateStreamState = (next: StreamState) => {
+      setStreamState((prev) => ({ ...prev, ...next }));
+    };
+    streamWithProgress(url, updateStreamState, abortController.signal)
+      .then((streamedMedia: Media) => {
+        setExtractedMedia(streamedMedia);
+      })
+      .catch((e) => {
+        if (e.name === "AbortError") return;
+        console.error("Stream error:", e);
+        const message = e.message || "Could not process the media.";
+        setStreamState({ status: "error", message });
+        notifications.show({
+          title: "Stream failed",
+          message: `${message} Try configuring cookies from a logged-in account in the app settings if the problem persists.`,
+          color: "red",
+          autoClose: 10000,
+        });
+      });
+    return () => abortController.abort();
+  }, [url]);
+
+  // Auto-start stream for URL mode
+  useEffect(() => {
+    if (media || metadataLoadError || streamStarted.current) return;
+    if (!url) return;
+    streamStarted.current = true;
+    setTimeout(() => startStream(), 0);
+  }, [url, metadataLoadError, media, startStream]);
+
+  // Add to history when playback starts (media excluded intentionally — it changes reference on every render)
+  useEffect(() => {
+    if (!media) return;
+    setHistory((prev) => {
+      const filtered = prev.filter((item) => item.sourceUrl !== media.sourceUrl);
+      const newItem: HistoryItem = { ...media, playedAt: Date.now() };
+      return [newItem, ...filtered].slice(0, 50);
+    });
+  }, [media?.sourceUrl, setHistory]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Use sourceUrl from media state
-  const sourceUrl = media.sourceUrl;
+  const sourceUrl = media?.sourceUrl ?? url ?? "";
 
   // Load saved state
   const savedState = useMemo(() => getVideoState(sourceUrl), [sourceUrl]);
@@ -101,7 +178,7 @@ export function Player({ media, repeating }: { media: Media; repeating: boolean 
   );
   const initialStartAt = 0;
   const [stateLoaded, setStateLoaded] = useState(false);
-  const [isRepeat, setIsRepeat] = useState(savedState?.isRepeat ?? repeating);
+  const [isRepeat, setIsRepeat] = useState(savedState?.isRepeat ?? repeating ?? false);
 
   // Per-mode state: remember rate+semitones for each mode independently
   const [slowedRate, setSlowedRate] = useState(0.8);
@@ -125,11 +202,9 @@ export function Player({ media, repeating }: { media: Media; repeating: boolean 
   const [lyricsSettings, setLyricsSettings] = useState<LyricsSettings | null>(
     savedState?.lyrics ?? null,
   );
-  const [lyricsSearchModalOpened, setLyricsSearchModalOpened] = useState(false);
-  const [lyricsSettingsModalOpened, setLyricsSettingsModalOpened] = useState(false);
-  const autoOpenedLyricsSearchForRef = useRef<string | null>(null);
+  const [lyricsModalOpened, setLyricsModalOpened] = useState(false);
 
-  const dominantColor = useDominantColor(media.metadata.coverUrl);
+  const dominantColor = useDominantColor(media?.metadata.coverUrl);
   const barColor = useMemo(() => {
     if (dominantColor === "rgba(0,0,0,0)") return theme.colors.violet[5];
     return generateColors(dominantColor)[5];
@@ -181,7 +256,7 @@ export function Player({ media, repeating }: { media: Media; repeating: boolean 
     setVolume,
     seek,
   } = useStretchPlayer({
-    fileUrl: media.fileUrl,
+    fileUrl: media?.fileUrl || "",
     liteMode,
     initialRate: initialRate,
     initialSemitones: savedState?.semitones ?? 0,
@@ -189,72 +264,62 @@ export function Player({ media, repeating }: { media: Media; repeating: boolean 
     initialVolume: savedState?.volume ?? 1,
     initialPosition: stateLoaded ? initialStartAt : 0,
     isRepeat,
+    autoPlay: false,
   });
+
+  // Try autoplay when media and audio are ready
+  const autoPlayedRef = useRef(false);
+  useEffect(() => {
+    if (!media || stretchState !== "ready" || autoPlayedRef.current) return;
+    autoPlayedRef.current = true;
+    const id = setTimeout(async () => {
+      try {
+        await play();
+      } catch {}
+    }, 100);
+    return () => clearTimeout(id);
+  }, [media, stretchState, play]);
+
+  const onLyricsDiscover = useCallback(
+    (d: {
+      id: number;
+      trackName: string;
+      artistName: string;
+      albumName?: string;
+      syncedLyrics: string;
+    }) => {
+      const newSettings: LyricsSettings = {
+        id: d.id,
+        syncedLyrics: d.syncedLyrics,
+        trackName: d.trackName,
+        artistName: d.artistName,
+        albumName: d.albumName,
+        offset: 0,
+      };
+      setLyricsSettings(newSettings);
+      saveVideoState(sourceUrl, { lyrics: newSettings });
+    },
+    [sourceUrl],
+  );
 
   const {
     lyrics,
     state: lyricsState,
     error: lyricsError,
-    discoveredLyrics,
     searchResults,
   } = useLyrics({
-    trackName: media.metadata.title,
-    artistName: media.metadata.artist ?? media.metadata.author,
+    trackName: media?.metadata.title || "",
+    artistName: (media?.metadata.artist ?? media?.metadata.author) || "",
     durationSeconds: duration,
     enabled: duration > 0,
     selectedSyncedLyrics: lyricsSettings?.syncedLyrics,
     offsetSeconds: lyricsSettings?.offset ?? 0,
+    onDiscover: onLyricsDiscover,
   });
 
-  // Populate lyricsSettings when lyrics are auto-discovered
-  useEffect(() => {
-    if (!discoveredLyrics || lyricsSettings) return;
-    const id = requestAnimationFrame(() => {
-      const newSettings: LyricsSettings = {
-        id: discoveredLyrics.id,
-        syncedLyrics: discoveredLyrics.syncedLyrics,
-        trackName: discoveredLyrics.trackName,
-        artistName: discoveredLyrics.artistName,
-        albumName: discoveredLyrics.albumName,
-        offset: 0,
-      };
-      setLyricsSettings(newSettings);
-      saveVideoState(sourceUrl, { lyrics: newSettings });
-    });
-    return () => cancelAnimationFrame(id);
-  }, [discoveredLyrics, lyricsSettings, sourceUrl]);
-
-  // Whether lyrics are available (either discovered or manually selected)
   const hasLyrics = lyricsState === "ready" && lyrics.length > 0;
 
-  // If automatic lyrics discovery fails, immediately show the manual search modal.
-  useEffect(() => {
-    if (!showLyrics || lyricsState !== "not_found" || !duration) return;
-    if (autoOpenedLyricsSearchForRef.current === sourceUrl) return;
-
-    autoOpenedLyricsSearchForRef.current = sourceUrl;
-    setLyricsSearchModalOpened(true);
-  }, [duration, lyricsState, showLyrics, sourceUrl]);
-
-  // Lyrics handlers
-  const handleSelectLyrics = useCallback(
-    (record: LyricsSearchRecord) => {
-      const newSettings: LyricsSettings = {
-        id: record.id,
-        syncedLyrics: record.syncedLyrics,
-        trackName: record.trackName,
-        artistName: record.artistName,
-        albumName: record.albumName,
-        offset: 0,
-      };
-      setLyricsSettings(newSettings);
-      saveVideoState(sourceUrl, { lyrics: newSettings });
-      setLyricsSearchModalOpened(false);
-    },
-    [sourceUrl],
-  );
-
-  const handleLyricsOffsetChange = useCallback(
+  const handleOffsetChange = useCallback(
     (offset: number) => {
       setLyricsSettings((prev) => (prev ? { ...prev, offset } : null));
       saveVideoState(sourceUrl, {
@@ -326,19 +391,15 @@ export function Player({ media, repeating }: { media: Media; repeating: boolean 
 
   // Inlined useMediaSession
   useEffect(() => {
-    if (!("mediaSession" in navigator)) return;
+    if (!media || !("mediaSession" in navigator)) return;
 
     let highResCover = media.metadata.coverUrl;
     const platform =
-      media.sourceUrl.includes("youtube") || media.sourceUrl.includes("youtu.be")
+      media.sourceUrl?.includes("youtube") || media.sourceUrl?.includes("youtu.be")
         ? "youtube"
         : "";
     if (platform === "youtube") {
-      highResCover =
-        media.metadata.coverUrl?.replace(
-          /(?<!maxres)(hq|mq|sd)?default/,
-          "maxresdefault",
-        ) || media.metadata.coverUrl;
+      highResCover = toMaxResCoverUrl(media.metadata.coverUrl);
     }
 
     navigator.mediaSession.metadata = new MediaMetadata({
@@ -654,9 +715,6 @@ export function Player({ media, repeating }: { media: Media; repeating: boolean 
     [dominantColor, theme],
   );
 
-  const originalPlatformUrl = getOriginalPlatformUrl(media, currentTime);
-  const youtubeMusicUrl = getYouTubeMusicUrl(media);
-
   const playerAreaRef = useRef<HTMLDivElement>(null);
   usePlayerTapGestures(playerAreaRef, {
     onBackward: handleBackward,
@@ -664,6 +722,58 @@ export function Player({ media, repeating }: { media: Media; repeating: boolean 
     onTogglePlayback: handleTogglePlayer,
     enabled: true,
   });
+
+  // === Extraction / Error UI (shown before player mounts) ===
+  if (isExtracting || streamState.status === "error" || metadataLoadError) {
+    const isError = !!(streamState.status === "error" || metadataLoadError);
+    const errorMsg = metadataLoadError || streamState.message || "";
+
+    if (isError) {
+      return (
+        <Flex h="100dvh" direction="column" align="center" justify="center" gap="md">
+          <Text fw={600} c="red" size="lg">
+            Something went wrong
+          </Text>
+          <Text
+            size="sm"
+            c="dimmed"
+            style={{ textAlign: "center", whiteSpace: "pre-wrap" }}
+          >
+            {errorMsg}
+          </Text>
+          <Flex gap="sm" mt="md">
+            <Button variant="light" component={Link} href="/">
+              Go home
+            </Button>
+            <Button
+              onClick={() => {
+                streamStarted.current = false;
+                startStream();
+              }}
+            >
+              Retry
+            </Button>
+          </Flex>
+        </Flex>
+      );
+    }
+
+    return (
+      <Container size="xs">
+        <Flex h="100dvh" direction="column" align="center" justify="center" gap="lg">
+          <Progress value={100} animate striped w="100%" />
+          <Text size="sm" c="dimmed">
+            Getting the metadata...
+          </Text>
+        </Flex>
+      </Container>
+    );
+  }
+
+  if (!media) return null;
+
+  const originalPlatformUrl = getOriginalPlatformUrl(media, currentTime);
+  const youtubeMusicUrl = getYouTubeMusicUrl(media);
 
   return (
     <MantineProvider theme={dynamicTheme} inherit>
@@ -674,7 +784,7 @@ export function Player({ media, repeating }: { media: Media; repeating: boolean 
             position: "fixed",
             inset: 0,
             zIndex: 0,
-            backgroundImage: `url(${media.metadata.coverUrl?.replace(/(?<!maxres)(hq|mq|sd)?default/, "maxresdefault") || media.metadata.coverUrl})`,
+            backgroundImage: `url(${toMaxResCoverUrl(media.metadata.coverUrl)})`,
             backgroundSize: "cover",
             backgroundPosition: "center",
             filter: "blur(60px) saturate(1.5)",
@@ -709,29 +819,35 @@ export function Player({ media, repeating }: { media: Media; repeating: boolean 
         currentReverbAmount={reverbAmount}
       />
 
-      <LyricsSearchModal
-        opened={lyricsSearchModalOpened}
-        onClose={() => setLyricsSearchModalOpened(false)}
-        initialSearchQuery={
-          stripVideoTitleFiller(media.metadata.title) || media.metadata.title
-        }
-        initialResults={searchResults}
-        trackDurationSeconds={duration}
-        currentLyricsId={lyricsSettings?.id ?? null}
-        onSelectLyrics={handleSelectLyrics}
-      />
-
-      <LyricsSettingsModal
-        opened={lyricsSettingsModalOpened}
-        onClose={() => setLyricsSettingsModalOpened(false)}
+      <LyricsModal
+        opened={lyricsModalOpened}
+        onClose={() => setLyricsModalOpened(false)}
         showLyrics={showLyrics}
         onToggleLyrics={setShowLyrics}
+        trackDurationSeconds={duration}
+        currentLyricsId={lyricsSettings?.id ?? null}
         currentLyricsTrackName={lyricsSettings?.trackName ?? null}
         currentLyricsArtistName={lyricsSettings?.artistName ?? null}
         currentLyricsAlbumName={lyricsSettings?.albumName ?? null}
         currentOffset={lyricsSettings?.offset ?? 0}
-        onOffsetChange={handleLyricsOffsetChange}
-        onChangeLyrics={() => setLyricsSearchModalOpened(true)}
+        onOffsetChange={handleOffsetChange}
+        initialSearchQuery={
+          stripVideoTitleFiller(media.metadata.title) || media.metadata.title
+        }
+        initialSearchResults={searchResults}
+        onSelectLyrics={(record) => {
+          const newSettings: LyricsSettings = {
+            id: record.id,
+            syncedLyrics: record.syncedLyrics,
+            trackName: record.trackName,
+            artistName: record.artistName,
+            albumName: record.albumName,
+            offset: 0,
+          };
+          setLyricsSettings(newSettings);
+          saveVideoState(sourceUrl, { lyrics: newSettings });
+          setLyricsModalOpened(false);
+        }}
       />
 
       <Box style={{ position: "relative", height: "100dvh" }}>
@@ -756,6 +872,7 @@ export function Player({ media, repeating }: { media: Media; repeating: boolean 
             gap="sm"
           >
             <SegmentedControl
+              disabled={isLoading}
               tabIndex={-1}
               bg={theme.colors.dark[6]}
               color="brand"
@@ -877,7 +994,7 @@ export function Player({ media, repeating }: { media: Media; repeating: boolean 
                   width: "auto",
                   height: "auto",
                   maxWidth: isMobile ? "calc(100vw - 32px)" : "50vw",
-                  maxHeight: isMobile ? "70vh" : "60vh",
+                  maxHeight: isMobile ? "70vh" : "90vh",
                   aspectRatio: "1/1",
                   margin: isMobile ? 16 : 0,
                   display: "flex",
@@ -896,12 +1013,7 @@ export function Player({ media, repeating }: { media: Media; repeating: boolean 
                 />
                 {media.metadata.coverUrl ? (
                   <Image
-                    src={
-                      media.metadata.coverUrl?.replace(
-                        /(?<!maxres)(hq|mq|sd)?default/,
-                        "maxresdefault",
-                      ) || media.metadata.coverUrl
-                    }
+                    src={toMaxResCoverUrl(media.metadata.coverUrl)}
                     width="100%"
                     height="100%"
                     radius={theme.radius.md}
@@ -1063,7 +1175,7 @@ export function Player({ media, repeating }: { media: Media; repeating: boolean 
                 <Button
                   variant="default"
                   leftIcon={<IconMicrophone2 size={18} />}
-                  onClick={() => setLyricsSettingsModalOpened(true)}
+                  onClick={() => setLyricsModalOpened(true)}
                 >
                   Lyrics
                 </Button>
@@ -1169,6 +1281,7 @@ export function Player({ media, repeating }: { media: Media; repeating: boolean 
               </Box>
             )}
             <Slider
+              disabled={isLoading}
               value={isSeeking ? seekPosition : currentTime}
               onChange={handleSliderChange}
               onChangeEnd={handleSeekChange}
@@ -1224,9 +1337,7 @@ export function Player({ media, repeating }: { media: Media; repeating: boolean 
                   color="gray"
                   disabled={isLoading}
                 >
-                  {isLoading ? (
-                    <Loader size="md" variant="oval" color="gray" />
-                  ) : isPlaying ? (
+                  {isPlaying ? (
                     <IconPlayerPauseFilled size={30} />
                   ) : (
                     <IconPlayerPlayFilled size={30} />
@@ -1241,6 +1352,7 @@ export function Player({ media, repeating }: { media: Media; repeating: boolean 
                 >
                   <ActionIcon
                     size="lg"
+                    disabled={isLoading}
                     onClick={() => {
                       if (isMobile) {
                         setIsVolumeHovered(!isVolumeHovered);
@@ -1262,6 +1374,7 @@ export function Player({ media, repeating }: { media: Media; repeating: boolean 
                     }}
                   >
                     <Slider
+                      disabled={isLoading}
                       value={isMuted ? 0 : volume}
                       onChange={handleVolumeChange}
                       min={0}
@@ -1282,6 +1395,7 @@ export function Player({ media, repeating }: { media: Media; repeating: boolean 
                 <MediaQuery smallerThan="xs" styles={{ display: "none" }}>
                   <Flex align="center" gap={4}>
                     <ActionIcon
+                      disabled={isLoading}
                       size="lg"
                       onClick={handleBackward}
                       title="Backward 5 sec"
@@ -1291,6 +1405,7 @@ export function Player({ media, repeating }: { media: Media; repeating: boolean 
                       <IconRewindBackward5 />
                     </ActionIcon>
                     <ActionIcon
+                      disabled={isLoading}
                       size="lg"
                       onClick={handleForward}
                       title="Forward 5 sec"
@@ -1302,6 +1417,7 @@ export function Player({ media, repeating }: { media: Media; repeating: boolean 
                   </Flex>
                 </MediaQuery>
                 <ActionIcon
+                  disabled={isLoading}
                   size="lg"
                   onClick={toggleLoop}
                   title={isRepeat ? "Turn off Repeat" : "Repeat"}

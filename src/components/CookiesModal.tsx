@@ -1,16 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import {
-  Button,
-  Flex,
-  Loader,
-  Modal,
-  Stack,
-  Switch,
-  Text,
-  Textarea,
-} from "@mantine/core";
+import { Button, Flex, Modal, Stack, Switch, Text, Textarea } from "@mantine/core";
 import {
   getUserCookies,
   isCustomCookiesEnabled,
@@ -27,24 +18,15 @@ interface CookiesModalProps {
 export default function CookiesModal({ opened, onClose }: CookiesModalProps) {
   const [cookies, setCookiesState] = useState("");
   const [customEnabled, setCustomEnabled] = useState(false);
-  const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     if (!opened) return;
-    const load = async () => {
-      setLoading(true);
-      try {
-        const [userCookies, isCustom] = await Promise.all([
-          getUserCookies(),
-          isCustomCookiesEnabled(),
-        ]);
-        setCookiesState(userCookies);
-        setCustomEnabled(isCustom);
-      } catch {}
-      setLoading(false);
-    };
-    load();
+    const id = requestAnimationFrame(() => {
+      setCookiesState(getUserCookies());
+      setCustomEnabled(isCustomCookiesEnabled());
+    });
+    return () => cancelAnimationFrame(id);
   }, [opened]);
 
   const handleSave = async () => {
@@ -57,8 +39,8 @@ export default function CookiesModal({ opened, onClose }: CookiesModalProps) {
           return;
         }
       }
-      await setUserCookies(cookies);
-      await setCustomCookiesEnabled(customEnabled);
+      setUserCookies(cookies);
+      setCustomCookiesEnabled(customEnabled);
       onClose();
     } catch {
       setSaving(false);
@@ -92,30 +74,22 @@ export default function CookiesModal({ opened, onClose }: CookiesModalProps) {
         />
 
         {customEnabled && (
-          <>
-            {loading ? (
-              <Flex align="center" justify="center" py="xl">
-                <Loader size="sm" />
-              </Flex>
-            ) : (
-              <Textarea
-                value={cookies}
-                onChange={(e) => setCookiesState(e.currentTarget.value)}
-                placeholder="Paste your exported cookies.txt here..."
-                minRows={6}
-                maxRows={10}
-                autosize
-                styles={{ input: { fontFamily: "monospace", fontSize: "11px" } }}
-              />
-            )}
-          </>
+          <Textarea
+            value={cookies}
+            onChange={(e) => setCookiesState(e.currentTarget.value)}
+            placeholder="Paste your exported cookies.txt here..."
+            minRows={6}
+            maxRows={10}
+            autosize
+            styles={{ input: { fontFamily: "monospace", fontSize: "11px" } }}
+          />
         )}
 
         <Flex gap="sm" justify="flex-end">
           <Button variant="default" onClick={onClose} disabled={saving}>
             Cancel
           </Button>
-          <Button onClick={handleSave} loading={saving} disabled={loading}>
+          <Button onClick={handleSave} loading={saving}>
             Save
           </Button>
         </Flex>

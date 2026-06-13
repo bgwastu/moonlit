@@ -11,47 +11,41 @@ import {
 export interface StreamState {
   status: "idle" | "extracting" | "ready" | "error";
   message?: string;
-  metadata?: Partial<Media["metadata"]>;
-  duration?: number;
 }
 
 function buildMetadata(
   id: string | null,
-  preload: Partial<Media["metadata"]>,
   fallback: Partial<Media["metadata"]> = {},
 ): Media["metadata"] {
   return {
     id,
-    title: preload.title || fallback.title || "Unknown",
-    author: preload.author || fallback.author || "Unknown",
-    ...(preload.artist != null && { artist: preload.artist }),
-    ...(preload.album != null && { album: preload.album }),
-    coverUrl: preload.coverUrl || fallback.coverUrl || "",
+    title: fallback.title || "Unknown",
+    author: fallback.author || "Unknown",
+    ...(fallback.artist != null && { artist: fallback.artist }),
+    ...(fallback.album != null && { album: fallback.album }),
+    coverUrl: fallback.coverUrl || "",
   };
 }
 
 export async function streamWithProgress(
   url: string,
-  preload: Partial<Media["metadata"]>,
   onState: (state: StreamState) => void,
   abortSignal?: AbortSignal,
 ): Promise<Media> {
   if (isDirectMediaURL(url)) {
-    onState({ status: "ready", percent: 100 } as any);
-    const fallbackTitle =
-      preload.title ||
-      (() => {
-        try {
-          const pathname = url.startsWith("/") ? url : new URL(url, "https://a").pathname;
-          const name = pathname.split("/").pop() || "";
-          return (
-            decodeURIComponent(name).replace(/\.(mp3|m4a|mp4|webm|ogg|wav)$/i, "") ||
-            "Unknown"
-          );
-        } catch {
-          return "Unknown";
-        }
-      })();
+    onState({ status: "ready" });
+    const fallbackTitle = (() => {
+      try {
+        const pathname = url.startsWith("/") ? url : new URL(url, "https://a").pathname;
+        const name = pathname.split("/").pop() || "";
+        return (
+          decodeURIComponent(name).replace(/\.(mp3|m4a|mp4|webm|ogg|wav)$/i, "") ||
+          "Unknown"
+        );
+      } catch {
+        return "Unknown";
+      }
+    })();
 
     let fileUrl: string;
     if (url.startsWith("/")) {
@@ -67,7 +61,7 @@ export async function streamWithProgress(
       fileUrl = url;
     }
 
-    const baseMeta = buildMetadata(null, preload, { title: fallbackTitle });
+    const baseMeta = buildMetadata(null, { title: fallbackTitle });
 
     if (
       typeof window !== "undefined" &&
@@ -124,24 +118,14 @@ export async function streamWithProgress(
   const isYouTube = isYoutubeURL(url);
   const isTikTok = isTikTokURL(url);
 
-  let id: string | null = null;
-  if (isYouTube) id = getYouTubeId(url);
-  else if (isTikTok) id = getTikTokId(url);
+  onState({ status: "extracting", message: "Extracting stream..." });
 
-  onState({
-    status: "extracting",
-    message: "Extracting stream...",
-  });
-
-  const { cookies } = await getCookiesToUse();
+  const { cookies } = getCookiesToUse();
 
   const res = await fetch("/api/stream/extract", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      url,
-      cookies,
-    }),
+    body: JSON.stringify({ url, cookies }),
     signal: abortSignal,
   });
 
@@ -154,7 +138,11 @@ export async function streamWithProgress(
 
   const streamUrl = `/api/stream/${data.token}`;
 
-  const resolvedMetadata = buildMetadata(id || "unknown", preload, {
+  let id: string | null = null;
+  if (isYouTube) id = getYouTubeId(url);
+  else if (isTikTok) id = getTikTokId(url);
+
+  const resolvedMetadata = buildMetadata(id || "unknown", {
     title: data.metadata?.title || "",
     author: data.metadata?.author || "",
     artist: data.metadata?.artist,
@@ -162,16 +150,11 @@ export async function streamWithProgress(
     coverUrl: data.metadata?.coverUrl || "",
   });
 
-  onState({
-    status: "ready",
-    metadata: resolvedMetadata,
-    duration: data.duration,
-  });
+  onState({ status: "ready" });
 
   return {
     fileUrl: streamUrl,
     sourceUrl: url,
-    streamToken: data.token,
     metadata: resolvedMetadata,
   };
 }

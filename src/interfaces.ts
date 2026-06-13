@@ -1,7 +1,6 @@
 export interface Media {
   fileUrl: string;
   sourceUrl: string;
-  streamToken?: string;
   metadata: {
     id: string | null;
     title: string;

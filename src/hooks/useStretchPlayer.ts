@@ -454,12 +454,23 @@ export function useStretchPlayer({
       if ("mediaSession" in navigator) navigator.mediaSession.playbackState = "playing";
 
       if (liteMode) {
-        a.play().catch(() => {});
-        setIsPlaying(true);
+        try {
+          await a.play();
+          setIsPlaying(true);
+        } catch {
+          setIsPlaying(false);
+        }
         return;
       }
       if (!rt.audioContext || !rt.stretch) return;
-      if (rt.audioContext.state === "suspended") await rt.audioContext.resume();
+      if (rt.audioContext.state === "suspended") {
+        try {
+          await rt.audioContext.resume();
+        } catch {
+          setIsPlaying(false);
+          return;
+        }
+      }
       const t =
         startTime !== undefined && Number.isFinite(startTime)
           ? Math.max(0, Math.min(startTime, rt.duration))

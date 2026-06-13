@@ -2,34 +2,33 @@ const COOKIES_KEY = "moonlit-yt-cookies";
 const CUSTOM_COOKIES_ENABLED_KEY = "moonlit-custom-cookies-enabled";
 
 /** Get user cookies from localStorage */
-export async function getUserCookies(): Promise<string> {
+export function getUserCookies(): string {
   if (typeof window === "undefined") return "";
   return localStorage.getItem(COOKIES_KEY) ?? "";
 }
 
 /** Save user cookies to localStorage */
-export async function setUserCookies(content: string): Promise<void> {
+export function setUserCookies(content: string): void {
   if (typeof window === "undefined") return;
   localStorage.setItem(COOKIES_KEY, content);
 }
 
 /** Get custom cookies enabled preference */
-export async function isCustomCookiesEnabled(): Promise<boolean> {
+export function isCustomCookiesEnabled(): boolean {
   if (typeof window === "undefined") return false;
   return localStorage.getItem(CUSTOM_COOKIES_ENABLED_KEY) === "true";
 }
 
 /** Set custom cookies enabled preference */
-export async function setCustomCookiesEnabled(enabled: boolean): Promise<void> {
+export function setCustomCookiesEnabled(enabled: boolean): void {
   if (typeof window === "undefined") return;
   localStorage.setItem(CUSTOM_COOKIES_ENABLED_KEY, String(enabled));
 }
 
 /** Get cookies to use for requests (user cookies if enabled, otherwise empty) */
-export async function getCookiesToUse(): Promise<{ cookies: string }> {
-  const customEnabled = await isCustomCookiesEnabled();
-  if (customEnabled) {
-    const userCookies = await getUserCookies();
+export function getCookiesToUse(): { cookies: string } {
+  if (isCustomCookiesEnabled()) {
+    const userCookies = getUserCookies();
     if (userCookies.trim().length > 0) {
       return { cookies: userCookies };
     }

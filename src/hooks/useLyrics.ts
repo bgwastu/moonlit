@@ -36,9 +36,10 @@ interface UseLyricsOptions {
   enabled: boolean;
   selectedSyncedLyrics?: string | null;
   offsetSeconds?: number;
+  onDiscover?: (discovered: DiscoveredLyrics) => void;
 }
 
-interface DiscoveredLyrics {
+export interface DiscoveredLyrics {
   id: number;
   trackName: string;
   artistName: string;
@@ -50,7 +51,6 @@ interface UseLyricsReturn {
   lyrics: Lyric[];
   state: LyricsState;
   error: string | null;
-  discoveredLyrics: DiscoveredLyrics | null;
   searchResults: LyricsSearchRecord[];
 }
 
@@ -108,6 +108,7 @@ export function useLyrics({
   enabled,
   selectedSyncedLyrics,
   offsetSeconds = 0,
+  onDiscover,
 }: UseLyricsOptions): UseLyricsReturn {
   const [lyrics, setLyrics] = useState<Lyric[]>([]);
   const [state, setState] = useState<LyricsState>("idle");
@@ -117,10 +118,15 @@ export function useLyrics({
 
   const offsetMs = offsetSeconds * 1000;
   const trackRef = useRef({ trackName, artistName, durationSeconds });
+  const onDiscoverRef = useRef(onDiscover);
 
   useEffect(() => {
     trackRef.current = { trackName, artistName, durationSeconds };
   }, [trackName, artistName, durationSeconds]);
+
+  useEffect(() => {
+    onDiscoverRef.current = onDiscover;
+  }, [onDiscover]);
 
   const fetchLyrics = useCallback(
     async (signal?: AbortSignal) => {
@@ -190,6 +196,7 @@ export function useLyrics({
 
         setLyrics(finalLyrics);
         setDiscoveredLyrics(discovered);
+        if (discovered) onDiscoverRef.current?.(discovered);
         setSearchResults(results);
         setState(parsed.length > 0 ? "ready" : "not_found");
 
@@ -227,6 +234,7 @@ export function useLyrics({
 
         setLyrics(finalLyrics);
         setDiscoveredLyrics(discovered);
+        if (discovered) onDiscoverRef.current?.(discovered);
         setSearchResults(results);
         setState(parsed.length > 0 ? "ready" : "not_found");
 
@@ -259,6 +267,7 @@ export function useLyrics({
 
         setLyrics(finalLyrics);
         setDiscoveredLyrics(discovered);
+        if (discovered) onDiscoverRef.current?.(discovered);
         setState("ready");
 
         setCached(cacheK, { lyrics: finalLyrics, discovered, searchResults: records });
@@ -292,5 +301,5 @@ export function useLyrics({
     return () => controller.abort();
   }, [enabled, selectedSyncedLyrics, durationSeconds, offsetMs, fetchLyrics]);
 
-  return { lyrics, state, error, discoveredLyrics, searchResults };
+  return { lyrics, state, error, searchResults };
 }

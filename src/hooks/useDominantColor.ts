@@ -61,7 +61,7 @@ export function useDominantColor(imageUrl?: string, initialColor?: string) {
 
     const img = document.createElement("img");
     img.crossOrigin = "Anonymous";
-    img.src = imageUrl.replace(/(?<!maxres)(hq|mq|sd)?default/, "maxresdefault");
+    img.src = imageUrl;
 
     img.onload = () => {
       const color = getDominantColorFromImage(img);
