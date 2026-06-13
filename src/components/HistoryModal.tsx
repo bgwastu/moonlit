@@ -1,9 +1,7 @@
 "use client";
 
-import { useState } from "react";
 import { useRouter } from "next/navigation";
 import {
-  ActionIcon,
   Avatar,
   Box,
   Button,
@@ -12,13 +10,12 @@ import {
   Modal,
   Stack,
   Text,
-  Tooltip,
   useMantineTheme,
 } from "@mantine/core";
-import { IconHistory, IconPlayerPlay, IconTrash, IconX } from "@tabler/icons-react";
+import { IconHistory, IconTrash } from "@tabler/icons-react";
 import { useAppContext } from "@/context/AppContext";
 import { HistoryItem, Media } from "@/interfaces";
-import { getPlatform, getTikTokCreatorAndVideoId, getYouTubeId, timeAgo } from "@/utils";
+import { getPlatform, getYouTubeId, timeAgo } from "@/utils";
 import { getMedia } from "@/utils/cache";
 
 interface HistoryModalProps {
@@ -35,7 +32,6 @@ export default function HistoryModal({
   const { history, setHistory, setMedia } = useAppContext();
   const router = useRouter();
   const theme = useMantineTheme();
-  const [hoveredItem, setHoveredItem] = useState<string | null>(null);
 
   const handlePlay = async (item: HistoryItem) => {
     onClose();
@@ -43,7 +39,6 @@ export default function HistoryModal({
 
     const platform = getPlatform(item.sourceUrl);
 
-    // Check if it's a local file
     if (platform === "local") {
       try {
         const key = item.sourceUrl;
@@ -74,17 +69,10 @@ export default function HistoryModal({
       return;
     }
 
-    // For remote files, navigate using platform-specific URL schema
     if (platform === "youtube") {
       const id = getYouTubeId(item.sourceUrl);
       if (id) {
         router.push(`/watch?v=${id}`);
-        return;
-      }
-    } else if (platform === "tiktok") {
-      const { creator, videoId } = getTikTokCreatorAndVideoId(item.sourceUrl);
-      if (creator && videoId) {
-        router.push(`/@${creator}/video/${videoId}`);
         return;
       }
     } else if (platform === "direct") {
@@ -92,7 +80,6 @@ export default function HistoryModal({
       return;
     }
 
-    // Fallback - shouldn't normally reach here
     console.warn("Could not parse URL for history item:", item.sourceUrl);
     onLoadingStart(false);
   };
@@ -101,11 +88,6 @@ export default function HistoryModal({
     if (confirm("Are you sure you want to clear your history?")) {
       setHistory([]);
     }
-  };
-
-  const removeItem = (e: React.MouseEvent, url: string) => {
-    e.stopPropagation();
-    setHistory((prev) => prev.filter((item) => item.sourceUrl !== url));
   };
 
   return (
@@ -154,38 +136,23 @@ export default function HistoryModal({
               <Stack spacing="xs" pr="xs">
                 {history
                   .sort((a, b) => b.playedAt - a.playedAt)
-                  .map((item, index) => {
-                    const itemKey = item.sourceUrl;
-                    const isHovered = hoveredItem === itemKey;
+                  .map((item) => {
                     const meta = item.metadata ?? ({} as Media["metadata"]);
                     return (
                       <Box
-                        key={itemKey}
+                        key={item.sourceUrl}
                         onClick={() => handlePlay(item)}
-                        onMouseEnter={() => setHoveredItem(itemKey)}
-                        onMouseLeave={() => setHoveredItem(null)}
-                        sx={(theme) => ({
+                        sx={{
                           cursor: "pointer",
                           display: "block",
                           width: "100%",
                           padding: theme.spacing.sm,
                           borderRadius: theme.radius.md,
-                          backgroundColor:
-                            theme.colorScheme === "dark"
-                              ? theme.colors.dark[7]
-                              : theme.colors.gray[0],
-                          border: `1px solid ${theme.colorScheme === "dark" ? "transparent" : theme.colors.gray[2]}`,
-                          transition: "all 0.2s ease",
-
+                          backgroundColor: theme.colors.dark[7],
                           "&:hover": {
-                            backgroundColor:
-                              theme.colorScheme === "dark"
-                                ? theme.colors.dark[6]
-                                : theme.white,
-                            transform: "translateY(-2px)",
-                            boxShadow: theme.shadows.sm,
+                            backgroundColor: theme.colors.dark[6],
                           },
-                        })}
+                        }}
                       >
                         <Flex
                           align="center"
@@ -193,87 +160,36 @@ export default function HistoryModal({
                           w="100%"
                           style={{ overflow: "hidden" }}
                         >
-                          <Box style={{ position: "relative", flexShrink: 0 }}>
-                            <Avatar
-                              src={meta.coverUrl}
-                              size={60}
-                              radius="md"
-                              styles={{ image: { objectFit: "cover" } }}
-                            />
-                            {isHovered && (
-                              <Box
-                                style={{
-                                  position: "absolute",
-                                  inset: 0,
-                                  background: "rgba(0,0,0,0.4)",
-                                  borderRadius: theme.radius.md,
-                                  display: "flex",
-                                  alignItems: "center",
-                                  justifyContent: "center",
-                                }}
-                              >
-                                <IconPlayerPlay
-                                  size={24}
-                                  color="white"
-                                  style={{ opacity: 0.9 }}
-                                />
-                              </Box>
-                            )}
-                          </Box>
-
+                          <Avatar
+                            src={meta.coverUrl}
+                            size={40}
+                            radius="md"
+                            styles={{ image: { objectFit: "cover" } }}
+                          />
                           <Box style={{ flex: 1, minWidth: 0 }}>
-                            <Text size="sm" weight={600} truncate mb={2}>
+                            <Text size="sm" weight={600} truncate>
                               {meta.title}
                             </Text>
-                            <Group spacing={6} noWrap>
-                              <Text
-                                size="xs"
-                                color="dimmed"
-                                truncate
-                                style={{ maxWidth: 200 }}
-                              >
-                                {meta.artist ?? meta.author}
-                                {meta.album && ` · ${meta.album}`}
-                              </Text>
-                              <Text size="xs" color="dimmed" style={{ flexShrink: 0 }}>
-                                •
-                              </Text>
-                              <Text
-                                size="xs"
-                                color="dimmed"
-                                transform="capitalize"
-                                truncate
-                              >
-                                {getPlatform(item.sourceUrl)}
-                              </Text>
-                            </Group>
-                          </Box>
-
-                          <Stack align="flex-end" spacing={4} style={{ flexShrink: 0 }}>
-                            <Text
-                              size="xs"
-                              color="dimmed"
-                              style={{ whiteSpace: "nowrap" }}
-                            >
-                              {timeAgo(item.playedAt)}
+                            <Text size="xs" color="dimmed" truncate>
+                              {meta.artist ?? meta.author}
+                              {meta.album && ` · ${meta.album}`}
                             </Text>
-
-                            <Tooltip label="Remove from history" openDelay={500}>
-                              <ActionIcon
-                                size="sm"
-                                color="red"
-                                variant="subtle"
-                                className="delete-btn"
-                                onClick={(e) => removeItem(e, itemKey!)}
-                                style={{
-                                  opacity: isHovered ? 1 : 0,
-                                  transition: "opacity 0.2s ease",
-                                }}
-                              >
-                                <IconX size={16} />
-                              </ActionIcon>
-                            </Tooltip>
-                          </Stack>
+                          </Box>
+                          <Text
+                            size="xs"
+                            color="dimmed"
+                            style={{ whiteSpace: "nowrap", flexShrink: 0 }}
+                          >
+                            {timeAgo(item.playedAt)}
+                          </Text>
+                          <Text
+                            size="xs"
+                            color="dimmed"
+                            transform="capitalize"
+                            style={{ flexShrink: 0, width: 60, textAlign: "right" }}
+                          >
+                            {getPlatform(item.sourceUrl)}
+                          </Text>
                         </Flex>
                       </Box>
                     );
@@ -285,7 +201,7 @@ export default function HistoryModal({
               justify="center"
               pt="xs"
               style={{
-                borderTop: `1px solid ${theme.colorScheme === "dark" ? theme.colors.dark[6] : theme.colors.gray[2]}`,
+                borderTop: `1px solid ${theme.colors.dark[6]}`,
               }}
             >
               <Button
