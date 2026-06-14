@@ -21,12 +21,19 @@ interface UseStretchPlayerProps {
   onError?: (e: unknown) => void;
 }
 
+export interface BufferedRange {
+  start: number;
+  end: number;
+}
+
 interface UseStretchPlayerReturn {
   audioRef: React.RefObject<HTMLAudioElement>;
   state: StretchPlayerState;
   isPlaying: boolean;
+  isWaiting: boolean;
   currentTime: number;
   duration: number;
+  buffered: BufferedRange[];
   rate: number;
   semitones: number;
   reverbAmount: number;
@@ -157,6 +164,8 @@ export function useStretchPlayer({
   const [reverbAmountState, setReverbAmountState] = useState(initialReverbAmount);
   const [volumeState, setVolumeState] = useState(initialVolume);
   const [progress, setProgress] = useState<LoadProgress>(null);
+  const [buffered, setBuffered] = useState<BufferedRange[]>([]);
+  const [isWaiting, setIsWaiting] = useState(false);
 
   const runtime = useRef<PlayerRuntime>({
     audioContext: null,
@@ -220,6 +229,8 @@ export function useStretchPlayer({
     }
     rt.buffer = null;
     rt.isPlaying = false;
+    setIsWaiting(false);
+    setBuffered([]);
   }, []);
 
   const setupNative = useCallback(
@@ -255,11 +266,32 @@ export function useStretchPlayer({
           runtime.current.onEnded?.();
         }
       };
+      const onProgress = () => {
+        const ranges: BufferedRange[] = [];
+        try {
+          for (let i = 0; i < audio.buffered.length; i++) {
+            ranges.push({ start: audio.buffered.start(i), end: audio.buffered.end(i) });
+          }
+        } catch {}
+        setBuffered(ranges);
+      };
+      const onWaiting = () => setIsWaiting(true);
+      const onResumed = () => setIsWaiting(false);
+
       audio.addEventListener("timeupdate", onTime);
       audio.addEventListener("ended", onEnd);
+      audio.addEventListener("progress", onProgress);
+      audio.addEventListener("waiting", onWaiting);
+      audio.addEventListener("playing", onResumed);
+      audio.addEventListener("seeked", onResumed);
+
       nativeCleanupRef.current = () => {
         audio.removeEventListener("timeupdate", onTime);
         audio.removeEventListener("ended", onEnd);
+        audio.removeEventListener("progress", onProgress);
+        audio.removeEventListener("waiting", onWaiting);
+        audio.removeEventListener("playing", onResumed);
+        audio.removeEventListener("seeked", onResumed);
       };
       if (pos > 0) audio.currentTime = pos;
       setCurrentTime(pos);
@@ -290,6 +322,8 @@ export function useStretchPlayer({
       rt.buffer = audioBuffer;
       rt.duration = audioBuffer.duration;
       setDuration(audioBuffer.duration);
+      setBuffered([{ start: 0, end: audioBuffer.duration }]);
+      setIsWaiting(false);
 
       setProgress({ phase: "processing", percent: 80 });
       const SignalsmithStretch = (await import("signalsmith-stretch")).default;
@@ -714,8 +748,10 @@ export function useStretchPlayer({
     audioRef,
     state,
     isPlaying,
+    isWaiting,
     currentTime,
     duration,
+    buffered,
     rate: rateState,
     semitones: semitonesState,
     reverbAmount: reverbAmountState,

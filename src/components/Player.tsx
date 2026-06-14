@@ -13,6 +13,7 @@ import {
   Center,
   Flex,
   Image,
+  Loader,
   MantineProvider,
   MediaQuery,
   Menu,
@@ -293,6 +294,8 @@ export function Player({
     setRate,
     setSemitones,
     setReverbAmount,
+    buffered,
+    isWaiting,
     setVolume,
     seek,
   } = useStretchPlayer({
@@ -367,12 +370,13 @@ export function Player({
     [sourceUrl, lyricsSettings],
   );
 
-  const isLoading = stretchState === "loading";
+  const isLoading = stretchState === "loading" || isWaiting;
   const isReady = stretchState === "ready";
   const isEnded =
     stretchState === "ready" &&
     currentTime >= duration - 0.05 &&
     duration > 0 &&
+    !isWaiting &&
     !isPlaying &&
     !isRepeat;
 
@@ -575,9 +579,13 @@ export function Player({
     (value: number) => {
       setIsSeeking(false);
       seek(value);
-      play(value); // Always resume after seeking, force start at seek time
+      // Resume playback from the new position if we were playing.
+      // The browser will fire 'waiting' if it needs to buffer.
+      if (isPlaying) {
+        play();
+      }
     },
-    [seek, play],
+    [seek, play, isPlaying],
   );
 
   const handleTogglePlayer = useCallback(() => {
@@ -1054,8 +1062,24 @@ export function Player({
                     </Text>
                   </Box>
                 )}
-                {/* Loading overlay with progress */}
-                {stretchState === "loading" && (
+                {/* Buffering spinner — centered on album art, no background */}
+                {isWaiting && (
+                  <Box
+                    style={{
+                      position: "absolute",
+                      inset: 0,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      zIndex: 10,
+                      pointerEvents: "none",
+                    }}
+                  >
+                    <Loader size="md" color="white" />
+                  </Box>
+                )}
+                {/* Processing overlay with progress bar */}
+                {stretchState === "loading" && !isWaiting && (
                   <Box
                     style={{
                       position: "absolute",
@@ -1081,7 +1105,7 @@ export function Player({
                       }}
                     >
                       <Text style={{ color: "white" }} fw={600}>
-                        Processing the audio...
+                        Processing the audio…
                       </Text>
                       <Box style={{ width: 200 }}>
                         <Progress
@@ -1241,9 +1265,27 @@ export function Player({
             </Flex>
           </Flex>
 
-          <Box style={{ paddingRight: 8 }}>
+          <Box style={{ paddingRight: 8, position: "relative" }}>
+            {/* Buffered segments rendered behind the slider */}
+            {duration > 0 &&
+              buffered.map((range, i) => (
+                <Box
+                  key={i}
+                  style={{
+                    position: "absolute",
+                    left: `${(range.start / duration) * 100}%`,
+                    width: `${((range.end - range.start) / duration) * 100}%`,
+                    height: 3,
+                    bottom: 0,
+                    backgroundColor: "rgba(255, 255, 255, 0.12)",
+                    borderRadius: 0,
+                    pointerEvents: "none",
+                    zIndex: 0,
+                  }}
+                />
+              ))}
             <Slider
-              disabled={isLoading}
+              disabled={isLoading && !isNativeFallback}
               value={isSeeking ? seekPosition : currentTime}
               onChange={handleSliderChange}
               onChangeEnd={handleSeekChange}
