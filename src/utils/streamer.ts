@@ -21,96 +21,25 @@ function buildMetadata(
   };
 }
 
+/**
+ * Extract a playable media from a URL. Handles:
+ *   - Direct media files (local, same-origin, or remote .mp3/.m4a/etc.)
+ *   - YouTube URLs (via the /api/stream/extract endpoint)
+ *
+ * Calls onState() with progress updates. Resolves with the Media object.
+ */
 export async function streamWithProgress(
   url: string,
   onState: (state: StreamState) => void,
   abortSignal?: AbortSignal,
 ): Promise<Media> {
+  // ---- Direct media files ----
   if (isDirectMediaURL(url)) {
-    onState({ status: "ready" });
-    const fallbackTitle = (() => {
-      try {
-        const pathname = url.startsWith("/") ? url : new URL(url, "https://a").pathname;
-        const name = pathname.split("/").pop() || "";
-        return (
-          decodeURIComponent(name).replace(/\.(mp3|m4a|mp4|webm|ogg|wav)$/i, "") ||
-          "Unknown"
-        );
-      } catch {
-        return "Unknown";
-      }
-    })();
-
-    let fileUrl: string;
-    if (url.startsWith("/")) {
-      fileUrl = url;
-    } else if (typeof window !== "undefined") {
-      try {
-        const u = new URL(url);
-        fileUrl = u.origin === window.location.origin ? url : url;
-      } catch {
-        fileUrl = url;
-      }
-    } else {
-      fileUrl = url;
-    }
-
-    const baseMeta = buildMetadata(null, { title: fallbackTitle });
-
-    if (
-      typeof window !== "undefined" &&
-      /\.mp3(\?|$)/i.test(url.startsWith("/") ? url : new URL(url).pathname)
-    ) {
-      try {
-        const resolvedUrl = fileUrl.startsWith("/")
-          ? `${window.location.origin}${fileUrl}`
-          : fileUrl;
-        const res = await fetch(resolvedUrl, {
-          headers: { Range: "bytes=0-131071" },
-          signal: abortSignal,
-        });
-        if (res.ok && res.body) {
-          const buf = new Uint8Array(await res.arrayBuffer());
-          const parse = (await import("id3-parser")).default;
-          const tags = parse(buf);
-          if (tags && typeof tags === "object") {
-            let coverUrl = baseMeta.coverUrl;
-            if (tags.image?.data) {
-              const blob = new Blob([new Uint8Array(tags.image.data)], {
-                type: tags.image.mime || "image/jpeg",
-              });
-              coverUrl = URL.createObjectURL(blob);
-            }
-            return {
-              fileUrl,
-              sourceUrl: url,
-              metadata: {
-                ...baseMeta,
-                title: (tags.title as string)?.trim() || baseMeta.title,
-                author: (tags.artist as string)?.trim() || baseMeta.author,
-                ...((tags.artist as string)?.trim() && {
-                  artist: (tags.artist as string).trim(),
-                }),
-                ...((tags.album as string)?.trim() && {
-                  album: (tags.album as string).trim(),
-                }),
-                coverUrl,
-              },
-            };
-          }
-        }
-      } catch {}
-    }
-
-    return {
-      fileUrl,
-      sourceUrl: url,
-      metadata: baseMeta,
-    };
+    return handleDirectMedia(url, onState, abortSignal);
   }
 
+  // ---- YouTube ----
   const isYouTube = isYoutubeURL(url);
-
   onState({ status: "extracting", message: "Extracting stream..." });
 
   const { cookies } = getCookiesToUse();
@@ -131,8 +60,7 @@ export async function streamWithProgress(
 
   const streamUrl = `/api/stream/${data.token}`;
 
-  let id: string | null = null;
-  if (isYouTube) id = getYouTubeId(url);
+  const id = isYouTube ? getYouTubeId(url) : null;
 
   const resolvedMetadata = buildMetadata(id || "unknown", {
     title: data.metadata?.title || "",
@@ -148,5 +76,96 @@ export async function streamWithProgress(
     fileUrl: streamUrl,
     sourceUrl: url,
     metadata: resolvedMetadata,
+  };
+}
+
+// ---- Direct media handler (inlined from previous implementation) ----
+
+async function handleDirectMedia(
+  url: string,
+  onState: (state: StreamState) => void,
+  abortSignal?: AbortSignal,
+): Promise<Media> {
+  onState({ status: "ready" });
+
+  const fallbackTitle = (() => {
+    try {
+      const pathname = url.startsWith("/") ? url : new URL(url, "https://a").pathname;
+      const name = pathname.split("/").pop() || "";
+      return (
+        decodeURIComponent(name).replace(/\.(mp3|m4a|mp4|webm|ogg|wav)$/i, "") ||
+        "Unknown"
+      );
+    } catch {
+      return "Unknown";
+    }
+  })();
+
+  let fileUrl: string;
+  if (url.startsWith("/")) {
+    fileUrl = url;
+  } else if (typeof window !== "undefined") {
+    try {
+      const u = new URL(url);
+      fileUrl = u.origin === window.location.origin ? url : url;
+    } catch {
+      fileUrl = url;
+    }
+  } else {
+    fileUrl = url;
+  }
+
+  const baseMeta = buildMetadata(null, { title: fallbackTitle });
+
+  // Try to read ID3 tags from local .mp3 files
+  if (
+    typeof window !== "undefined" &&
+    /\.mp3(\?|$)/i.test(url.startsWith("/") ? url : new URL(url).pathname)
+  ) {
+    try {
+      const resolvedUrl = fileUrl.startsWith("/")
+        ? `${window.location.origin}${fileUrl}`
+        : fileUrl;
+      const res = await fetch(resolvedUrl, {
+        headers: { Range: "bytes=0-131071" },
+        signal: abortSignal,
+      });
+      if (res.ok && res.body) {
+        const buf = new Uint8Array(await res.arrayBuffer());
+        const parse = (await import("id3-parser")).default;
+        const tags = parse(buf);
+        if (tags && typeof tags === "object") {
+          let coverUrl = baseMeta.coverUrl;
+          if (tags.image?.data) {
+            const blob = new Blob([new Uint8Array(tags.image.data)], {
+              type: tags.image.mime || "image/jpeg",
+            });
+            coverUrl = URL.createObjectURL(blob);
+          }
+          return {
+            fileUrl,
+            sourceUrl: url,
+            metadata: {
+              ...baseMeta,
+              title: (tags.title as string)?.trim() || baseMeta.title,
+              author: (tags.artist as string)?.trim() || baseMeta.author,
+              ...((tags.artist as string)?.trim() && {
+                artist: (tags.artist as string).trim(),
+              }),
+              ...((tags.album as string)?.trim() && {
+                album: (tags.album as string).trim(),
+              }),
+              coverUrl,
+            },
+          };
+        }
+      }
+    } catch {}
+  }
+
+  return {
+    fileUrl,
+    sourceUrl: url,
+    metadata: baseMeta,
   };
 }

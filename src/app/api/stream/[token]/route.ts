@@ -144,7 +144,7 @@ export async function GET(
     const responseHeaders: Record<string, string> = {
       ...corsHeaders(),
       "Content-Type": upstreamContentType || entry.contentType,
-      "Cache-Control": "no-cache",
+      "Cache-Control": "public, max-age=21600",
     };
     if (contentLength) responseHeaders["Content-Length"] = contentLength;
     if (acceptRanges) responseHeaders["Accept-Ranges"] = acceptRanges;

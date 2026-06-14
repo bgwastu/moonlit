@@ -56,7 +56,7 @@ import { useStretchPlayer } from "@/hooks/useStretchPlayer";
 import { HistoryItem, LyricsSettings, Media } from "@/interfaces";
 import { stripVideoTitleFiller } from "@/lib/lyrics";
 import { getModeFromRate, getVideoState, saveVideoState } from "@/lib/videoState";
-import { getFormattedTime, isSupportedURL } from "@/utils";
+import { getFormattedTime, getYouTubeId, isSupportedURL } from "@/utils";
 import {
   createDynamicTheme,
   getOriginalPlatformUrl,
@@ -86,6 +86,24 @@ const PLAYBACK_MODE_ICONS: Record<PlaybackMode, ReactNode> = {
   custom: <IconAdjustments size={24} />,
 };
 
+function getPrepopulatedMetadata(
+  url: string,
+): Record<string, string | number> | undefined {
+  try {
+    const id = url.match(
+      /^.*(?:youtu\.be\/|v\/|vi\/|u\/\w\/|embed\/|shorts\/|watch\?v=|\&v=)([^#\&\?]*).*/,
+    )?.[1];
+    if (!id) return undefined;
+    const stored = sessionStorage.getItem(`moonlit-search-meta:${id}`);
+    if (!stored) return undefined;
+    const parsed = JSON.parse(stored);
+    sessionStorage.removeItem(`moonlit-search-meta:${id}`);
+    return parsed;
+  } catch {
+    return undefined;
+  }
+}
+
 export function Player({
   url,
   duration: propDuration,
@@ -109,8 +127,34 @@ export function Player({
   const [streamState, setStreamState] = useState<StreamState>({ status: "idle" });
   const streamStarted = useRef(false);
 
-  const media = propMedia || extractedMedia || (url ? null : contextMedia);
+  // Check for pre-populated metadata from search results (sessionStorage)
+  const initialMeta = useMemo(
+    () => (url ? getPrepopulatedMetadata(url) : undefined),
+    [url],
+  );
+
+  // Derive provisional media from pre-populated metadata (sessionStorage).
+  // This is NOT state — it's a derived value that lets the UI show content
+  // immediately while the real extraction runs in background.
+  const provisionalMedia = useMemo<Media | null>(() => {
+    if (!url || !initialMeta) return null;
+    const ytId = getYouTubeId(url);
+    return {
+      fileUrl: "",
+      sourceUrl: url,
+      metadata: {
+        id: ytId || null,
+        title: (initialMeta.title as string) || "Unknown",
+        author: (initialMeta.author as string) || "Unknown",
+        coverUrl: (initialMeta.coverUrl as string) || "",
+      },
+    };
+  }, [url, initialMeta]);
+
+  const media =
+    propMedia || extractedMedia || provisionalMedia || (url ? null : contextMedia);
   const metadataLoadError = propMetadataLoadError;
+  // Show extracting UI only when we have a URL and absolutely no media of any kind
   const isExtracting = !media && !!url;
 
   // Inlined extraction logic (was in InitialPlayer + useMediaStreamer)
@@ -143,13 +187,13 @@ export function Player({
     return () => abortController.abort();
   }, [url]);
 
-  // Auto-start stream for URL mode
+  // Auto-start stream for URL mode — check extractedMedia, not media (which includes provisionalMedia)
   useEffect(() => {
-    if (media || metadataLoadError || streamStarted.current) return;
+    if (extractedMedia || metadataLoadError || streamStarted.current) return;
     if (!url) return;
     streamStarted.current = true;
     setTimeout(() => startStream(), 0);
-  }, [url, metadataLoadError, media, startStream]);
+  }, [url, metadataLoadError, extractedMedia, startStream]);
 
   // Add to history when playback starts (media excluded intentionally — it changes reference on every render)
   useEffect(() => {

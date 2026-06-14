@@ -38,45 +38,47 @@ export interface StreamInfo {
 
 const DATA_DIR = path.join(process.cwd(), "data");
 const SYSTEM_COOKIES_PATH = path.join(DATA_DIR, "cookies.txt");
+
+// ---- Cache constants ----
 const SEARCH_TTL_MS = 30 * 60 * 1000;
-const STREAM_URL_TTL_MS = 5 * 60 * 60 * 1000;
-const INSTANCE_TTL_MS = 30 * 60 * 1000;
+const STREAM_CACHE_TTL_MS = 5 * 60 * 60 * 1000; // 5 hours — consider "fresh"
+const STREAM_CACHE_HARD_LIMIT_MS = 7 * 60 * 60 * 1000; // 7 hours — must re-extract
+const STREAM_CACHE_REFRESH_AFTER_MS = 4 * 60 * 60 * 1000; // 4 hours — trigger background refresh
+const INSTANCE_TTL_MS = 4 * 60 * 60 * 1000;
 
-class TtlCache<T> {
-  private store = new Map<string, { value: T; expiresAt: number }>();
-  private ttl: number;
+// ---- Simple value cache (no TTL logic, no persistence) ----
+// Just stores { value, cachedAt }. TTL / stale logic lives in the callers.
+class CacheStore<T> {
+  private store = new Map<string, { value: T; cachedAt: number }>();
 
-  constructor(ttl: number) {
-    this.ttl = ttl;
-  }
-
-  get(key: string): T | undefined {
-    const entry = this.store.get(key);
-    if (!entry) return undefined;
-    if (Date.now() > entry.expiresAt) {
-      this.store.delete(key);
-      return undefined;
-    }
-    return entry.value;
+  get(key: string): { value: T; cachedAt: number } | undefined {
+    return this.store.get(key);
   }
 
   set(key: string, value: T): void {
-    this.store.set(key, { value, expiresAt: Date.now() + this.ttl });
-    this.pruneExpired();
+    this.store.set(key, { value, cachedAt: Date.now() });
   }
 
-  private pruneExpired(): void {
-    const now = Date.now();
-    for (const [key, entry] of this.store) {
-      if (now > entry.expiresAt) this.store.delete(key);
-    }
+  has(key: string): boolean {
+    return this.store.has(key);
   }
 }
 
-const searchCache = new TtlCache<YouTubeSearchResult[]>(SEARCH_TTL_MS);
-const streamUrlCache = new TtlCache<StreamInfo>(STREAM_URL_TTL_MS);
-const instanceCache = new TtlCache<Promise<Innertube>>(INSTANCE_TTL_MS);
+// ---- Cache instances ----
+const searchCache = new CacheStore<YouTubeSearchResult[]>();
+const streamCache = new CacheStore<StreamInfo>();
 
+// Instance cache stores the Promise<Innertube> directly (not wrapped in our CacheStore)
+// because we use a different TTL check pattern for it.
+const instanceStore = new Map<
+  string,
+  { promise: Promise<Innertube>; expiresAt: number }
+>();
+
+// Deduplicate concurrent background stream refreshes
+const pendingRefreshes = new Map<string, Promise<void>>();
+
+// ---- Cookie helpers ----
 export function hasSystemCookies(): boolean {
   try {
     const content = readFileSync(SYSTEM_COOKIES_PATH, "utf-8").trim();
@@ -131,6 +133,7 @@ function simpleHash(s: string): string {
   return Math.abs(hash).toString(36).slice(0, 8);
 }
 
+// ---- Innertube instance management ----
 const DEFAULT_INSTANCE_KEY = "__default__";
 
 async function getInnertube(
@@ -140,8 +143,10 @@ async function getInnertube(
   const effectiveCookie = resolveCookieString(cookieString);
   const key = `${clientType || "WEB"}::${effectiveCookie ? simpleHash(effectiveCookie) : DEFAULT_INSTANCE_KEY}`;
 
-  const cached = instanceCache.get(key);
-  if (cached) return cached;
+  const existing = instanceStore.get(key);
+  if (existing && Date.now() < existing.expiresAt) {
+    return existing.promise;
+  }
 
   const promise = Innertube.create({
     cache: new UniversalCache(true),
@@ -149,10 +154,11 @@ async function getInnertube(
     ...(clientType ? { client_type: clientType as any } : {}),
   });
 
-  instanceCache.set(key, promise);
+  instanceStore.set(key, { promise, expiresAt: Date.now() + INSTANCE_TTL_MS });
   return promise;
 }
 
+// ---- Search ----
 export async function searchYouTube(
   query: string,
   options: { limit?: number; cookies?: string } = {},
@@ -162,8 +168,12 @@ export async function searchYouTube(
 
   const limit = Math.min(Math.max(options.limit ?? 3, 1), 10);
   const cacheKey = `q=${cleanQuery}|limit=${limit}|c=${simpleHash(options.cookies || "")}`;
+
   const cached = searchCache.get(cacheKey);
-  if (cached) return cached;
+  if (cached) {
+    const age = Date.now() - cached.cachedAt;
+    if (age < SEARCH_TTL_MS) return cached.value;
+  }
 
   const yt = await getInnertube(options.cookies);
   const search = await yt.search(cleanQuery, { type: "video" });
@@ -219,37 +229,16 @@ function pickThumbnail(
   return best.url || "";
 }
 
-export async function getVideoInfo(url: string, cookies?: string): Promise<VideoInfo> {
-  const id = getYouTubeId(url);
-  if (!id) throw new Error("Invalid YouTube URL");
+// ---- Stream extraction ----
 
-  const yt = await getInnertube(cookies);
-  const info = await yt.getBasicInfo(id);
-  const basic = info.basic_info;
-
-  return {
-    title: basic?.title || "Unknown",
-    author: basic?.author || "Unknown",
-    thumbnail: pickThumbnail(basic?.thumbnail || []),
-    lengthSeconds: Math.floor(Number(basic?.duration) || 0),
-  };
-}
-
-export async function extractStreamUrl(
-  url: string,
-  options: {
-    cookies?: string;
-    signal?: AbortSignal;
-  } = {},
+/**
+ * Internal: perform the full YouTube extraction (Innertube + getBasicInfo + format pick).
+ */
+async function doFullExtraction(
+  id: string,
+  sourceUrl: string,
+  options: { cookies?: string; signal?: AbortSignal },
 ): Promise<StreamInfo> {
-  const id = getYouTubeId(url);
-  if (!id) throw new Error("Invalid YouTube URL");
-
-  const cacheKey = `stream:${id}`;
-  const cached = streamUrlCache.get(cacheKey);
-  if (cached) return cached;
-
-  // Use ANDROID_VR client which provides direct streaming URLs without needing decipher
   const yt = await getInnertube(options.cookies, "ANDROID_VR");
 
   const info = await yt.getBasicInfo(id);
@@ -270,7 +259,6 @@ export async function extractStreamUrl(
     );
   }
 
-  // Find the best audio format — prefer m4a (AAC) for better proxy compatibility
   const formats = [
     ...(info.streaming_data.formats || []),
     ...(info.streaming_data.adaptive_formats || []),
@@ -280,7 +268,6 @@ export async function extractStreamUrl(
     throw new Error("No audio formats available for this video.");
   }
 
-  // Prefer m4a (AAC) for reliable streaming through the proxy, then opus
   const format =
     formats.find((f) => f.mime_type?.includes("mp4")) ||
     formats.sort((a, b) => b.bitrate - a.bitrate)[0];
@@ -292,7 +279,7 @@ export async function extractStreamUrl(
 
   const contentType = format.mime_type?.split(";")[0]?.trim() || "audio/mp4";
 
-  const streamInfo: StreamInfo = {
+  return {
     url: streamUrl,
     contentType,
     headers: {
@@ -303,9 +290,81 @@ export async function extractStreamUrl(
     title: basic.title || "Unknown",
     author: basic.author || "Unknown",
     thumbnail: pickThumbnail(basic.thumbnail || []),
-    sourceUrl: url,
+    sourceUrl,
   };
+}
 
-  streamUrlCache.set(cacheKey, streamInfo);
+/**
+ * Trigger a background refresh of the stream cache for a video ID.
+ * Deduplicated: only one concurrent refresh per ID.
+ */
+function refreshStreamInBackground(
+  id: string,
+  sourceUrl: string,
+  options: { cookies?: string },
+): void {
+  if (pendingRefreshes.has(id)) return;
+
+  const promise = doFullExtraction(id, sourceUrl, options)
+    .then((freshInfo) => {
+      streamCache.set(`stream:${id}`, freshInfo);
+    })
+    .catch((err) => {
+      console.error(`[Moonlit] Background stream refresh failed for ${id}:`, err.message);
+    })
+    .finally(() => {
+      pendingRefreshes.delete(id);
+    });
+
+  pendingRefreshes.set(id, promise);
+}
+
+/**
+ * Extract a playable stream URL for a YouTube video.
+ *
+ * Caching strategy (stale-while-revalidate):
+ *   • 0–4h old    → return cached, no refresh
+ *   • 4–5h old    → return cached, trigger background refresh
+ *   • 5–7h old    → return cached (stale, URL likely still valid), trigger background refresh
+ *   • >7h old     → stale could be expired, do full extraction
+ *   • not cached  → full extraction
+ */
+export async function extractStreamUrl(
+  url: string,
+  options: {
+    cookies?: string;
+    signal?: AbortSignal;
+  } = {},
+): Promise<StreamInfo> {
+  const id = getYouTubeId(url);
+  if (!id) throw new Error("Invalid YouTube URL");
+
+  const cacheKey = `stream:${id}`;
+  const entry = streamCache.get(cacheKey);
+
+  if (entry) {
+    const age = Date.now() - entry.cachedAt;
+
+    // Fresh enough to return immediately
+    if (age < STREAM_CACHE_TTL_MS) {
+      // Getting old? Refresh in background.
+      if (age >= STREAM_CACHE_REFRESH_AFTER_MS) {
+        refreshStreamInBackground(id, url, options);
+      }
+      return entry.value;
+    }
+
+    // Past TTL but within hard limit — serve stale while refreshing
+    if (age < STREAM_CACHE_HARD_LIMIT_MS) {
+      refreshStreamInBackground(id, url, options);
+      return entry.value;
+    }
+
+    // Hard-expired — fall through to full extraction
+  }
+
+  // Cold start (not cached or hard-expired)
+  const streamInfo = await doFullExtraction(id, url, options);
+  streamCache.set(cacheKey, streamInfo);
   return streamInfo;
 }

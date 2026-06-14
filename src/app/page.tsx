@@ -384,6 +384,20 @@ function SearchPanel({
 
   function watchPath(result: YouTubeResult) {
     const id = getYouTubeId(result.url) ?? result.id;
+    // Store search metadata in sessionStorage so Player can use it immediately
+    try {
+      sessionStorage.setItem(
+        `moonlit-search-meta:${id}`,
+        JSON.stringify({
+          title: result.title,
+          author: result.author,
+          coverUrl: result.thumbnail,
+          duration: result.lengthSeconds,
+        }),
+      );
+    } catch {
+      // sessionStorage may be full or unavailable — proceed without cache
+    }
     return `/watch?v=${id}`;
   }
 
