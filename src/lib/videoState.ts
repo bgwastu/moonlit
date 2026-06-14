@@ -47,6 +47,10 @@ export function saveVideoState(url: string, state: Partial<State>): void {
         state.showLyrics !== undefined
           ? state.showLyrics
           : (existing?.showLyrics ?? false),
+      advancedStretch:
+        state.advancedStretch !== undefined
+          ? state.advancedStretch
+          : (existing?.advancedStretch ?? false),
     };
     localStorage.setItem(key, JSON.stringify(newState));
     cleanupOldEntries();

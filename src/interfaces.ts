@@ -34,4 +34,6 @@ export interface State {
   lyrics?: LyricsSettings | null;
   /** Whether lyrics should be shown */
   showLyrics?: boolean;
+  /** Whether advanced stretch mode (signalsmith-stretch pipeline) is enabled */
+  advancedStretch?: boolean;
 }

@@ -13,7 +13,6 @@ import {
   Center,
   Flex,
   Image,
-  Loader,
   MantineProvider,
   MediaQuery,
   Menu,
@@ -32,10 +31,8 @@ import {
   IconChevronsRight,
   IconDownload,
   IconExternalLink,
-  IconFileMusic,
   IconHome,
   IconMenu2,
-  IconMicrophone2,
   IconMusic,
   IconPlayerPauseFilled,
   IconPlayerPlay,
@@ -51,7 +48,6 @@ import {
   IconVolume3,
   IconVolumeOff,
 } from "@tabler/icons-react";
-import Icon from "@/components/Icon";
 import { useAppContext } from "@/context/AppContext";
 import { useDominantColor } from "@/hooks/useDominantColor";
 import { useLyrics } from "@/hooks/useLyrics";
@@ -60,7 +56,7 @@ import { useStretchPlayer } from "@/hooks/useStretchPlayer";
 import { HistoryItem, LyricsSettings, Media } from "@/interfaces";
 import { stripVideoTitleFiller } from "@/lib/lyrics";
 import { getModeFromRate, getVideoState, saveVideoState } from "@/lib/videoState";
-import { getFormattedTime, getPlatform, isSupportedURL } from "@/utils";
+import { getFormattedTime, isSupportedURL } from "@/utils";
 import {
   createDynamicTheme,
   getOriginalPlatformUrl,
@@ -193,6 +189,10 @@ export function Player({
   const [isVolumeHovered, setIsVolumeHovered] = useState(false);
   const previousVolumeRef = useRef(savedState?.volume ?? 1);
 
+  const [advancedStretch, setAdvancedStretch] = useState(
+    savedState?.advancedStretch ?? false,
+  );
+
   const [showLyrics, setShowLyrics] = useState(savedState?.showLyrics ?? false);
   const [lyricsSettings, setLyricsSettings] = useState<LyricsSettings | null>(
     savedState?.lyrics ?? null,
@@ -241,6 +241,7 @@ export function Player({
     reverbAmount,
     volume,
     progress,
+    isNativeFallback,
     // Controls
     play,
     pause,
@@ -252,6 +253,7 @@ export function Player({
     seek,
   } = useStretchPlayer({
     fileUrl: media?.fileUrl || "",
+    advancedStretch,
     initialRate: initialRate,
     initialSemitones: savedState?.semitones ?? 0,
     initialReverbAmount: savedState?.reverbAmount ?? 0,
@@ -311,8 +313,6 @@ export function Player({
     onDiscover: onLyricsDiscover,
   });
 
-  const hasLyrics = lyricsState === "ready" && lyrics.length > 0;
-
   const handleOffsetChange = useCallback(
     (offset: number) => {
       setLyricsSettings((prev) => (prev ? { ...prev, offset } : null));
@@ -331,6 +331,14 @@ export function Player({
     duration > 0 &&
     !isPlaying &&
     !isRepeat;
+
+  const handleAdvancedStretchChange = useCallback(
+    (enabled: boolean) => {
+      setAdvancedStretch(enabled);
+      saveVideoState(sourceUrl, { advancedStretch: enabled });
+    },
+    [sourceUrl],
+  );
 
   const handleReset = useCallback(() => {
     setRate(1);
@@ -431,6 +439,7 @@ export function Player({
       isRepeat,
       volume,
       showLyrics,
+      advancedStretch,
     });
   }, [
     rate,
@@ -442,6 +451,7 @@ export function Player({
     stateLoaded,
     isReady,
     showLyrics,
+    advancedStretch,
   ]);
 
   // Wake Lock API: keep screen on during playback
@@ -478,6 +488,7 @@ export function Player({
         isRepeat,
         volume,
         showLyrics,
+        advancedStretch,
       });
     };
     const handler = () => {
@@ -499,6 +510,7 @@ export function Player({
     sourceUrl,
     stateLoaded,
     showLyrics,
+    advancedStretch,
   ]);
 
   // Modal controls
@@ -744,6 +756,8 @@ export function Player({
       <CustomizePlaybackModal
         opened={modalOpened}
         onClose={closeModal}
+        advancedStretch={advancedStretch}
+        onAdvancedStretchChange={handleAdvancedStretchChange}
         rate={rate}
         onSpeedChangeEnd={handleRateChange}
         semitones={semitones}
@@ -1140,15 +1154,13 @@ export function Player({
               {`${getFormattedTime(isSeeking ? seekPosition : currentTime)} / ${getFormattedTime(duration)}`}
             </Text>
             <Flex gap="xs">
-              {showLyrics && hasLyrics && (
-                <Button
-                  variant="default"
-                  leftIcon={<IconMicrophone2 size={18} />}
-                  onClick={() => setLyricsModalOpened(true)}
-                >
-                  Lyrics
-                </Button>
-              )}
+              <Button
+                variant="default"
+                leftIcon={<IconMusic size={18} />}
+                onClick={() => setLyricsModalOpened(true)}
+              >
+                Lyrics
+              </Button>
               <Menu shadow="md" width={200} position="top-end">
                 <Menu.Target>
                   <Button variant="default" leftIcon={<IconMenu2 size={18} />}>
@@ -1180,25 +1192,6 @@ export function Player({
                     Download
                   </Menu.Item>
                   <Menu.Divider />
-                  <Menu.Label>Display</Menu.Label>
-                  <Menu.Item
-                    icon={
-                      lyricsState === "loading" ? (
-                        <Loader size={14} variant="oval" />
-                      ) : (
-                        <IconFileMusic size={14} />
-                      )
-                    }
-                    onClick={() => setShowLyrics((prev) => !prev)}
-                    disabled={lyricsState === "loading"}
-                    rightSection={
-                      <Text size="xs" color="dimmed">
-                        {showLyrics ? "On" : "Off"}
-                      </Text>
-                    }
-                  >
-                    Lyrics
-                  </Menu.Item>
                 </Menu.Dropdown>
               </Menu>
             </Flex>

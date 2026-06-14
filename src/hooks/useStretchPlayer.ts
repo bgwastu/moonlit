@@ -9,6 +9,7 @@ export type LoadProgress =
 
 interface UseStretchPlayerProps {
   fileUrl: string;
+  advancedStretch?: boolean;
   initialRate?: number;
   initialSemitones?: number;
   initialPosition?: number;
@@ -31,6 +32,7 @@ interface UseStretchPlayerReturn {
   reverbAmount: number;
   volume: number;
   progress: LoadProgress;
+  isNativeFallback: boolean;
   play: (startTime?: number) => void;
   pause: () => void;
   togglePlayback: () => void;
@@ -133,6 +135,7 @@ function generateImpulseResponse(context: AudioContext, dur = 2, decay = 2): Aud
 
 export function useStretchPlayer({
   fileUrl,
+  advancedStretch = false,
   initialRate = 1,
   initialSemitones = 0,
   initialPosition = 0,
@@ -174,12 +177,21 @@ export function useStretchPlayer({
     lastUiUpdateMs: 0,
   });
 
+  const advancedStretchRef = useRef(advancedStretch);
+  useEffect(() => {
+    advancedStretchRef.current = advancedStretch;
+  }, [advancedStretch]);
+  const nativeCleanupRef = useRef<(() => void) | null>(null);
+
   useEffect(() => {
     runtime.current.repeat = isRepeat;
     runtime.current.onEnded = onEnded;
   }, [isRepeat, onEnded]);
 
   const cleanup = useCallback(() => {
+    nativeCleanupRef.current?.();
+    nativeCleanupRef.current = null;
+
     const rt = runtime.current;
     if (rt.rafId !== null) {
       cancelAnimationFrame(rt.rafId);
@@ -209,6 +221,51 @@ export function useStretchPlayer({
     rt.buffer = null;
     rt.isPlaying = false;
   }, []);
+
+  const setupNative = useCallback(
+    (audio: HTMLAudioElement, pos: number) => {
+      audio.muted = false;
+      audio.volume = initialVolume;
+      audio.playbackRate = initialRate;
+      (audio as any).preservesPitch = false;
+      (audio as any).mozPreservesPitch = false;
+      (audio as any).webkitPreservesPitch = false;
+
+      const onTime = () => {
+        const ct = audio.currentTime;
+        setCurrentTime(ct);
+        // Keep OS media controls in sync
+        if ("mediaSession" in navigator && "setPositionState" in navigator.mediaSession) {
+          try {
+            navigator.mediaSession.setPositionState({
+              duration: audio.duration || 0,
+              playbackRate: Math.max(0.25, audio.playbackRate || 1),
+              position: ct,
+            });
+          } catch {}
+        }
+      };
+      const onEnd = () => {
+        if (runtime.current.repeat) {
+          audio.currentTime = 0;
+          audio.play().catch(() => {});
+        } else {
+          setIsPlaying(false);
+          setCurrentTime(audio.duration);
+          runtime.current.onEnded?.();
+        }
+      };
+      audio.addEventListener("timeupdate", onTime);
+      audio.addEventListener("ended", onEnd);
+      nativeCleanupRef.current = () => {
+        audio.removeEventListener("timeupdate", onTime);
+        audio.removeEventListener("ended", onEnd);
+      };
+      if (pos > 0) audio.currentTime = pos;
+      setCurrentTime(pos);
+    },
+    [initialRate, initialVolume],
+  );
 
   const setupFull = useCallback(
     async (audio: HTMLAudioElement, pos: number) => {
@@ -360,30 +417,68 @@ export function useStretchPlayer({
         const resumePos =
           posBeforeSwitch.current > 0 ? posBeforeSwitch.current : initialPosition;
 
-        audio.src = fileUrl;
-        audio.load();
-        await initFullMode(audio, resumePos);
-        if (aborted) return;
+        if (advancedStretch) {
+          audio.src = fileUrl;
+          audio.load();
+          await initFullMode(audio, resumePos);
+          if (aborted) return;
 
-        setState("ready");
-        setProgress(null);
-        if (autoPlay || posBeforeSwitch.current > 0) {
-          setTimeout(() => {
-            const rt2 = runtime.current;
-            if (rt2.stretch && rt2.audioContext) {
-              if (rt2.audioContext.state === "suspended") rt2.audioContext.resume();
-              rt2.stretch.schedule({
-                active: true,
-                input: resumePos,
-                rate: rt2.rate,
-                semitones: rt2.semitones,
-              });
-              rt2.isPlaying = true;
-              setIsPlaying(true);
-              audio.muted = true;
-              audio.play().catch(() => {});
+          setState("ready");
+          setProgress(null);
+          if (autoPlay || posBeforeSwitch.current > 0) {
+            setTimeout(() => {
+              const rt2 = runtime.current;
+              if (rt2.stretch && rt2.audioContext) {
+                if (rt2.audioContext.state === "suspended") rt2.audioContext.resume();
+                rt2.stretch.schedule({
+                  active: true,
+                  input: resumePos,
+                  rate: rt2.rate,
+                  semitones: rt2.semitones,
+                });
+                rt2.isPlaying = true;
+                setIsPlaying(true);
+                audio.muted = true;
+                audio.play().catch(() => {});
+              }
+            }, 50);
+          }
+        } else {
+          // Native mode: use HTMLAudioElement directly
+          audio.muted = false;
+          audio.src = fileUrl;
+          audio.preload = "metadata";
+          audio.load();
+          await new Promise<void>((resolve, reject) => {
+            if (audio.readyState >= 3) {
+              resolve();
+              return;
             }
-          }, 50);
+            const onCanPlay = () => {
+              audio.removeEventListener("canplay", onCanPlay);
+              audio.removeEventListener("error", onError);
+              resolve();
+            };
+            const onError = (e: Event) => {
+              audio.removeEventListener("canplay", onCanPlay);
+              audio.removeEventListener("error", onError);
+              reject(new Error((e.target as HTMLAudioElement)?.error?.message || e.type));
+            };
+            audio.addEventListener("canplay", onCanPlay);
+            audio.addEventListener("error", onError);
+          });
+          if (aborted) return;
+          setDuration(audio.duration);
+          setupNative(audio, resumePos);
+
+          setState("ready");
+          if (autoPlay || posBeforeSwitch.current > 0) {
+            setTimeout(() => {
+              if (resumePos > 0) audio.currentTime = resumePos;
+              audio.play().catch(() => {});
+              setIsPlaying(true);
+            }, 50);
+          }
         }
       } catch (error) {
         if (!aborted) {
@@ -401,7 +496,16 @@ export function useStretchPlayer({
       aborted = true;
       cleanup();
     };
-  }, [fileUrl, initialPosition, autoPlay, onPlayerError, cleanup, initFullMode]);
+  }, [
+    fileUrl,
+    advancedStretch,
+    initialPosition,
+    autoPlay,
+    onPlayerError,
+    cleanup,
+    initFullMode,
+    setupNative,
+  ]);
 
   useEffect(() => cleanup, [cleanup]);
 
@@ -411,6 +515,21 @@ export function useStretchPlayer({
     const rt = runtime.current;
     if ("mediaSession" in navigator) navigator.mediaSession.playbackState = "playing";
 
+    if (!advancedStretchRef.current) {
+      // Native mode
+      try {
+        if (startTime !== undefined && Number.isFinite(startTime)) {
+          a.currentTime = startTime;
+        }
+        await a.play();
+        setIsPlaying(true);
+      } catch {
+        setIsPlaying(false);
+      }
+      return;
+    }
+
+    // Advanced stretch mode
     if (!rt.audioContext || !rt.stretch) return;
     if (rt.audioContext.state === "suspended") {
       try {
@@ -498,12 +617,16 @@ export function useStretchPlayer({
         } catch {}
       }
     }
-    rt.isPlaying = false;
-    setIsPlaying(false);
-    if (rt.stretch) rt.stretch.schedule({ active: false });
-    if (rt.rafId !== null) {
-      cancelAnimationFrame(rt.rafId);
-      rt.rafId = null;
+    if (advancedStretchRef.current) {
+      rt.isPlaying = false;
+      setIsPlaying(false);
+      if (rt.stretch) rt.stretch.schedule({ active: false });
+      if (rt.rafId !== null) {
+        cancelAnimationFrame(rt.rafId);
+        rt.rafId = null;
+      }
+    } else {
+      setIsPlaying(false);
     }
     audioRef.current?.pause();
   }, []);
@@ -514,6 +637,24 @@ export function useStretchPlayer({
 
   const seek = useCallback((t: number) => {
     if (!Number.isFinite(t)) return;
+    if (!advancedStretchRef.current) {
+      const a = audioRef.current;
+      if (!a) return;
+      const clamped = Math.max(0, Math.min(t, a.duration || 0));
+      a.currentTime = clamped;
+      setCurrentTime(clamped);
+      // Update OS media position state so lock screen controls stay in sync
+      if ("mediaSession" in navigator && "setPositionState" in navigator.mediaSession) {
+        try {
+          navigator.mediaSession.setPositionState({
+            duration: a.duration || 0,
+            playbackRate: Math.max(0.25, a.playbackRate || 1),
+            position: clamped,
+          });
+        } catch {}
+      }
+      return;
+    }
     const rt = runtime.current;
     const clamped = Math.max(0, Math.min(t, rt.duration));
     setCurrentTime(clamped);
@@ -530,6 +671,11 @@ export function useStretchPlayer({
     const rt = runtime.current;
     rt.rate = r;
     setRateState(r);
+    if (!advancedStretchRef.current) {
+      const a = audioRef.current;
+      if (a) a.playbackRate = r;
+      return;
+    }
     if (rt.stretch) rt.stretch.schedule({ rate: r, semitones: rt.semitones });
   }, []);
 
@@ -556,6 +702,11 @@ export function useStretchPlayer({
     const rt = runtime.current;
     rt.volume = c;
     setVolumeState(c);
+    if (!advancedStretchRef.current) {
+      const a = audioRef.current;
+      if (a) a.volume = c;
+      return;
+    }
     if (rt.masterGain) rt.masterGain.gain.value = c;
   }, []);
 
@@ -570,6 +721,7 @@ export function useStretchPlayer({
     reverbAmount: reverbAmountState,
     volume: volumeState,
     progress,
+    isNativeFallback: !advancedStretch,
     play,
     pause,
     togglePlayback,
