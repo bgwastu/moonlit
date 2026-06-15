@@ -50,27 +50,27 @@ export default function CookiesModal({ opened, onClose }: CookiesModalProps) {
   return (
     <Modal opened={opened} onClose={onClose} title="Cookies" size="md" centered>
       <Stack spacing="md">
-        <Text size="sm" c="dimmed">
-          Cookies help bypass age restrictions and rate limits for YouTube. Export from
-          your browser using{" "}
-          <Text
-            component="a"
-            href="https://chromewebstore.google.com/detail/get-cookiestxt-locally/cclelndahbckbenkjhflpdbgdldlbecc"
-            target="_blank"
-            underline
-            inherit
-          >
-            Get cookies.txt LOCALLY
-          </Text>
-          .
-        </Text>
-
         <Switch
+          labelPosition="left"
           label="Enable custom cookies"
-          description="Use your own cookies for downloads"
+          description={
+            <Text size="xs" c="dimmed">
+              Cookies help bypass age restrictions and rate limits for YouTube. Export
+              from your browser using{" "}
+              <Text
+                component="a"
+                href="https://chromewebstore.google.com/detail/get-cookiestxt-locally/cclelndahbckbenkjhflpdbgdldlbecc"
+                target="_blank"
+                underline
+                inherit
+              >
+                This extension
+              </Text>
+              .
+            </Text>
+          }
           checked={customEnabled}
           onChange={(e) => setCustomEnabled(e.currentTarget.checked)}
-          size="md"
         />
 
         {customEnabled && (
