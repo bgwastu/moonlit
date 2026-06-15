@@ -62,7 +62,6 @@ import {
   createDynamicTheme,
   getOriginalPlatformUrl,
   getSemitonesFromRate,
-  toMaxResCoverUrl,
 } from "@/utils/player";
 import { StreamState, streamWithProgress } from "@/utils/streamer";
 import CustomizePlaybackModal from "./CustomizePlaybackModal";
@@ -147,7 +146,11 @@ export function Player({
         id: ytId || null,
         title: (initialMeta.title as string) || "Unknown",
         author: (initialMeta.author as string) || "Unknown",
-        coverUrl: (initialMeta.coverUrl as string) || "",
+        artist: (initialMeta.artist as string) || undefined,
+        album: (initialMeta.album as string) || undefined,
+        coverUrl: initialMeta.coverUrl
+          ? `/api/cover?url=${encodeURIComponent(initialMeta.coverUrl as string)}`
+          : "",
       },
     };
   }, [url, initialMeta]);
@@ -249,6 +252,7 @@ export function Player({
     if (dominantColor === "rgba(0,0,0,0)") return theme.colors.violet[5];
     return generateColors(dominantColor)[5];
   }, [dominantColor, theme.colors.violet]);
+  const coverUrl = media?.metadata.coverUrl;
 
   // Inlined useToast
   const [toast, setToast] = useState<{
@@ -428,14 +432,7 @@ export function Player({
   useEffect(() => {
     if (!media || !("mediaSession" in navigator)) return;
 
-    let highResCover = media.metadata.coverUrl;
-    const platform =
-      media.sourceUrl?.includes("youtube") || media.sourceUrl?.includes("youtu.be")
-        ? "youtube"
-        : "";
-    if (platform === "youtube") {
-      highResCover = toMaxResCoverUrl(media.metadata.coverUrl);
-    }
+    const highResCover = coverUrl;
 
     navigator.mediaSession.metadata = new MediaMetadata({
       title: media.metadata.title,
@@ -471,7 +468,7 @@ export function Player({
         navigator.mediaSession.setActionHandler("seekto", null);
       } catch {}
     };
-  }, [media, play, pause, handleBackward, handleForward, seek]);
+  }, [media, coverUrl, play, pause, handleBackward, handleForward, seek]);
 
   // Inlined useVideoStatePersistence
   const lastSaveRef = useRef<number>(0);
@@ -795,7 +792,7 @@ export function Player({
             position: "fixed",
             inset: 0,
             zIndex: 0,
-            backgroundImage: `url(${toMaxResCoverUrl(media.metadata.coverUrl)})`,
+            backgroundImage: `url(${coverUrl})`,
             backgroundSize: "cover",
             backgroundPosition: "center",
             filter: "blur(60px) saturate(1.5)",
@@ -1022,7 +1019,7 @@ export function Player({
                 />
                 {media.metadata.coverUrl ? (
                   <Image
-                    src={toMaxResCoverUrl(media.metadata.coverUrl)}
+                    src={coverUrl}
                     width="100%"
                     height="100%"
                     radius={theme.radius.md}
@@ -1434,7 +1431,7 @@ export function Player({
               <Flex ml={{ base: 0, xs: "lg" }}>
                 <MediaQuery smallerThan="xs" styles={{ display: "none" }}>
                   <Image
-                    src={media.metadata.coverUrl}
+                    src={coverUrl}
                     radius="sm"
                     height={38}
                     width={38}

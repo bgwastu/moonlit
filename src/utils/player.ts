@@ -39,11 +39,3 @@ export function createDynamicTheme(
 export function getSemitonesFromRate(rate: number): number {
   return 12 * Math.log2(rate);
 }
-
-/**
- * Upgrade a YouTube thumbnail URL to maxres quality.
- */
-export function toMaxResCoverUrl(url?: string): string {
-  if (!url) return url ?? "";
-  return url.replace(/(?<!maxres)(hq|mq|sd)?default/, "maxresdefault");
-}

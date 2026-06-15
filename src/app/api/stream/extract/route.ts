@@ -61,7 +61,9 @@ export async function POST(req: Request) {
         author: streamInfo.author,
         artist: streamInfo.artist,
         album: streamInfo.album,
-        coverUrl: streamInfo.thumbnail,
+        coverUrl: streamInfo.thumbnail
+          ? `/api/cover?url=${encodeURIComponent(streamInfo.thumbnail)}`
+          : "",
       },
       duration: streamInfo.duration,
       contentType: streamInfo.contentType,
