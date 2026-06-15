@@ -338,6 +338,32 @@ async function doFullExtraction(
 
   const contentType = format.mime_type?.split(";")[0]?.trim() || "audio/mp4";
 
+  let artist: string | undefined;
+  let album: string | undefined;
+  let thumbnail = pickThumbnail(basic.thumbnail || []);
+
+  try {
+    const musicInfo = await yt.music.getInfo(id);
+
+    const musicBasic = musicInfo.basic_info;
+
+    if (musicBasic && musicBasic.author && musicBasic.author !== basic.author) {
+      artist = musicBasic.author;
+    }
+
+    if (musicBasic && typeof (musicBasic as any).album !== "undefined") {
+      album = (musicBasic as any).album;
+    }
+
+    const musicThumb = pickThumbnail(
+      (musicBasic?.thumbnail as { url?: string; width?: number; height?: number }[]) ||
+        [],
+    );
+    if (musicThumb) {
+      thumbnail = musicThumb;
+    }
+  } catch {}
+
   return {
     url: streamUrl,
     contentType,
@@ -348,7 +374,9 @@ async function doFullExtraction(
     duration: Math.floor(Number(basic.duration) || 0),
     title: basic.title || "Unknown",
     author: basic.author || "Unknown",
-    thumbnail: pickThumbnail(basic.thumbnail || []),
+    thumbnail,
+    artist: artist || basic.author,
+    album,
     sourceUrl,
   };
 }
