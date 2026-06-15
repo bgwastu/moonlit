@@ -126,6 +126,7 @@ export function Player({
   const [extractedMedia, setExtractedMedia] = useState<Media | null>(null);
   const [streamState, setStreamState] = useState<StreamState>({ status: "idle" });
   const streamStarted = useRef(false);
+  const audioErrorCount = useRef(0);
 
   // Check for pre-populated metadata from search results (sessionStorage)
   const initialMeta = useMemo(
@@ -155,8 +156,10 @@ export function Player({
     };
   }, [url, initialMeta]);
 
-  const media =
-    propMedia || extractedMedia || provisionalMedia || (url ? null : contextMedia);
+  const media = useMemo(
+    () => propMedia || extractedMedia || provisionalMedia || (url ? null : contextMedia),
+    [propMedia, extractedMedia, provisionalMedia, url, contextMedia],
+  );
   const metadataLoadError = propMetadataLoadError;
   // Show extracting UI only when we have a URL and absolutely no media of any kind
   const isExtracting = !media && !!url;
@@ -254,6 +257,17 @@ export function Player({
   }, [dominantColor, theme.colors.violet]);
   const coverUrl = media?.metadata.coverUrl;
 
+  // Set document title to current track name
+  useEffect(() => {
+    const title = media?.metadata.title;
+    document.title = title ? `${title} | Moonlit` : "Moonlit";
+  }, [media?.metadata.title]);
+
+  // Sync dominant color as CSS variable
+  useEffect(() => {
+    document.body.style.setProperty("--dominant-color", dominantColor || "transparent");
+  }, [dominantColor]);
+
   // Inlined useToast
   const [toast, setToast] = useState<{
     message: React.ReactNode;
@@ -277,6 +291,16 @@ export function Player({
     const id = requestAnimationFrame(() => setStateLoaded(true));
     return () => cancelAnimationFrame(id);
   }, []);
+
+  // Re-extract when audio fails to load (stream URL may have expired)
+  const handleAudioError = useCallback(() => {
+    if (audioErrorCount.current >= 1) return;
+    audioErrorCount.current++;
+    setExtractedMedia(null);
+    streamStarted.current = false;
+    setStreamState({ status: "idle" });
+    setTimeout(() => startStream(), 500);
+  }, [startStream]);
 
   // Unified player (audio + DSP processing)
   const {
@@ -312,6 +336,7 @@ export function Player({
     initialPosition: stateLoaded ? initialStartAt : 0,
     isRepeat,
     autoPlay: false,
+    onError: handleAudioError,
   });
 
   // Try autoplay when media and audio are ready
@@ -327,14 +352,17 @@ export function Player({
     return () => clearTimeout(id);
   }, [media, stretchState, play]);
 
-  const onLyricsDiscover = useCallback(
-    (d: {
-      id: number;
-      trackName: string;
-      artistName: string;
-      albumName?: string;
-      syncedLyrics: string;
-    }) => {
+  const applyLyricsSettings = useCallback(
+    (
+      d: {
+        id: number;
+        trackName: string;
+        artistName: string;
+        albumName?: string;
+        syncedLyrics: string;
+      },
+      extra?: () => void,
+    ) => {
       const newSettings: LyricsSettings = {
         id: d.id,
         syncedLyrics: d.syncedLyrics,
@@ -345,8 +373,14 @@ export function Player({
       };
       setLyricsSettings(newSettings);
       saveVideoState(sourceUrl, { lyrics: newSettings });
+      extra?.();
     },
     [sourceUrl],
+  );
+
+  const onLyricsDiscover = useCallback(
+    (d: Parameters<typeof applyLyricsSettings>[0]) => applyLyricsSettings(d),
+    [applyLyricsSettings],
   );
 
   const {
@@ -366,12 +400,13 @@ export function Player({
 
   const handleOffsetChange = useCallback(
     (offset: number) => {
-      setLyricsSettings((prev) => (prev ? { ...prev, offset } : null));
-      saveVideoState(sourceUrl, {
-        lyrics: lyricsSettings ? { ...lyricsSettings, offset } : null,
+      setLyricsSettings((prev) => {
+        const updated = prev ? { ...prev, offset } : null;
+        saveVideoState(sourceUrl, { lyrics: updated });
+        return updated;
       });
     },
-    [sourceUrl, lyricsSettings],
+    [sourceUrl],
   );
 
   const isLoading = stretchState === "loading" || isWaiting;
@@ -405,27 +440,26 @@ export function Player({
     setCustomSemitones(0);
   }, [setRate, setSemitones, setReverbAmount, setVolume]);
 
+  function toastContent(icon: React.ReactNode, text: React.ReactNode) {
+    return (
+      <Flex align="center" gap="xs">
+        {icon}
+        <Text weight={600}>{text}</Text>
+      </Flex>
+    );
+  }
+
   // Media session (browser controls)
   const handleBackward = useCallback(() => {
     const newTime = Math.max(0, currentTime - 5);
     seek(newTime);
-    showToast(
-      <Flex align="center" gap="xs">
-        <IconRewindBackward5 size={24} />
-        <Text weight={600}>-5s</Text>
-      </Flex>,
-    );
+    showToast(toastContent(<IconRewindBackward5 size={24} />, "-5s"));
   }, [currentTime, seek, showToast]);
 
   const handleForward = useCallback(() => {
     const newTime = Math.min(duration, currentTime + 5);
     seek(newTime);
-    showToast(
-      <Flex align="center" gap="xs">
-        <IconRewindForward5 size={24} />
-        <Text weight={600}>+5s</Text>
-      </Flex>,
-    );
+    showToast(toastContent(<IconRewindForward5 size={24} />, "+5s"));
   }, [currentTime, duration, seek, showToast]);
 
   // Inlined useMediaSession
@@ -645,12 +679,10 @@ export function Player({
       setRate(newRate);
       setSemitones(newSemitones);
       showToast(
-        <Flex align="center" gap="xs">
-          {PLAYBACK_MODE_ICONS[mode]}
-          <Text weight={600}>
-            {PLAYBACK_MODE_LABELS[mode]} ({newRate.toFixed(2)}x)
-          </Text>
-        </Flex>,
+        toastContent(
+          PLAYBACK_MODE_ICONS[mode],
+          `${PLAYBACK_MODE_LABELS[mode]} (${newRate.toFixed(2)}x)`,
+        ),
       );
     },
     [
@@ -668,10 +700,10 @@ export function Player({
   const toggleLoop = useCallback(() => {
     setIsRepeat(!isRepeat);
     showToast(
-      <Flex align="center" gap="xs">
-        {!isRepeat ? <IconRepeat size={24} /> : <IconRepeatOff size={24} />}
-        <Text weight={600}>{!isRepeat ? "Repeat On" : "Repeat Off"}</Text>
-      </Flex>,
+      toastContent(
+        !isRepeat ? <IconRepeat size={24} /> : <IconRepeatOff size={24} />,
+        !isRepeat ? "Repeat On" : "Repeat Off",
+      ),
     );
   }, [isRepeat, showToast]);
 
@@ -681,22 +713,12 @@ export function Player({
       const newVol = previousVolumeRef.current > 0 ? previousVolumeRef.current : 1;
       setVolume(newVol);
       setIsMuted(false);
-      showToast(
-        <Flex align="center" gap="xs">
-          <IconVolume3 size={24} />
-          <Text weight={600}>Unmuted</Text>
-        </Flex>,
-      );
+      showToast(toastContent(<IconVolume3 size={24} />, "Unmuted"));
     } else {
       previousVolumeRef.current = volume;
       setVolume(0);
       setIsMuted(true);
-      showToast(
-        <Flex align="center" gap="xs">
-          <IconVolumeOff size={24} />
-          <Text weight={600}>Muted</Text>
-        </Flex>,
-      );
+      showToast(toastContent(<IconVolumeOff size={24} />, "Muted"));
     }
   }, [isMuted, volume, setVolume, showToast]);
 
@@ -716,12 +738,7 @@ export function Player({
 
   const showRateToast = useCallback(
     (newRate: number, icon: React.ReactNode) => {
-      showToast(
-        <Flex align="center" gap="xs">
-          {icon}
-          <Text weight={600}>{newRate.toFixed(2)}x</Text>
-        </Flex>,
-      );
+      showToast(toastContent(icon, `${newRate.toFixed(2)}x`));
     },
     [showToast],
   );
@@ -763,12 +780,12 @@ export function Player({
     enabled: true,
   });
 
-  // Redirect to home on error (notification already shown by startStream)
+  // Redirect to home when the URL itself is bad (not stream extraction errors)
   useEffect(() => {
-    if (streamState.status === "error" || metadataLoadError) {
+    if (metadataLoadError) {
       router.replace("/");
     }
-  }, [streamState.status, metadataLoadError, router]);
+  }, [metadataLoadError, router]);
 
   // === Extraction UI (shown before player mounts) ===
   if (isExtracting) {
@@ -786,7 +803,7 @@ export function Player({
   return (
     <MantineProvider theme={dynamicTheme} inherit>
       {/* Blurred cover background */}
-      {media.metadata.coverUrl && (
+      {coverUrl && (
         <Box
           style={{
             position: "fixed",
@@ -842,17 +859,7 @@ export function Player({
         }
         initialSearchResults={searchResults}
         onSelectLyrics={(record) => {
-          const newSettings: LyricsSettings = {
-            id: record.id,
-            syncedLyrics: record.syncedLyrics,
-            trackName: record.trackName,
-            artistName: record.artistName,
-            albumName: record.albumName,
-            offset: 0,
-          };
-          setLyricsSettings(newSettings);
-          saveVideoState(sourceUrl, { lyrics: newSettings });
-          setLyricsModalOpened(false);
+          applyLyricsSettings(record, () => setLyricsModalOpened(false));
         }}
       />
 
@@ -1223,6 +1230,7 @@ export function Player({
                 variant="default"
                 leftIcon={<IconMusic size={18} />}
                 onClick={() => setLyricsModalOpened(true)}
+                loading={lyricsState === "loading"}
               >
                 Lyrics
               </Button>
