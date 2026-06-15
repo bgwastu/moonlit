@@ -111,36 +111,38 @@ function startStretchTick(
   syncPosition = false,
 ): void {
   const tick = () => {
-    if (!runtime.isPlaying || !runtime.stretch) {
+    if (!runtime.stretch) {
       runtime.rafId = null;
       return;
     }
-    const t = runtime.stretch.inputTime ?? 0;
-    const now = performance.now();
-    if (now - runtime.lastUiUpdateMs > UI_UPDATE_INTERVAL) {
-      const clamped = Number.isFinite(t) ? Math.min(t, runtime.duration) : 0;
-      setCurrentTime(clamped);
-      if (syncPosition) {
-        syncMediaSession(clamped, runtime.duration, runtime.rate);
+    if (runtime.isPlaying) {
+      const t = runtime.stretch.inputTime ?? 0;
+      const now = performance.now();
+      if (now - runtime.lastUiUpdateMs > UI_UPDATE_INTERVAL) {
+        const clamped = Number.isFinite(t) ? Math.min(t, runtime.duration) : 0;
+        setCurrentTime(clamped);
+        if (syncPosition) {
+          syncMediaSession(clamped, runtime.duration, runtime.rate);
+        }
+        runtime.lastUiUpdateMs = now;
       }
-      runtime.lastUiUpdateMs = now;
-    }
-    if (t >= runtime.duration - 0.05) {
-      if (runtime.repeat) {
-        runtime.stretch.schedule({
-          input: 0,
-          rate: runtime.rate,
-          semitones: runtime.semitones,
-          active: true,
-        });
-      } else {
-        runtime.stretch.schedule({ active: false });
-        runtime.isPlaying = false;
-        setIsPlaying(false);
-        setCurrentTime(runtime.duration);
-        runtime.onEnded?.();
-        runtime.rafId = null;
-        return;
+      if (t >= runtime.duration - 0.05) {
+        if (runtime.repeat) {
+          runtime.stretch.schedule({
+            input: 0,
+            rate: runtime.rate,
+            semitones: runtime.semitones,
+            active: true,
+          });
+        } else {
+          runtime.stretch.schedule({ active: false });
+          runtime.isPlaying = false;
+          setIsPlaying(false);
+          setCurrentTime(runtime.duration);
+          runtime.onEnded?.();
+          runtime.rafId = null;
+          return;
+        }
       }
     }
     runtime.rafId = requestAnimationFrame(tick);
