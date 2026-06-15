@@ -1,56 +1,23 @@
 import {
+  type MusicSearchResult,
   type YouTubeSearchResult,
-  searchYouTube as searchYouTubeYtDlp,
+  searchMusic,
+  searchYouTube as searchYouTubeVideos,
 } from "@/lib/youtubei";
 
-const YT_THUMB_BASE = "https://i.ytimg.com/vi";
-
-function defaultYouTubeThumbnailById(id: string): string {
-  return `${YT_THUMB_BASE}/${id}/hqdefault.jpg`;
-}
-
-function searchResultThumbnailUrl(raw: string): string {
-  if (!raw) return raw;
-  return raw
-    .replace(/maxresdefault\.jpg/gi, "hqdefault.jpg")
-    .replace(/\/vi\/([^/]+)\/maxres\.jpg/gi, "/vi/$1/hqdefault.jpg");
-}
-
-class YouTubeSearchUnavailableError extends Error {
-  readonly code = "SEARCH_UNAVAILABLE" as const;
-
-  constructor(
-    message: string = "Search is currently unavailable. Make sure the server can reach YouTube and try adding cookies in Settings (or data/cookies.txt) for restricted content.",
-  ) {
-    super(message);
-    this.name = "YouTubeSearchUnavailableError";
-  }
-}
-
-function withSearchThumbnails(rows: YouTubeSearchResult[]): YouTubeSearchResult[] {
-  return rows.map((r) => ({
-    ...r,
-    thumbnail: searchResultThumbnailUrl(
-      r.thumbnail.trim() || defaultYouTubeThumbnailById(r.id),
-    ),
+function flattenToSearchResults(
+  musicResults: MusicSearchResult[],
+): YouTubeSearchResult[] {
+  return musicResults.map((r) => ({
+    id: r.id,
+    url: r.url,
+    title: r.title,
+    author: r.artists[0]?.name || "Unknown",
+    artists: r.artists,
+    ...(r.album ? { album: r.album } : {}),
+    thumbnail: r.thumbnail,
+    lengthSeconds: r.lengthSeconds,
   }));
-}
-
-async function searchYouTubeVideos(
-  query: string,
-  options: { limit?: number } = {},
-): Promise<YouTubeSearchResult[]> {
-  const limit = Math.min(Math.max(Number(options.limit) || 3, 1), 50);
-  const q = query.trim();
-  if (!q) return [];
-
-  try {
-    const rows = await searchYouTubeYtDlp(q, { limit: Math.min(limit, 10) });
-    return withSearchThumbnails(rows);
-  } catch (cause) {
-    console.error("[Moonlit] youtubei.js search failed.", cause);
-    throw new YouTubeSearchUnavailableError();
-  }
 }
 
 export async function GET(request: Request) {
@@ -63,15 +30,15 @@ export async function GET(request: Request) {
   }
 
   try {
-    const results = await searchYouTubeVideos(query, { limit });
-    return Response.json({ results });
-  } catch (error) {
-    if (error instanceof YouTubeSearchUnavailableError) {
-      return Response.json(
-        { error: error.message, code: error.code, results: [] },
-        { status: 503 },
-      );
+    const musicResults = await searchMusic(query, { limit: Math.min(limit, 50) });
+
+    if (musicResults.length > 0) {
+      return Response.json({ results: flattenToSearchResults(musicResults) });
     }
+
+    const videoResults = await searchYouTubeVideos(query, { limit: Math.min(limit, 50) });
+    return Response.json({ results: videoResults });
+  } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to search YouTube.";
     return Response.json({ error: message, results: [] }, { status: 500 });
   }

@@ -1,16 +1,7 @@
-import { readFileSync } from "fs";
+import { readFile } from "fs/promises";
 import path from "path";
 import { Innertube, UniversalCache, YTNodes } from "youtubei.js";
 import { getYouTubeId } from "@/utils";
-
-export interface VideoInfo {
-  title: string;
-  author: string;
-  artist?: string;
-  album?: string;
-  thumbnail: string;
-  lengthSeconds: number;
-}
 
 export interface YouTubeSearchResult {
   id: string;
@@ -21,6 +12,18 @@ export interface YouTubeSearchResult {
   lengthSeconds: number;
   viewCount?: number;
   isLive?: boolean;
+  artists?: { name: string; channelId?: string }[];
+  album?: { name: string; id?: string };
+}
+
+export interface MusicSearchResult {
+  id: string;
+  url: string;
+  title: string;
+  artists: { name: string; channelId?: string }[];
+  album?: { name: string; id?: string };
+  thumbnail: string;
+  lengthSeconds: number;
 }
 
 export interface StreamInfo {
@@ -67,6 +70,7 @@ class CacheStore<T> {
 // ---- Cache instances ----
 const searchCache = new CacheStore<YouTubeSearchResult[]>();
 const streamCache = new CacheStore<StreamInfo>();
+const musicSearchCache = new CacheStore<MusicSearchResult[]>();
 
 // Instance cache stores the Promise<Innertube> directly (not wrapped in our CacheStore)
 // because we use a different TTL check pattern for it.
@@ -79,18 +83,9 @@ const instanceStore = new Map<
 const pendingRefreshes = new Map<string, Promise<void>>();
 
 // ---- Cookie helpers ----
-export function hasSystemCookies(): boolean {
+async function getSystemCookieString(): Promise<string | null> {
   try {
-    const content = readFileSync(SYSTEM_COOKIES_PATH, "utf-8").trim();
-    return content.length > 0;
-  } catch {
-    return false;
-  }
-}
-
-function getSystemCookieString(): string | null {
-  try {
-    const content = readFileSync(SYSTEM_COOKIES_PATH, "utf-8").trim();
+    const content = (await readFile(SYSTEM_COOKIES_PATH, "utf-8")).trim();
     if (!content) return null;
     return netscapeToCookieString(content);
   } catch {
@@ -114,14 +109,14 @@ function netscapeToCookieString(netscape: string): string {
   return pairs.join("; ");
 }
 
-function resolveCookieString(userCookies?: string): string | undefined {
+async function resolveCookieString(userCookies?: string): Promise<string | undefined> {
   if (userCookies?.trim()) {
     if (userCookies.includes("\t") || userCookies.includes("#")) {
       return netscapeToCookieString(userCookies);
     }
     return userCookies;
   }
-  return getSystemCookieString() ?? undefined;
+  return (await getSystemCookieString()) ?? undefined;
 }
 
 function simpleHash(s: string): string {
@@ -140,7 +135,7 @@ async function getInnertube(
   cookieString?: string,
   clientType?: string,
 ): Promise<Innertube> {
-  const effectiveCookie = resolveCookieString(cookieString);
+  const effectiveCookie = await resolveCookieString(cookieString);
   const key = `${clientType || "WEB"}::${effectiveCookie ? simpleHash(effectiveCookie) : DEFAULT_INSTANCE_KEY}`;
 
   const existing = instanceStore.get(key);
@@ -209,6 +204,77 @@ export async function searchYouTube(
 
   if (results.length > 0) {
     searchCache.set(cacheKey, results);
+  }
+  return results;
+}
+
+// ---- Music search ----
+export async function searchMusic(
+  query: string,
+  options: { limit?: number; cookies?: string } = {},
+): Promise<MusicSearchResult[]> {
+  const cleanQuery = query.trim();
+  if (!cleanQuery) return [];
+
+  const limit = Math.min(Math.max(options.limit ?? 3, 1), 10);
+  const cacheKey = `music:q=${cleanQuery}|limit=${limit}|c=${simpleHash(options.cookies || "")}`;
+
+  const cached = musicSearchCache.get(cacheKey);
+  if (cached) {
+    const age = Date.now() - cached.cachedAt;
+    if (age < SEARCH_TTL_MS) return cached.value;
+  }
+
+  const yt = await getInnertube(options.cookies);
+  const search = await yt.music.search(cleanQuery, { type: "song" });
+
+  const songs = search.songs?.contents || [];
+  const results: MusicSearchResult[] = [];
+
+  for (const item of songs) {
+    if (results.length >= limit) break;
+
+    const song = item as {
+      id?: string;
+      title?: string;
+      artists?: { name: string; channel_id?: string }[];
+      album?: { id?: string; name: string };
+      duration?: { text: string; seconds: number };
+      thumbnails?: { url: string; width: number; height: number }[];
+    };
+
+    const id = song.id;
+    if (!id || !/^[\w-]{11}$/.test(id)) continue;
+
+    const duration = song.duration;
+    const lengthSeconds = duration?.seconds ?? 0;
+    if (lengthSeconds <= 0) continue;
+
+    const thumbnails = song.thumbnails || [];
+    const thumbnail = thumbnails[0]?.url || `https://i.ytimg.com/vi/${id}/hqdefault.jpg`;
+
+    const artists: { name: string; channelId?: string }[] = (song.artists || []).map(
+      (a) => ({
+        name: a.name || "Unknown",
+        ...(a.channel_id ? { channelId: a.channel_id } : {}),
+      }),
+    );
+
+    results.push({
+      id,
+      url: `https://www.youtube.com/watch?v=${id}`,
+      title: song.title || "Untitled",
+      artists,
+      ...(song.album?.name
+        ? { album: { name: song.album.name, id: song.album.id } }
+        : {}),
+      thumbnail,
+      lengthSeconds,
+    });
+  }
+
+  if (results.length > 0) {
+    musicSearchCache.set(cacheKey, results);
   }
   return results;
 }
