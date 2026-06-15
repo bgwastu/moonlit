@@ -252,7 +252,7 @@ export function Player({
 
   const dominantColor = useDominantColor(media?.metadata.coverUrl);
   const barColor = useMemo(() => {
-    if (dominantColor === "rgba(0,0,0,0)") return theme.colors.violet[5];
+    if (!dominantColor) return theme.colors.violet[5];
     return generateColors(dominantColor)[5];
   }, [dominantColor, theme.colors.violet]);
   const coverUrl = media?.metadata.coverUrl;

@@ -1,7 +1,8 @@
-export function isYoutubeURL(url: string) {
-  const youtubeRegex =
-    /^.*(?:(?:youtu\.be\/|v\/|vi\/|u\/\w\/|embed\/|shorts\/)|(?:(?:watch)?\?v(?:i)?=|\&v(?:i)?=))([^#\&\?]*).*/;
-  return youtubeRegex.test(url);
+const YOUTUBE_URL_RE =
+  /^.*(?:(?:youtu\.be\/|v\/|vi\/|u\/\w\/|embed\/|shorts\/)|(?:(?:watch)?\?v(?:i)?=|\&v(?:i)?=))([^#\&\?]*).*/;
+
+export function isYoutubeURL(url: string): boolean {
+  return YOUTUBE_URL_RE.test(url);
 }
 
 /** True for direct .mp3 / .m4a / .mp4 URLs (https or same-origin path) */
@@ -32,10 +33,8 @@ export function isSupportedURL(url: string) {
   return isYoutubeURL(url) || isDirectMediaURL(url);
 }
 
-export function getYouTubeId(url: string) {
-  const youtubeRegex =
-    /^.*(?:(?:youtu\.be\/|v\/|vi\/|u\/\w\/|embed\/|shorts\/)|(?:(?:watch)?\?v(?:i)?=|\&v(?:i)?=))([^#\&\?]*).*/;
-  const match = url.match(youtubeRegex);
+export function getYouTubeId(url: string): string | null {
+  const match = url.match(YOUTUBE_URL_RE);
   return match ? match[1] : null;
 }
 

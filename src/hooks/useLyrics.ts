@@ -113,7 +113,6 @@ export function useLyrics({
   const [lyrics, setLyrics] = useState<Lyric[]>([]);
   const [state, setState] = useState<LyricsState>("idle");
   const [error, setError] = useState<string | null>(null);
-  const [discoveredLyrics, setDiscoveredLyrics] = useState<DiscoveredLyrics | null>(null);
   const [searchResults, setSearchResults] = useState<LyricsSearchRecord[]>([]);
 
   const offsetMs = offsetSeconds * 1000;
@@ -136,7 +135,6 @@ export function useLyrics({
       if (!titleForLyrics || !a?.trim() || d <= 0) {
         setLyrics([]);
         setState("idle");
-        setDiscoveredLyrics(null);
         setSearchResults([]);
         return;
       }
@@ -145,7 +143,6 @@ export function useLyrics({
       const cached = getCached(cacheK);
       if (cached) {
         setLyrics(cached.lyrics);
-        setDiscoveredLyrics(cached.discovered);
         setSearchResults(cached.searchResults);
         setState(cached.lyrics.length > 0 ? "ready" : "not_found");
         return;
@@ -195,7 +192,6 @@ export function useLyrics({
         const results = Array.isArray(searchData) ? searchData : [];
 
         setLyrics(finalLyrics);
-        setDiscoveredLyrics(discovered);
         if (discovered) onDiscoverRef.current?.(discovered);
         setSearchResults(results);
         setState(parsed.length > 0 ? "ready" : "not_found");
@@ -233,7 +229,6 @@ export function useLyrics({
         const results = Array.isArray(searchData) ? searchData : [];
 
         setLyrics(finalLyrics);
-        setDiscoveredLyrics(discovered);
         if (discovered) onDiscoverRef.current?.(discovered);
         setSearchResults(results);
         setState(parsed.length > 0 ? "ready" : "not_found");
@@ -266,7 +261,6 @@ export function useLyrics({
             : null;
 
         setLyrics(finalLyrics);
-        setDiscoveredLyrics(discovered);
         if (discovered) onDiscoverRef.current?.(discovered);
         setState("ready");
 
@@ -276,7 +270,6 @@ export function useLyrics({
 
       // Nothing found
       setLyrics([]);
-      setDiscoveredLyrics(null);
       setState("not_found");
       setCached(cacheK, { lyrics: [], discovered: null, searchResults: records });
     },

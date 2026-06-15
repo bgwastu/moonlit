@@ -21,7 +21,7 @@ export function createDynamicTheme(
   dominantColor: string,
   baseTheme: MantineThemeOverride,
 ): MantineThemeOverride {
-  if (dominantColor === "rgba(0,0,0,0)") return baseTheme;
+  if (!dominantColor) return baseTheme;
 
   return {
     ...baseTheme,
