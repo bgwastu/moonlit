@@ -1,35 +1,12 @@
 import { NextResponse } from "next/server";
 import crypto from "crypto";
+import {
+  type StreamToken,
+  TOKEN_TTL_MS,
+  getTokenStore,
+  pruneExpired,
+} from "@/lib/streamTokens";
 import { extractStreamUrl } from "@/lib/youtubei";
-
-interface StreamToken {
-  url: string;
-  contentType: string;
-  headers: Record<string, string>;
-  sourceUrl: string;
-  expiresAt: number;
-}
-
-const TOKEN_TTL_MS = 6 * 60 * 60 * 1000;
-
-const tokenStore = globalThis as typeof globalThis & {
-  __moonlitStreamTokens?: Map<string, StreamToken>;
-};
-
-function getTokenStore(): Map<string, StreamToken> {
-  if (!tokenStore.__moonlitStreamTokens) {
-    tokenStore.__moonlitStreamTokens = new Map();
-  }
-  return tokenStore.__moonlitStreamTokens;
-}
-
-function pruneExpired(): void {
-  const store = getTokenStore();
-  const now = Date.now();
-  for (const [key, value] of store) {
-    if (now > value.expiresAt) store.delete(key);
-  }
-}
 
 export async function POST(req: Request) {
   try {

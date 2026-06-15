@@ -1,27 +1,7 @@
 import { NextResponse } from "next/server";
 import http from "http";
 import https from "https";
-
-interface StreamToken {
-  url: string;
-  contentType: string;
-  headers: Record<string, string>;
-  sourceUrl: string;
-  expiresAt: number;
-}
-
-const TOKEN_TTL_MS = 6 * 60 * 60 * 1000;
-
-const tokenStore = globalThis as typeof globalThis & {
-  __moonlitStreamTokens?: Map<string, StreamToken>;
-};
-
-function getTokenStore(): Map<string, StreamToken> {
-  if (!tokenStore.__moonlitStreamTokens) {
-    tokenStore.__moonlitStreamTokens = new Map();
-  }
-  return tokenStore.__moonlitStreamTokens;
-}
+import { getTokenStore } from "@/lib/streamTokens";
 
 function corsHeaders(): Record<string, string> {
   return {
@@ -123,17 +103,11 @@ export async function GET(
     clearTimeout(timeoutId);
 
     if (upstream.status !== 200 && upstream.status !== 206) {
-      if (upstream.status === 403 || upstream.status === 410) {
-        store.delete(token);
-        return new Response("Stream URL expired", {
-          status: 410,
-          headers: corsHeaders(),
-        });
-      }
-      return NextResponse.json(
-        { error: `Upstream returned ${upstream.status}` },
-        { status: upstream.status === 404 ? 404 : 502, headers: corsHeaders() },
-      );
+      store.delete(token);
+      return new Response("Stream URL expired", {
+        status: 410,
+        headers: corsHeaders(),
+      });
     }
 
     const contentLength = upstream.headers["content-length"];

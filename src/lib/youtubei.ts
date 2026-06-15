@@ -44,9 +44,6 @@ const SYSTEM_COOKIES_PATH = path.join(DATA_DIR, "cookies.txt");
 
 // ---- Cache constants ----
 const SEARCH_TTL_MS = 30 * 60 * 1000;
-const STREAM_CACHE_TTL_MS = 5 * 60 * 60 * 1000; // 5 hours — consider "fresh"
-const STREAM_CACHE_HARD_LIMIT_MS = 7 * 60 * 60 * 1000; // 7 hours — must re-extract
-const STREAM_CACHE_REFRESH_AFTER_MS = 4 * 60 * 60 * 1000; // 4 hours — trigger background refresh
 const INSTANCE_TTL_MS = 4 * 60 * 60 * 1000;
 
 // ---- Simple value cache (no TTL logic, no persistence) ----
@@ -69,7 +66,6 @@ class CacheStore<T> {
 
 // ---- Cache instances ----
 const searchCache = new CacheStore<YouTubeSearchResult[]>();
-const streamCache = new CacheStore<StreamInfo>();
 const musicSearchCache = new CacheStore<MusicSearchResult[]>();
 
 // Instance cache stores the Promise<Innertube> directly (not wrapped in our CacheStore)
@@ -78,9 +74,6 @@ const instanceStore = new Map<
   string,
   { promise: Promise<Innertube>; expiresAt: number }
 >();
-
-// Deduplicate concurrent background stream refreshes
-const pendingRefreshes = new Map<string, Promise<void>>();
 
 // ---- Cookie helpers ----
 async function getSystemCookieString(): Promise<string | null> {
@@ -361,39 +354,7 @@ async function doFullExtraction(
 }
 
 /**
- * Trigger a background refresh of the stream cache for a video ID.
- * Deduplicated: only one concurrent refresh per ID.
- */
-function refreshStreamInBackground(
-  id: string,
-  sourceUrl: string,
-  options: { cookies?: string },
-): void {
-  if (pendingRefreshes.has(id)) return;
-
-  const promise = doFullExtraction(id, sourceUrl, options)
-    .then((freshInfo) => {
-      streamCache.set(`stream:${id}`, freshInfo);
-    })
-    .catch((err) => {
-      console.error(`[Moonlit] Background stream refresh failed for ${id}:`, err.message);
-    })
-    .finally(() => {
-      pendingRefreshes.delete(id);
-    });
-
-  pendingRefreshes.set(id, promise);
-}
-
-/**
  * Extract a playable stream URL for a YouTube video.
- *
- * Caching strategy (stale-while-revalidate):
- *   • 0–4h old    → return cached, no refresh
- *   • 4–5h old    → return cached, trigger background refresh
- *   • 5–7h old    → return cached (stale, URL likely still valid), trigger background refresh
- *   • >7h old     → stale could be expired, do full extraction
- *   • not cached  → full extraction
  */
 export async function extractStreamUrl(
   url: string,
@@ -405,32 +366,5 @@ export async function extractStreamUrl(
   const id = getYouTubeId(url);
   if (!id) throw new Error("Invalid YouTube URL");
 
-  const cacheKey = `stream:${id}`;
-  const entry = streamCache.get(cacheKey);
-
-  if (entry) {
-    const age = Date.now() - entry.cachedAt;
-
-    // Fresh enough to return immediately
-    if (age < STREAM_CACHE_TTL_MS) {
-      // Getting old? Refresh in background.
-      if (age >= STREAM_CACHE_REFRESH_AFTER_MS) {
-        refreshStreamInBackground(id, url, options);
-      }
-      return entry.value;
-    }
-
-    // Past TTL but within hard limit — serve stale while refreshing
-    if (age < STREAM_CACHE_HARD_LIMIT_MS) {
-      refreshStreamInBackground(id, url, options);
-      return entry.value;
-    }
-
-    // Hard-expired — fall through to full extraction
-  }
-
-  // Cold start (not cached or hard-expired)
-  const streamInfo = await doFullExtraction(id, url, options);
-  streamCache.set(cacheKey, streamInfo);
-  return streamInfo;
+  return doFullExtraction(id, url, options);
 }
