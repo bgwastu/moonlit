@@ -92,6 +92,62 @@ interface PlayerRuntime {
 const UI_UPDATE_INTERVAL = 100;
 const DRIFT_THRESHOLD = 0.25;
 
+function syncMediaSession(position: number, duration: number, playbackRate = 1): void {
+  if ("mediaSession" in navigator && "setPositionState" in navigator.mediaSession) {
+    try {
+      navigator.mediaSession.setPositionState({
+        duration: duration || 0,
+        playbackRate: Math.max(0.25, playbackRate),
+        position,
+      });
+    } catch {}
+  }
+}
+
+function startStretchTick(
+  runtime: PlayerRuntime,
+  setCurrentTime: (t: number) => void,
+  setIsPlaying: (p: boolean) => void,
+  syncPosition = false,
+): void {
+  const tick = () => {
+    if (!runtime.isPlaying || !runtime.stretch) {
+      runtime.rafId = null;
+      return;
+    }
+    const t = runtime.stretch.inputTime ?? 0;
+    const now = performance.now();
+    if (now - runtime.lastUiUpdateMs > UI_UPDATE_INTERVAL) {
+      const clamped = Number.isFinite(t) ? Math.min(t, runtime.duration) : 0;
+      setCurrentTime(clamped);
+      if (syncPosition) {
+        syncMediaSession(clamped, runtime.duration, runtime.rate);
+      }
+      runtime.lastUiUpdateMs = now;
+    }
+    if (t >= runtime.duration - 0.05) {
+      if (runtime.repeat) {
+        runtime.stretch.schedule({
+          input: 0,
+          rate: runtime.rate,
+          semitones: runtime.semitones,
+          active: true,
+        });
+      } else {
+        runtime.stretch.schedule({ active: false });
+        runtime.isPlaying = false;
+        setIsPlaying(false);
+        setCurrentTime(runtime.duration);
+        runtime.onEnded?.();
+        runtime.rafId = null;
+        return;
+      }
+    }
+    runtime.rafId = requestAnimationFrame(tick);
+  };
+  runtime.rafId = requestAnimationFrame(tick);
+}
+
 async function fetchFileInChunks(
   url: string,
   chunkSize: number,
@@ -245,16 +301,7 @@ export function useStretchPlayer({
       const onTime = () => {
         const ct = audio.currentTime;
         setCurrentTime(ct);
-        // Keep OS media controls in sync
-        if ("mediaSession" in navigator && "setPositionState" in navigator.mediaSession) {
-          try {
-            navigator.mediaSession.setPositionState({
-              duration: audio.duration || 0,
-              playbackRate: Math.max(0.25, audio.playbackRate || 1),
-              position: ct,
-            });
-          } catch {}
-        }
+        syncMediaSession(ct, audio.duration, audio.playbackRate);
       };
       const onEnd = () => {
         if (runtime.current.repeat) {
@@ -392,39 +439,7 @@ export function useStretchPlayer({
 
       const rt2 = runtime.current;
       if (rt2.stretch) {
-        const tick = () => {
-          if (!rt2.isPlaying || !rt2.stretch) {
-            rt2.rafId = null;
-            return;
-          }
-          const t = rt2.stretch.inputTime ?? 0;
-          const now = performance.now();
-          if (now - rt2.lastUiUpdateMs > UI_UPDATE_INTERVAL) {
-            const clamped = Number.isFinite(t) ? Math.min(t, rt2.duration) : 0;
-            setCurrentTime(clamped);
-            rt2.lastUiUpdateMs = now;
-          }
-          if (t >= rt2.duration - 0.05) {
-            if (rt2.repeat) {
-              rt2.stretch.schedule({
-                input: 0,
-                rate: rt2.rate,
-                semitones: rt2.semitones,
-                active: true,
-              });
-            } else {
-              rt2.stretch.schedule({ active: false });
-              rt2.isPlaying = false;
-              setIsPlaying(false);
-              setCurrentTime(rt2.duration);
-              rt2.onEnded?.();
-              rt2.rafId = null;
-              return;
-            }
-          }
-          rt2.rafId = requestAnimationFrame(tick);
-        };
-        rt2.rafId = requestAnimationFrame(tick);
+        startStretchTick(rt2, setCurrentTime, setIsPlaying, false);
       }
     },
     [setupFull],
@@ -447,10 +462,11 @@ export function useStretchPlayer({
       setState("loading");
       setProgress(null);
 
-      try {
-        const resumePos =
-          posBeforeSwitch.current > 0 ? posBeforeSwitch.current : initialPosition;
+      const resumePos =
+        posBeforeSwitch.current > 0 ? posBeforeSwitch.current : initialPosition;
+      setCurrentTime(resumePos);
 
+      try {
         if (advancedStretch) {
           audio.src = fileUrl;
           audio.load();
@@ -588,51 +604,7 @@ export function useStretchPlayer({
     a.muted = true;
     a.play().catch(() => {});
     if (rt.rafId === null) {
-      const tick = () => {
-        if (!rt.isPlaying || !rt.stretch) {
-          rt.rafId = null;
-          return;
-        }
-        const t2 = rt.stretch.inputTime ?? 0;
-        const now = performance.now();
-        if (now - rt.lastUiUpdateMs > UI_UPDATE_INTERVAL) {
-          const clamped = Number.isFinite(t2) ? Math.min(t2, rt.duration) : 0;
-          setCurrentTime(clamped);
-          if (
-            "mediaSession" in navigator &&
-            "setPositionState" in navigator.mediaSession
-          ) {
-            try {
-              navigator.mediaSession.setPositionState({
-                duration: rt.duration,
-                playbackRate: Math.max(0.25, rt.rate),
-                position: clamped,
-              });
-            } catch {}
-          }
-          rt.lastUiUpdateMs = now;
-        }
-        if (t2 >= rt.duration - 0.05) {
-          if (rt.repeat) {
-            rt.stretch.schedule({
-              input: 0,
-              rate: rt.rate,
-              semitones: rt.semitones,
-              active: true,
-            });
-          } else {
-            rt.stretch.schedule({ active: false });
-            rt.isPlaying = false;
-            setIsPlaying(false);
-            setCurrentTime(rt.duration);
-            rt.onEnded?.();
-            rt.rafId = null;
-            return;
-          }
-        }
-        rt.rafId = requestAnimationFrame(tick);
-      };
-      rt.rafId = requestAnimationFrame(tick);
+      startStretchTick(rt, setCurrentTime, setIsPlaying, true);
     }
   }, []);
 
@@ -640,16 +612,11 @@ export function useStretchPlayer({
     const rt = runtime.current;
     if ("mediaSession" in navigator) {
       navigator.mediaSession.playbackState = "paused";
-      if ("setPositionState" in navigator.mediaSession) {
-        try {
-          const a = audioRef.current;
-          navigator.mediaSession.setPositionState({
-            duration: rt.duration || a?.duration || 0,
-            playbackRate: 1,
-            position: rt.stretch?.inputTime ?? a?.currentTime ?? 0,
-          });
-        } catch {}
-      }
+      const a = audioRef.current;
+      syncMediaSession(
+        rt.stretch?.inputTime ?? a?.currentTime ?? 0,
+        rt.duration || a?.duration || 0,
+      );
     }
     if (advancedStretchRef.current) {
       rt.isPlaying = false;
@@ -677,16 +644,7 @@ export function useStretchPlayer({
       const clamped = Math.max(0, Math.min(t, a.duration || 0));
       a.currentTime = clamped;
       setCurrentTime(clamped);
-      // Update OS media position state so lock screen controls stay in sync
-      if ("mediaSession" in navigator && "setPositionState" in navigator.mediaSession) {
-        try {
-          navigator.mediaSession.setPositionState({
-            duration: a.duration || 0,
-            playbackRate: Math.max(0.25, a.playbackRate || 1),
-            position: clamped,
-          });
-        } catch {}
-      }
+      syncMediaSession(clamped, a.duration, a.playbackRate);
       return;
     }
     const rt = runtime.current;
