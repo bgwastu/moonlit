@@ -84,6 +84,7 @@ interface PlayerRuntime {
   volume: number;
   reverbAmount: number;
   repeat: boolean;
+  currentPosition: number;
   rafId: number | null;
   lastUiUpdateMs: number;
   onEnded?: () => void;
@@ -119,6 +120,7 @@ function startStretchTick(
     }
     if (runtime.isPlaying) {
       const t = runtime.stretch.inputTime ?? 0;
+      if (Number.isFinite(t)) runtime.currentPosition = t;
       const now = performance.now();
       if (now - runtime.lastUiUpdateMs > UI_UPDATE_INTERVAL) {
         const clamped = Number.isFinite(t) ? Math.min(t, runtime.duration) : 0;
@@ -269,6 +271,7 @@ export function useStretchPlayer({
   const [progress, setProgress] = useState<LoadProgress>(null);
   const [buffered, setBuffered] = useState<BufferedRange[]>([]);
   const [isWaiting, setIsWaiting] = useState(false);
+  const isPlayingRef = useRef(false);
 
   const runtime = useRef<PlayerRuntime>({
     audioContext: null,
@@ -285,12 +288,16 @@ export function useStretchPlayer({
     volume: initialVolume,
     reverbAmount: initialReverbAmount,
     repeat: isRepeat,
+    currentPosition: initialPosition,
     rafId: null,
     lastUiUpdateMs: 0,
   });
 
   const advancedStretchRef = useRef(advancedStretch);
   const initializationId = useRef(0);
+  useEffect(() => {
+    isPlayingRef.current = isPlaying;
+  }, [isPlaying]);
   useEffect(() => {
     advancedStretchRef.current = advancedStretch;
   }, [advancedStretch]);
@@ -334,6 +341,7 @@ export function useStretchPlayer({
     rt.buffer = null;
     rt.duration = 0;
     rt.isPlaying = false;
+    setIsPlaying(false);
     setIsWaiting(false);
     setBuffered([]);
     setCurrentTime(0);
@@ -351,17 +359,24 @@ export function useStretchPlayer({
 
       const onTime = () => {
         const ct = audio.currentTime;
+        runtime.current.currentPosition = ct;
         setCurrentTime(ct);
         syncMediaSession(ct, audio.duration, audio.playbackRate);
       };
       const onDuration = () => {
-        if (Number.isFinite(audio.duration)) setDuration(audio.duration);
+        if (Number.isFinite(audio.duration)) {
+          runtime.current.duration = audio.duration;
+          setDuration(audio.duration);
+        }
       };
       const onEnd = () => {
         if (runtime.current.repeat) {
           audio.currentTime = 0;
+          runtime.current.currentPosition = 0;
           audio.play().catch(() => {});
         } else {
+          runtime.current.isPlaying = false;
+          runtime.current.currentPosition = audio.duration;
           setIsPlaying(false);
           setCurrentTime(audio.duration);
           runtime.current.onEnded?.();
@@ -377,7 +392,11 @@ export function useStretchPlayer({
         setBuffered(ranges);
       };
       const onWaiting = () => setIsWaiting(true);
-      const onResumed = () => setIsWaiting(false);
+      const onPlaying = () => {
+        runtime.current.isPlaying = true;
+        setIsWaiting(false);
+      };
+      const onSeeked = () => setIsWaiting(false);
 
       audio.addEventListener("timeupdate", onTime);
       audio.addEventListener("loadedmetadata", onDuration);
@@ -385,8 +404,8 @@ export function useStretchPlayer({
       audio.addEventListener("ended", onEnd);
       audio.addEventListener("progress", onProgress);
       audio.addEventListener("waiting", onWaiting);
-      audio.addEventListener("playing", onResumed);
-      audio.addEventListener("seeked", onResumed);
+      audio.addEventListener("playing", onPlaying);
+      audio.addEventListener("seeked", onSeeked);
 
       nativeCleanupRef.current = () => {
         audio.removeEventListener("timeupdate", onTime);
@@ -395,9 +414,10 @@ export function useStretchPlayer({
         audio.removeEventListener("ended", onEnd);
         audio.removeEventListener("progress", onProgress);
         audio.removeEventListener("waiting", onWaiting);
-        audio.removeEventListener("playing", onResumed);
-        audio.removeEventListener("seeked", onResumed);
+        audio.removeEventListener("playing", onPlaying);
+        audio.removeEventListener("seeked", onSeeked);
       };
+      runtime.current.currentPosition = pos;
       if (pos > 0) audio.currentTime = pos;
       setCurrentTime(pos);
     },
@@ -452,6 +472,7 @@ export function useStretchPlayer({
       throwIfInactive();
       rt.buffer = audioBuffer;
       rt.duration = audioBuffer.duration;
+      rt.currentPosition = Math.max(0, Math.min(pos, audioBuffer.duration));
       setDuration(audioBuffer.duration);
       setBuffered([{ start: 0, end: audioBuffer.duration }]);
       setIsWaiting(false);
@@ -540,6 +561,7 @@ export function useStretchPlayer({
   );
 
   const posBeforeSwitch = useRef(0);
+  const wasPlayingBeforeSwitch = useRef(false);
 
   useEffect(() => {
     if (!fileUrl) return;
@@ -551,8 +573,12 @@ export function useStretchPlayer({
     const isCurrent = () => !aborted && initializationId.current === id;
 
     const rt = runtime.current;
-    const currentPos = rt.stretch?.inputTime ?? audio.currentTime ?? 0;
+    const currentPos = Number.isFinite(rt.currentPosition)
+      ? rt.currentPosition
+      : (rt.stretch?.inputTime ?? audio.currentTime ?? 0);
     posBeforeSwitch.current = Number.isFinite(currentPos) ? currentPos : 0;
+    wasPlayingBeforeSwitch.current =
+      isPlayingRef.current || rt.isPlaying || !audio.paused;
 
     const init = async () => {
       cleanup();
@@ -573,12 +599,19 @@ export function useStretchPlayer({
 
           setState("ready");
           setProgress(null);
-          if (autoPlay || posBeforeSwitch.current > 0) {
-            setTimeout(() => {
+          if (autoPlay || wasPlayingBeforeSwitch.current) {
+            setTimeout(async () => {
               if (aborted) return;
               const rt2 = runtime.current;
               if (rt2.stretch && rt2.audioContext) {
-                if (rt2.audioContext.state === "suspended") rt2.audioContext.resume();
+                if (rt2.audioContext.state === "suspended") {
+                  try {
+                    await rt2.audioContext.resume();
+                  } catch {
+                    return;
+                  }
+                }
+                if (aborted) return;
                 rt2.stretch.schedule({
                   active: true,
                   input: resumePos,
@@ -615,17 +648,29 @@ export function useStretchPlayer({
             audio.addEventListener("error", onError);
           });
           if (!isCurrent()) return;
+          runtime.current.duration = audio.duration;
           setDuration(audio.duration);
           setupNative(audio, resumePos);
 
           setState("ready");
-          if (autoPlay || posBeforeSwitch.current > 0) {
-            setTimeout(() => {
-              if (resumePos > 0) audio.currentTime = resumePos;
-              audio.play().catch(() => {});
-              setIsPlaying(true);
-            }, 50);
-          }
+          setTimeout(() => {
+            if (aborted) return;
+            if (resumePos > 0) audio.currentTime = resumePos;
+            runtime.current.currentPosition = resumePos;
+            setCurrentTime(resumePos);
+            if (autoPlay || wasPlayingBeforeSwitch.current) {
+              audio.play().then(
+                () => {
+                  runtime.current.isPlaying = true;
+                  setIsPlaying(true);
+                },
+                () => {
+                  runtime.current.isPlaying = false;
+                  setIsPlaying(false);
+                },
+              );
+            }
+          }, 50);
         }
       } catch (error) {
         if (isCurrent()) {
@@ -668,10 +713,13 @@ export function useStretchPlayer({
       try {
         if (startTime !== undefined && Number.isFinite(startTime)) {
           a.currentTime = startTime;
+          rt.currentPosition = startTime;
         }
         await a.play();
+        rt.isPlaying = true;
         setIsPlaying(true);
       } catch {
+        rt.isPlaying = false;
         setIsPlaying(false);
       }
       return;
@@ -690,7 +738,8 @@ export function useStretchPlayer({
     const t =
       startTime !== undefined && Number.isFinite(startTime)
         ? Math.max(0, Math.min(startTime, rt.duration))
-        : (rt.stretch.inputTime ?? 0);
+        : rt.currentPosition;
+    rt.currentPosition = t;
     rt.stretch.schedule({
       active: true,
       input: t,
@@ -711,10 +760,7 @@ export function useStretchPlayer({
     if ("mediaSession" in navigator) {
       navigator.mediaSession.playbackState = "paused";
       const a = audioRef.current;
-      syncMediaSession(
-        rt.stretch?.inputTime ?? a?.currentTime ?? 0,
-        rt.duration || a?.duration || 0,
-      );
+      syncMediaSession(rt.currentPosition, rt.duration || a?.duration || 0);
     }
     if (advancedStretchRef.current) {
       rt.isPlaying = false;
@@ -725,6 +771,7 @@ export function useStretchPlayer({
         rt.rafId = null;
       }
     } else {
+      rt.isPlaying = false;
       setIsPlaying(false);
     }
     audioRef.current?.pause();
@@ -739,14 +786,17 @@ export function useStretchPlayer({
     if (!advancedStretchRef.current) {
       const a = audioRef.current;
       if (!a) return;
-      const clamped = Math.max(0, Math.min(t, a.duration || 0));
+      const rt = runtime.current;
+      const clamped = Math.max(0, Math.min(t, rt.duration || a.duration || 0));
       a.currentTime = clamped;
+      rt.currentPosition = clamped;
       setCurrentTime(clamped);
       syncMediaSession(clamped, a.duration, a.playbackRate);
       return;
     }
     const rt = runtime.current;
-    const clamped = Math.max(0, Math.min(t, rt.duration));
+    const clamped = Math.max(0, Math.min(t, rt.duration || Number.POSITIVE_INFINITY));
+    rt.currentPosition = clamped;
     setCurrentTime(clamped);
     rt.lastUiUpdateMs = performance.now();
     if (rt.stretch) {
