@@ -928,7 +928,7 @@ export function Player({
           <Flex
             align="center"
             justify="center"
-            gap={isMobile ? 0 : 32}
+            gap={!isMobile && showLyrics ? 32 : 0}
             style={{
               height: "100%",
               width: "100%",
@@ -1125,8 +1125,8 @@ export function Player({
             {!isMobile && (
               <Box
                 style={{
-                  width: 400,
-                  maxWidth: "35vw",
+                  position: "relative",
+                  width: showLyrics ? "min(400px, 35vw)" : 0,
                   height: "80vh",
                   flexShrink: 0,
                   display: "flex",
@@ -1134,9 +1134,8 @@ export function Player({
                   overflow: "hidden",
                   opacity: showLyrics ? 1 : 0,
                   transform: showLyrics ? "translateX(0)" : "translateX(40px)",
-                  marginRight: showLyrics ? 0 : -432, // -(width + gap) to collapse
                   transition:
-                    "opacity 0.3s ease-out, transform 0.35s cubic-bezier(0.32, 0.72, 0, 1), margin-right 0.35s cubic-bezier(0.32, 0.72, 0, 1)",
+                    "width 0.35s cubic-bezier(0.32, 0.72, 0, 1), opacity 0.3s ease-out, transform 0.35s cubic-bezier(0.32, 0.72, 0, 1)",
                   pointerEvents: showLyrics ? "auto" : "none",
                   backgroundColor: "transparent",
                 }}
