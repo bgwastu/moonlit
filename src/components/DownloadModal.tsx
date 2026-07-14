@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useState } from "react";
 import { Alert, Button, Group, Modal, Progress, Stack, Text } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { IconDownload, IconInfoCircle } from "@tabler/icons-react";
@@ -33,6 +33,55 @@ function generateImpulseResponse(
   return impulse;
 }
 
+async function fetchAudioFile(
+  url: string,
+  onProgress: (percent: number) => void,
+): Promise<ArrayBuffer> {
+  const probe = await fetch(url, { headers: { Range: "bytes=0-0" } });
+  if (!probe.ok) throw new Error(`Audio download failed: ${probe.status}`);
+
+  const contentRange = probe.headers.get("content-range");
+  const total = contentRange ? Number(contentRange.match(/\/(\d+)$/)?.[1]) : 0;
+  if (!total) {
+    const result = await probe.arrayBuffer();
+    onProgress(100);
+    return result;
+  }
+  await probe.arrayBuffer();
+
+  const chunkSize = 512 * 1024;
+  const chunkCount = Math.ceil(total / chunkSize);
+  const chunks = new Array<Uint8Array>(chunkCount);
+  let nextChunk = 0;
+  let completedChunks = 0;
+  const downloadChunk = async () => {
+    while (nextChunk < chunkCount) {
+      const index = nextChunk++;
+      const start = index * chunkSize;
+      const end = Math.min(total - 1, start + chunkSize - 1);
+      const response = await fetch(url, {
+        headers: { Range: `bytes=${start}-${end}` },
+      });
+      if (!response.ok)
+        throw new Error(`Audio range download failed: ${response.status}`);
+      chunks[index] = new Uint8Array(await response.arrayBuffer());
+      onProgress((++completedChunks / chunkCount) * 100);
+    }
+  };
+
+  await Promise.all(
+    Array.from({ length: Math.min(4, chunkCount) }, () => downloadChunk()),
+  );
+
+  const result = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    result.set(chunk, offset);
+    offset += chunk.length;
+  }
+  return result.buffer;
+}
+
 export default function DownloadModal({
   opened,
   onClose,
@@ -42,81 +91,109 @@ export default function DownloadModal({
   currentReverbAmount,
 }: DownloadModalProps) {
   const [isProcessing, setIsProcessing] = useState(false);
-  const messageRef = useRef<HTMLDivElement>(null);
+  const [exportProgress, setExportProgress] = useState({
+    value: 0,
+    label: "Starting...",
+  });
 
   const handleDownload = async () => {
     setIsProcessing(true);
+    const exportStartedAt = performance.now();
+    const mark = (stage: string) =>
+      console.log(
+        `[Moonlit][download] ${stage} (${Math.round(performance.now() - exportStartedAt)}ms)`,
+      );
 
     try {
-      if (messageRef.current) messageRef.current.innerText = "Downloading source...";
-      const response = await fetch(media.fileUrl);
-      const arrayBuffer = await response.arrayBuffer();
+      mark("started");
+      setExportProgress({ value: 0, label: "Downloading source..." });
+      const arrayBuffer = await fetchAudioFile(media.fileUrl, (percent) => {
+        setExportProgress({
+          value: Math.round(percent * 0.35),
+          label: `Downloading source... ${Math.round(percent)}%`,
+        });
+      });
+      mark(`source downloaded (${Math.round(arrayBuffer.byteLength / 1024)} KiB)`);
 
-      if (messageRef.current) messageRef.current.innerText = "Decoding audio...";
+      setExportProgress({ value: 40, label: "Decoding audio..." });
       const decodeCtx = new AudioContext();
       const audioBuffer = await decodeCtx.decodeAudioData(arrayBuffer);
       await decodeCtx.close();
+      mark(`audio decoded (${audioBuffer.duration.toFixed(1)}s)`);
+      setExportProgress({ value: 45, label: "Audio decoded" });
 
       const sampleRate = audioBuffer.sampleRate;
-      const reverbTailTime = currentReverbAmount > 0 ? 2 : 0;
-      const outputDurationSeconds =
-        audioBuffer.duration / currentPlaybackRate + reverbTailTime;
-      const lengthInSamples = Math.ceil(outputDurationSeconds * sampleRate);
+      const needsRendering =
+        currentPlaybackRate !== 1 || currentSemitones !== 0 || currentReverbAmount > 0;
+      let renderedBuffer = audioBuffer;
 
-      const offlineCtx = new OfflineAudioContext(2, lengthInSamples, sampleRate);
-      const hasWorklet = !!offlineCtx.audioWorklet;
+      if (needsRendering) {
+        const reverbTailTime = currentReverbAmount > 0 ? 2 : 0;
+        const outputDurationSeconds =
+          audioBuffer.duration / currentPlaybackRate + reverbTailTime;
+        const lengthInSamples = Math.ceil(outputDurationSeconds * sampleRate);
+        const offlineCtx = new OfflineAudioContext(2, lengthInSamples, sampleRate);
+        const hasWorklet = !!offlineCtx.audioWorklet;
 
-      if (hasWorklet) {
-        if (messageRef.current)
-          messageRef.current.innerText = "Rendering (stretch + reverb)...";
-        const SignalsmithStretch = (await import("signalsmith-stretch")).default;
-        const stretchNode = await SignalsmithStretch(offlineCtx);
+        if (hasWorklet) {
+          setExportProgress({
+            value: 46,
+            label: "Rendering remix (stretch + reverb)...",
+          });
+          const SignalsmithStretch = (await import("signalsmith-stretch")).default;
+          const stretchNode = await SignalsmithStretch(offlineCtx);
 
-        const channelBuffers: Float32Array[] = [];
-        for (let c = 0; c < audioBuffer.numberOfChannels; c++) {
-          channelBuffers.push(audioBuffer.getChannelData(c));
-        }
-        await stretchNode.addBuffers(channelBuffers);
+          const channelBuffers: Float32Array[] = [];
+          for (let c = 0; c < audioBuffer.numberOfChannels; c++) {
+            channelBuffers.push(audioBuffer.getChannelData(c));
+          }
+          await stretchNode.addBuffers(channelBuffers);
 
-        stretchNode.schedule({
-          active: true,
-          input: 0,
-          rate: currentPlaybackRate,
-          semitones: currentSemitones,
-          loopStart: 0,
-          loopEnd: 0,
-        });
+          stretchNode.schedule({
+            active: true,
+            input: 0,
+            rate: currentPlaybackRate,
+            semitones: currentSemitones,
+            loopStart: 0,
+            loopEnd: 0,
+          });
 
-        if (currentReverbAmount > 0) {
-          const convolver = offlineCtx.createConvolver();
-          const dryGain = offlineCtx.createGain();
-          const wetGain = offlineCtx.createGain();
-          convolver.buffer = generateImpulseResponse(offlineCtx, 2, 2);
-          dryGain.gain.value = 1 - currentReverbAmount * 0.5;
-          wetGain.gain.value = currentReverbAmount;
-          stretchNode.connect(dryGain);
-          stretchNode.connect(convolver);
-          convolver.connect(wetGain);
-          dryGain.connect(offlineCtx.destination);
-          wetGain.connect(offlineCtx.destination);
+          if (currentReverbAmount > 0) {
+            const convolver = offlineCtx.createConvolver();
+            const dryGain = offlineCtx.createGain();
+            const wetGain = offlineCtx.createGain();
+            convolver.buffer = generateImpulseResponse(offlineCtx, 2, 2);
+            dryGain.gain.value = 1 - currentReverbAmount * 0.5;
+            wetGain.gain.value = currentReverbAmount;
+            stretchNode.connect(dryGain);
+            stretchNode.connect(convolver);
+            convolver.connect(wetGain);
+            dryGain.connect(offlineCtx.destination);
+            wetGain.connect(offlineCtx.destination);
+          } else {
+            stretchNode.connect(offlineCtx.destination);
+          }
         } else {
-          stretchNode.connect(offlineCtx.destination);
+          setExportProgress({ value: 46, label: "Rendering remix (speed + reverb)..." });
+          const source = offlineCtx.createBufferSource();
+          source.buffer = audioBuffer;
+          source.playbackRate.value =
+            currentPlaybackRate * Math.pow(2, currentSemitones / 12);
+          source.connect(offlineCtx.destination);
+          source.start(0);
         }
+
+        renderedBuffer = await offlineCtx.startRendering();
+        mark(`audio rendered (${renderedBuffer.duration.toFixed(1)}s)`);
+        setExportProgress({ value: 75, label: "Remix rendered" });
       } else {
-        if (messageRef.current)
-          messageRef.current.innerText = "Rendering (speed + reverb)...";
-        const source = offlineCtx.createBufferSource();
-        source.buffer = audioBuffer;
-        source.playbackRate.value =
-          currentPlaybackRate * Math.pow(2, currentSemitones / 12);
-        source.connect(offlineCtx.destination);
-        source.start(0);
+        mark("render skipped (no remix changes)");
+        setExportProgress({ value: 75, label: "Preparing MP3 encoding..." });
       }
 
-      const renderedBuffer = await offlineCtx.startRendering();
-
-      if (messageRef.current) messageRef.current.innerText = "Encoding to MP3...";
+      setExportProgress({ value: 77, label: "Loading MP3 encoder..." });
       const { Mp3Encoder } = await import("@breezystack/lamejs");
+      mark("MP3 encoder loaded");
       const encoder = new Mp3Encoder(2, sampleRate, 128);
       const left = renderedBuffer.getChannelData(0);
       const right =
@@ -134,7 +211,13 @@ export default function DownloadModal({
       const mp3Data: Uint8Array[] = [];
       const blockSize = 1152;
       for (let i = 0; i < leftI.length; i += blockSize) {
-        if (i % (blockSize * 10) === 0) await new Promise((r) => setTimeout(r, 0));
+        if (i % (blockSize * 10) === 0) {
+          setExportProgress({
+            value: 77 + Math.round((i / leftI.length) * 23),
+            label: `Encoding to MP3... ${Math.round((i / leftI.length) * 100)}%`,
+          });
+          await new Promise((r) => setTimeout(r, 0));
+        }
         const lc = leftI.subarray(i, i + blockSize);
         const rc = rightI.subarray(i, i + blockSize);
         const enc = encoder.encodeBuffer(lc, rc);
@@ -142,6 +225,8 @@ export default function DownloadModal({
       }
       const flushed = encoder.flush();
       if (flushed.length > 0) mp3Data.push(new Uint8Array(flushed.buffer));
+      mark("MP3 encoded");
+      setExportProgress({ value: 100, label: "Download ready" });
 
       const blob = new Blob(mp3Data as BlobPart[], { type: "audio/mpeg" });
       const url = URL.createObjectURL(blob);
@@ -152,6 +237,7 @@ export default function DownloadModal({
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
+      mark("download triggered");
       onClose();
     } catch (e) {
       console.error(e);
@@ -185,9 +271,9 @@ export default function DownloadModal({
 
         {isProcessing && (
           <Stack>
-            <Progress value={100} animate striped />
-            <Text size="xs" color="dimmed" align="center" ref={messageRef}>
-              Starting...
+            <Progress value={exportProgress.value} animate striped />
+            <Text size="xs" color="dimmed" align="center">
+              {exportProgress.label}
             </Text>
           </Stack>
         )}
