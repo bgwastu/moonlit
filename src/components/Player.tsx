@@ -597,20 +597,69 @@ export function Player({
   const [downloadModalOpened, { open: openDownloadModal, close: closeDownloadModal }] =
     useDisclosure(false);
 
-  const [isSeeking, setIsSeeking] = useState(false);
-  const [seekPosition, setSeekPosition] = useState(0);
+  const [seekPosition, setSeekPosition] = useState<number | null>(null);
+  const seekPositionRef = useRef<number | null>(null);
+  const [isSeekTrackHovered, setIsSeekTrackHovered] = useState(false);
 
   const handleSliderChange = useCallback((value: number) => {
+    if (process.env.NODE_ENV !== "production") {
+      console.debug("[Player slider] onChange", value);
+    }
+    seekPositionRef.current = value;
     setSeekPosition(value);
-    setIsSeeking(true);
   }, []);
 
   const handleSeekEnd = useCallback(
     (value: number) => {
-      setIsSeeking(false);
-      seek(value);
+      const finalPosition = seekPositionRef.current ?? value;
+      if (process.env.NODE_ENV !== "production") {
+        console.debug("[Player slider] onChangeEnd", {
+          callbackValue: value,
+          latestPosition: seekPositionRef.current,
+          finalPosition,
+        });
+      }
+      seek(finalPosition);
+      seekPositionRef.current = null;
+      setSeekPosition(null);
     },
     [seek],
+  );
+
+  const seekTrackRef = useRef<HTMLDivElement>(null);
+  const handleTrackPointerDown = useCallback(
+    (event: React.PointerEvent<HTMLDivElement>) => {
+      if (event.button !== 0 || duration <= 0) return;
+      const track = seekTrackRef.current;
+      if (!track) return;
+
+      event.preventDefault();
+      event.stopPropagation();
+      track.setPointerCapture?.(event.pointerId);
+
+      const updatePosition = (clientX: number) => {
+        const rect = track.getBoundingClientRect();
+        const ratio = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+        const value = Math.round(ratio * duration * 10) / 10;
+        handleSliderChange(value);
+        return value;
+      };
+
+      updatePosition(event.clientX);
+      const onMove = (moveEvent: PointerEvent) => {
+        updatePosition(moveEvent.clientX);
+      };
+      const onUp = (upEvent: PointerEvent) => {
+        const value = updatePosition(upEvent.clientX);
+        handleSeekEnd(value);
+        document.removeEventListener("pointermove", onMove);
+        document.removeEventListener("pointerup", onUp);
+      };
+
+      document.addEventListener("pointermove", onMove);
+      document.addEventListener("pointerup", onUp, { once: true });
+    },
+    [duration, handleSeekEnd, handleSliderChange],
   );
 
   const handleTogglePlayer = useCallback(() => {
@@ -1216,7 +1265,7 @@ export function Player({
                 WebkitUserSelect: "none",
               }}
             >
-              {`${getFormattedTime(isSeeking ? seekPosition : currentTime)} / ${getFormattedTime(duration)}`}
+              {`${getFormattedTime(seekPosition ?? currentTime)} / ${getFormattedTime(duration)}`}
             </Text>
             <Flex gap="xs">
               <Button
@@ -1262,7 +1311,18 @@ export function Player({
             </Flex>
           </Flex>
 
-          <Box style={{ paddingRight: 8, position: "relative" }}>
+          <Box
+            ref={seekTrackRef}
+            onPointerDown={handleTrackPointerDown}
+            onMouseEnter={() => setIsSeekTrackHovered(true)}
+            onMouseLeave={() => setIsSeekTrackHovered(false)}
+            style={{
+              paddingRight: 8,
+              position: "relative",
+              touchAction: "none",
+              cursor: "pointer",
+            }}
+          >
             {/* Buffered segments rendered behind the slider */}
             {duration > 0 &&
               buffered.map((range, i) => (
@@ -1282,8 +1342,9 @@ export function Player({
                 />
               ))}
             <Slider
+              style={{ pointerEvents: "none" }}
               disabled={isLoading && !isNativeFallback}
-              value={isSeeking ? seekPosition : currentTime}
+              value={seekPosition ?? currentTime}
               onChange={handleSliderChange}
               onChangeEnd={handleSeekEnd}
               min={0}
@@ -1309,12 +1370,13 @@ export function Player({
               styles={{
                 thumb: {
                   borderWidth: 0,
-                  opacity: 0,
-                  width: 0,
-                  height: 0,
+                  opacity: isSeekTrackHovered ? 1 : 0,
+                  width: 16,
+                  height: 16,
                   transition: "opacity 0.15s, width 0.15s, height 0.15s",
                 },
                 track: {
+                  height: isSeekTrackHovered ? 6 : undefined,
                   transition: "height 0.15s",
                   backgroundColor: "transparent",
                 },

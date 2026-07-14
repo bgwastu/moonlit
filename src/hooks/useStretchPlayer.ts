@@ -85,6 +85,7 @@ interface PlayerRuntime {
   reverbAmount: number;
   repeat: boolean;
   currentPosition: number;
+  pendingSeek: number | null;
   rafId: number | null;
   lastUiUpdateMs: number;
   onEnded?: () => void;
@@ -119,7 +120,15 @@ function startStretchTick(
       return;
     }
     if (runtime.isPlaying) {
-      const t = runtime.stretch.inputTime ?? 0;
+      const reportedTime = runtime.stretch.inputTime;
+      const pendingSeek = runtime.pendingSeek;
+      const t =
+        pendingSeek !== null &&
+        (!Number.isFinite(reportedTime) ||
+          Math.abs(reportedTime - pendingSeek) > DRIFT_THRESHOLD)
+          ? pendingSeek
+          : reportedTime;
+      if (pendingSeek !== null && t === reportedTime) runtime.pendingSeek = null;
       if (Number.isFinite(t)) runtime.currentPosition = t;
       const now = performance.now();
       if (now - runtime.lastUiUpdateMs > UI_UPDATE_INTERVAL) {
@@ -289,6 +298,7 @@ export function useStretchPlayer({
     reverbAmount: initialReverbAmount,
     repeat: isRepeat,
     currentPosition: initialPosition,
+    pendingSeek: null,
     rafId: null,
     lastUiUpdateMs: 0,
   });
@@ -341,6 +351,7 @@ export function useStretchPlayer({
     rt.buffer = null;
     rt.duration = 0;
     rt.isPlaying = false;
+    rt.pendingSeek = null;
     setIsPlaying(false);
     setIsWaiting(false);
     setBuffered([]);
@@ -783,6 +794,14 @@ export function useStretchPlayer({
 
   const seek = useCallback((t: number) => {
     if (!Number.isFinite(t)) return;
+    if (process.env.NODE_ENV !== "production") {
+      console.debug("[StretchPlayer] seek", {
+        requested: t,
+        advanced: advancedStretchRef.current,
+        currentTime: runtime.current.currentPosition,
+        duration: runtime.current.duration,
+      });
+    }
     if (!advancedStretchRef.current) {
       const a = audioRef.current;
       if (!a) return;
@@ -797,16 +816,18 @@ export function useStretchPlayer({
     const rt = runtime.current;
     const clamped = Math.max(0, Math.min(t, rt.duration || Number.POSITIVE_INFINITY));
     rt.currentPosition = clamped;
+    rt.pendingSeek = clamped;
     setCurrentTime(clamped);
     rt.lastUiUpdateMs = performance.now();
     if (rt.stretch) {
+      // inputTime is updated asynchronously by Signalsmith, so schedule the
+      // new position and keep using it until the processor catches up.
       rt.stretch.schedule({
         input: clamped,
         rate: rt.rate,
         semitones: rt.semitones,
         active: rt.isPlaying,
       });
-      rt.stretch.inputTime = clamped;
     }
   }, []);
 
