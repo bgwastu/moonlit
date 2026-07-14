@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Box, Button, Loader, Text } from "@mantine/core";
+import { Box, Button, Text } from "@mantine/core";
 import { IconRefresh } from "@tabler/icons-react";
 import type { LyricsState } from "@/hooks/useLyrics";
 import { Lyric } from "@/lib/lyrics";
@@ -110,18 +110,10 @@ export default function LyricsPanel({
     [onSeek],
   );
 
-  const isEmpty =
-    state === "loading" ||
-    state === "idle" ||
-    state === "error" ||
-    state === "not_found" ||
-    lyrics.length === 0;
+  const isEmpty = state === "error" || state === "not_found" || lyrics.length === 0;
+  const isLoading = state === "loading" || state === "idle";
   const emptyMessage =
-    state === "loading" || state === "idle"
-      ? "Loading lyrics..."
-      : state === "error" && error
-        ? error
-        : "No synced lyrics found for this track.";
+    state === "error" && error ? error : "No synced lyrics found for this track.";
 
   return (
     <Box
@@ -184,7 +176,7 @@ export default function LyricsPanel({
         }}
         sx={{ "&::-webkit-scrollbar": { display: "none" } }}
       >
-        {isEmpty ? (
+        {isLoading ? null : isEmpty ? (
           <Box
             h="100%"
             style={{
@@ -196,14 +188,7 @@ export default function LyricsPanel({
               textAlign: "center",
             }}
           >
-            {state === "loading" || state === "idle" ? (
-              <>
-                <Loader color="gray" variant="dots" size="sm" />
-                <Text size="sm">Loading lyrics...</Text>
-              </>
-            ) : (
-              <Text size="sm">{emptyMessage}</Text>
-            )}
+            <Text size="sm">{emptyMessage}</Text>
           </Box>
         ) : (
           lyrics.map((lyric, i) => {

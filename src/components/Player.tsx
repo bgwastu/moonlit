@@ -1258,7 +1258,6 @@ export function Player({
                   >
                     Download
                   </Menu.Item>
-                  <Menu.Divider />
                 </Menu.Dropdown>
               </Menu>
             </Flex>
