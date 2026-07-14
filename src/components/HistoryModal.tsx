@@ -71,7 +71,7 @@ export default function HistoryModal({
                 overflowY: "auto",
               }}
             >
-              <Stack gap="md">
+              <Stack spacing="md">
                 {history
                   .sort((a, b) => b.playedAt - a.playedAt)
                   .map((item) => {
