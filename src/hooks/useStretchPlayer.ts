@@ -89,6 +89,8 @@ interface PlayerRuntime {
   onEnded?: () => void;
 }
 
+const decodedAudioCache = new Map<string, AudioBuffer>();
+const MAX_DECODED_AUDIO_CACHE_ENTRIES = 2;
 const UI_UPDATE_INTERVAL = 100;
 const DRIFT_THRESHOLD = 0.25;
 
@@ -150,39 +152,82 @@ function startStretchTick(
   runtime.rafId = requestAnimationFrame(tick);
 }
 
-async function fetchFileInChunks(
+async function fetchFile(
   url: string,
-  chunkSize: number,
   onProgress?: (loaded: number, total: number) => void,
+  signal?: AbortSignal,
 ): Promise<ArrayBuffer> {
-  const head = await fetch(url, { method: "HEAD" });
-  const length = parseInt(head.headers.get("content-length") || "0", 10);
-  if (!length) {
-    const fallback = await fetch(url);
-    return fallback.arrayBuffer();
+  const chunkSize = 2 * 1024 * 1024;
+  const firstEnd = chunkSize - 1;
+  const firstResponse = await fetch(url, {
+    headers: { Range: `bytes=0-${firstEnd}` },
+    signal,
+  });
+  if (!firstResponse.ok) {
+    throw new Error(
+      `Audio download failed: ${firstResponse.status} ${firstResponse.statusText}`,
+    );
   }
-  const totalChunks = Math.ceil(length / chunkSize);
-  const buffers: ArrayBuffer[] = [];
-  for (let i = 0; i < totalChunks; i++) {
-    const start = i * chunkSize;
-    const end = Math.min(start + chunkSize, length) - 1;
-    const res = await fetch(url, {
-      headers: { Range: `bytes=${start}-${end}` },
-    });
-    if (!res.ok && res.status !== 206)
-      throw new Error(`Chunk fetch failed: ${res.status}`);
-    const buf = await res.arrayBuffer();
-    buffers.push(buf);
-    onProgress?.(Math.min((i + 1) * chunkSize, length), length);
+
+  // Some upstreams ignore Range and return the complete file. Use that response
+  // directly rather than concatenating duplicate full-file responses.
+  if (firstResponse.status === 200) {
+    const total = Number(firstResponse.headers.get("content-length")) || 0;
+    const buffer = await firstResponse.arrayBuffer();
+    onProgress?.(buffer.byteLength, total || buffer.byteLength);
+    return buffer;
   }
-  const total = buffers.reduce((s, b) => s + b.byteLength, 0);
+
+  const firstRange = firstResponse.headers.get("content-range");
+  const firstMatch = firstRange?.match(/^bytes (\d+)-(\d+)\/(\d+)$/);
+  if (!firstMatch || Number(firstMatch[1]) !== 0) {
+    throw new Error("Audio server returned an invalid byte range");
+  }
+
+  const total = Number(firstMatch[3]);
   const merged = new Uint8Array(total);
-  let offset = 0;
-  for (const buf of buffers) {
-    merged.set(new Uint8Array(buf), offset);
-    offset += buf.byteLength;
+  const firstBuffer = new Uint8Array(await firstResponse.arrayBuffer());
+  const firstEndActual = Number(firstMatch[2]);
+  if (firstBuffer.byteLength !== firstEndActual + 1) {
+    throw new Error("Audio server returned incomplete byte range");
   }
-  return merged.buffer as ArrayBuffer;
+  merged.set(firstBuffer, 0);
+  let loaded = firstBuffer.byteLength;
+  onProgress?.(loaded, total);
+
+  if (loaded >= total) return merged.buffer;
+
+  let nextStart = loaded;
+  const worker = async () => {
+    for (;;) {
+      const start = nextStart;
+      if (start >= total) return;
+      nextStart = Math.min(start + chunkSize, total);
+      const end = nextStart - 1;
+      const response = await fetch(url, {
+        headers: { Range: `bytes=${start}-${end}` },
+        signal,
+      });
+      if (response.status !== 206) {
+        throw new Error(`Audio range fetch failed: ${response.status}`);
+      }
+      const range = response.headers.get("content-range");
+      const match = range?.match(/^bytes (\d+)-(\d+)\/(\d+)$/);
+      if (!match || Number(match[1]) !== start || Number(match[2]) !== end) {
+        throw new Error("Audio server returned an unexpected byte range");
+      }
+      const bytes = new Uint8Array(await response.arrayBuffer());
+      if (bytes.byteLength !== end - start + 1 || Number(match[3]) !== total) {
+        throw new Error("Audio server returned an incomplete byte range");
+      }
+      merged.set(bytes, start);
+      loaded += bytes.byteLength;
+      onProgress?.(loaded, total);
+    }
+  };
+
+  await Promise.all(Array.from({ length: 4 }, () => worker()));
+  return merged.buffer;
 }
 
 function generateImpulseResponse(context: AudioContext, dur = 2, decay = 2): AudioBuffer {
@@ -245,6 +290,7 @@ export function useStretchPlayer({
   });
 
   const advancedStretchRef = useRef(advancedStretch);
+  const initializationId = useRef(0);
   useEffect(() => {
     advancedStretchRef.current = advancedStretch;
   }, [advancedStretch]);
@@ -286,9 +332,12 @@ export function useStretchPlayer({
       rt.audioContext = null;
     }
     rt.buffer = null;
+    rt.duration = 0;
     rt.isPlaying = false;
     setIsWaiting(false);
     setBuffered([]);
+    setCurrentTime(0);
+    setDuration(0);
   }, []);
 
   const setupNative = useCallback(
@@ -304,6 +353,9 @@ export function useStretchPlayer({
         const ct = audio.currentTime;
         setCurrentTime(ct);
         syncMediaSession(ct, audio.duration, audio.playbackRate);
+      };
+      const onDuration = () => {
+        if (Number.isFinite(audio.duration)) setDuration(audio.duration);
       };
       const onEnd = () => {
         if (runtime.current.repeat) {
@@ -328,6 +380,8 @@ export function useStretchPlayer({
       const onResumed = () => setIsWaiting(false);
 
       audio.addEventListener("timeupdate", onTime);
+      audio.addEventListener("loadedmetadata", onDuration);
+      audio.addEventListener("durationchange", onDuration);
       audio.addEventListener("ended", onEnd);
       audio.addEventListener("progress", onProgress);
       audio.addEventListener("waiting", onWaiting);
@@ -336,6 +390,8 @@ export function useStretchPlayer({
 
       nativeCleanupRef.current = () => {
         audio.removeEventListener("timeupdate", onTime);
+        audio.removeEventListener("loadedmetadata", onDuration);
+        audio.removeEventListener("durationchange", onDuration);
         audio.removeEventListener("ended", onEnd);
         audio.removeEventListener("progress", onProgress);
         audio.removeEventListener("waiting", onWaiting);
@@ -349,25 +405,51 @@ export function useStretchPlayer({
   );
 
   const setupFull = useCallback(
-    async (audio: HTMLAudioElement, pos: number) => {
+    async (
+      audio: HTMLAudioElement,
+      pos: number,
+      signal: AbortSignal,
+      isCurrent: () => boolean,
+    ) => {
       const rt = runtime.current;
 
+      const throwIfInactive = () => {
+        if (signal.aborted || !isCurrent())
+          throw new DOMException("Initialization aborted", "AbortError");
+      };
+      throwIfInactive();
+
       const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+      if (!AudioContextClass)
+        throw new Error("Web Audio is not supported in this browser");
       const audioContext = new AudioContextClass();
       rt.audioContext = audioContext;
 
-      setProgress({ phase: "downloading", percent: 0 });
-      const arrayBuffer = await fetchFileInChunks(
-        fileUrl,
-        2 * 1024 * 1024,
-        (loaded, total) => {
-          const pct = Math.round((loaded / total) * 70);
-          setProgress({ phase: "downloading", percent: pct });
-        },
-      );
-
-      setProgress({ phase: "processing", percent: 70 });
-      const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+      const signalsmithModulePromise = import("signalsmith-stretch");
+      let audioBuffer = decodedAudioCache.get(fileUrl);
+      if (!audioBuffer) {
+        setProgress({ phase: "downloading", percent: 0 });
+        const arrayBuffer = await fetchFile(
+          fileUrl,
+          (loaded, total) => {
+            const pct = total ? Math.round((loaded / total) * 70) : 0;
+            setProgress({ phase: "downloading", percent: pct });
+          },
+          signal,
+        );
+        throwIfInactive();
+        setProgress({ phase: "processing", percent: 70 });
+        audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+        decodedAudioCache.set(fileUrl, audioBuffer);
+        while (decodedAudioCache.size > MAX_DECODED_AUDIO_CACHE_ENTRIES) {
+          const oldestKey = decodedAudioCache.keys().next().value;
+          if (oldestKey === undefined) break;
+          decodedAudioCache.delete(oldestKey);
+        }
+      } else {
+        setProgress({ phase: "processing", percent: 70 });
+      }
+      throwIfInactive();
       rt.buffer = audioBuffer;
       rt.duration = audioBuffer.duration;
       setDuration(audioBuffer.duration);
@@ -375,8 +457,10 @@ export function useStretchPlayer({
       setIsWaiting(false);
 
       setProgress({ phase: "processing", percent: 80 });
-      const SignalsmithStretch = (await import("signalsmith-stretch")).default;
+      const SignalsmithStretch = (await signalsmithModulePromise).default;
+      throwIfInactive();
       const stretch = await SignalsmithStretch(audioContext);
+      throwIfInactive();
       rt.stretch = stretch;
 
       setProgress({ phase: "processing", percent: 85 });
@@ -385,6 +469,7 @@ export function useStretchPlayer({
         channelBuffers.push(audioBuffer.getChannelData(c));
       }
       await stretch.addBuffers(channelBuffers);
+      throwIfInactive();
       setProgress({ phase: "processing", percent: 95 });
 
       const convolver = audioContext.createConvolver();
@@ -409,6 +494,7 @@ export function useStretchPlayer({
       rt.wetGain = wetGain;
       rt.masterGain = masterGain;
 
+      throwIfInactive();
       const resumePos = Math.max(0, Math.min(pos, audioBuffer.duration));
       stretch.schedule({
         active: false,
@@ -424,7 +510,12 @@ export function useStretchPlayer({
   );
 
   const initFullMode = useCallback(
-    async (audio: HTMLAudioElement, pos: number) => {
+    async (
+      audio: HTMLAudioElement,
+      pos: number,
+      signal: AbortSignal,
+      isCurrent: () => boolean,
+    ) => {
       const rt = runtime.current;
       if (rt.stretch) {
         try {
@@ -437,7 +528,8 @@ export function useStretchPlayer({
         rt.audioContext.close().catch(() => {});
         rt.audioContext = null;
       }
-      await setupFull(audio, pos);
+      await setupFull(audio, pos, signal, isCurrent);
+      if (!isCurrent()) return;
 
       const rt2 = runtime.current;
       if (rt2.stretch) {
@@ -454,6 +546,9 @@ export function useStretchPlayer({
     const audio = audioRef.current;
     if (!audio) return;
     let aborted = false;
+    const controller = new AbortController();
+    const id = ++initializationId.current;
+    const isCurrent = () => !aborted && initializationId.current === id;
 
     const rt = runtime.current;
     const currentPos = rt.stretch?.inputTime ?? audio.currentTime ?? 0;
@@ -470,15 +565,17 @@ export function useStretchPlayer({
 
       try {
         if (advancedStretch) {
-          audio.src = fileUrl;
+          audio.pause();
+          audio.removeAttribute("src");
           audio.load();
-          await initFullMode(audio, resumePos);
-          if (aborted) return;
+          await initFullMode(audio, resumePos, controller.signal, isCurrent);
+          if (!isCurrent()) return;
 
           setState("ready");
           setProgress(null);
           if (autoPlay || posBeforeSwitch.current > 0) {
             setTimeout(() => {
+              if (aborted) return;
               const rt2 = runtime.current;
               if (rt2.stretch && rt2.audioContext) {
                 if (rt2.audioContext.state === "suspended") rt2.audioContext.resume();
@@ -490,8 +587,6 @@ export function useStretchPlayer({
                 });
                 rt2.isPlaying = true;
                 setIsPlaying(true);
-                audio.muted = true;
-                audio.play().catch(() => {});
               }
             }, 50);
           }
@@ -519,7 +614,7 @@ export function useStretchPlayer({
             audio.addEventListener("canplay", onCanPlay);
             audio.addEventListener("error", onError);
           });
-          if (aborted) return;
+          if (!isCurrent()) return;
           setDuration(audio.duration);
           setupNative(audio, resumePos);
 
@@ -533,10 +628,10 @@ export function useStretchPlayer({
           }
         }
       } catch (error) {
-        if (!aborted) {
+        if (isCurrent()) {
+          cleanup();
           setProgress(null);
-          const msg = error instanceof Error ? error.message : String(error);
-          console.error("StretchPlayer:", msg);
+          console.error("StretchPlayer initialization failed:", error);
           setState("error");
           onPlayerError?.(error);
         }
@@ -546,6 +641,7 @@ export function useStretchPlayer({
     init();
     return () => {
       aborted = true;
+      controller.abort();
       cleanup();
     };
   }, [
@@ -652,13 +748,16 @@ export function useStretchPlayer({
     const rt = runtime.current;
     const clamped = Math.max(0, Math.min(t, rt.duration));
     setCurrentTime(clamped);
-    if (rt.stretch)
+    rt.lastUiUpdateMs = performance.now();
+    if (rt.stretch) {
       rt.stretch.schedule({
         input: clamped,
         rate: rt.rate,
         semitones: rt.semitones,
         active: rt.isPlaying,
       });
+      rt.stretch.inputTime = clamped;
+    }
   }, []);
 
   const setRate = useCallback((r: number) => {

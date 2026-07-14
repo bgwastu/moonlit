@@ -597,7 +597,6 @@ export function Player({
   const [downloadModalOpened, { open: openDownloadModal, close: closeDownloadModal }] =
     useDisclosure(false);
 
-  // Seeking state
   const [isSeeking, setIsSeeking] = useState(false);
   const [seekPosition, setSeekPosition] = useState(0);
 
@@ -606,17 +605,12 @@ export function Player({
     setIsSeeking(true);
   }, []);
 
-  const handleSeekChange = useCallback(
+  const handleSeekEnd = useCallback(
     (value: number) => {
       setIsSeeking(false);
       seek(value);
-      // Resume playback from the new position if we were playing.
-      // The browser will fire 'waiting' if it needs to buffer.
-      if (isPlaying) {
-        play();
-      }
     },
-    [seek, play, isPlaying],
+    [seek],
   );
 
   const handleTogglePlayer = useCallback(() => {
@@ -1293,9 +1287,9 @@ export function Player({
               disabled={isLoading && !isNativeFallback}
               value={isSeeking ? seekPosition : currentTime}
               onChange={handleSliderChange}
-              onChangeEnd={handleSeekChange}
+              onChangeEnd={handleSeekEnd}
               min={0}
-              step={1}
+              step={0.1}
               radius={0}
               mb={-3}
               showLabelOnHover={false}
