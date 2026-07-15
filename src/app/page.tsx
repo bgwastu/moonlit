@@ -125,7 +125,14 @@ function LocalUpload({ dropzoneMinHeight }: { dropzoneMinHeight: number }) {
         : { id: fileId, title: files[0].name, author: "Unknown", coverUrl: "" };
 
     await setMediaCache(sourceUrl, files[0]);
-    setMedia({ fileUrl: URL.createObjectURL(files[0]), sourceUrl, metadata });
+    const fileUrl = URL.createObjectURL(files[0]);
+    const isVideo = files[0].type.startsWith("video/") || /\.mp4$/i.test(files[0].name);
+    setMedia({
+      fileUrl,
+      sourceUrl,
+      metadata,
+      ...(isVideo && { videoUrl: fileUrl }),
+    });
     push("/player");
     setLoading({ status: false, message: null });
   };

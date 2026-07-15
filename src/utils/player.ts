@@ -5,10 +5,14 @@ import { getPlatform } from "@/utils";
 
 /**
  * Get the original platform URL for the current video.
+ * Audio-track (YouTube Music) songs open on music.youtube.com.
  */
 export function getOriginalPlatformUrl(media: Media, currentTime: number): string | null {
   if (getPlatform(media.sourceUrl) === "youtube" && media.metadata.id) {
     const realSeconds = Math.floor(currentTime);
+    if (media.isAudioTrackVideo) {
+      return `https://music.youtube.com/watch?v=${media.metadata.id}&t=${realSeconds}`;
+    }
     return `https://www.youtube.com/watch?v=${media.metadata.id}&t=${realSeconds}s`;
   }
   return null;

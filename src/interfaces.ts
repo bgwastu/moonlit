@@ -1,6 +1,10 @@
 export interface Media {
   fileUrl: string;
   sourceUrl: string;
+  /** Proxied or blob URL for muted on-screen video (optional). */
+  videoUrl?: string;
+  /** YouTube Music ATV (static art) — hide Show video toggle. */
+  isAudioTrackVideo?: boolean;
   metadata: {
     id: string | null;
     title: string;

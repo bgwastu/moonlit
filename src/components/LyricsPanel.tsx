@@ -17,6 +17,8 @@ interface LyricsPanelProps {
   className?: string;
   style?: React.CSSProperties;
   isMobile?: boolean;
+  /** When false, panel is hidden — skip follow-scroll until shown again. */
+  visible?: boolean;
 }
 
 export default function LyricsPanel({
@@ -28,6 +30,7 @@ export default function LyricsPanel({
   className,
   style,
   isMobile = false,
+  visible = true,
 }: LyricsPanelProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const lineRefs = useRef<(HTMLDivElement | null)[]>([]);
@@ -35,6 +38,7 @@ export default function LyricsPanel({
   /** When user scrolls away from the active line, pause following playback until resync */
   const followPausedRef = useRef(false);
   const scrollTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const wasVisibleRef = useRef(visible);
   const [isOutOfSync, setIsOutOfSync] = useState(false);
   const currentTimeMs = currentTimeSeconds * 1000;
 
@@ -46,22 +50,43 @@ export default function LyricsPanel({
     return 0;
   }, [lyrics, currentTimeMs]);
 
-  const scrollToActive = useCallback(() => {
-    if (activeIndex < 0) return;
+  const scrollToActive = useCallback(
+    (behavior: ScrollBehavior = "smooth") => {
+      if (activeIndex < 0) return;
+      followPausedRef.current = false;
+      ignoreScrollRef.current = true;
+      if (scrollTimeoutRef.current) clearTimeout(scrollTimeoutRef.current);
+      lineRefs.current[activeIndex]?.scrollIntoView({
+        behavior,
+        block: "center",
+      });
+      scrollTimeoutRef.current = setTimeout(
+        () => {
+          ignoreScrollRef.current = false;
+        },
+        behavior === "smooth" ? 1200 : 200,
+      );
+    },
+    [activeIndex],
+  );
+
+  // Jump to the current line when the panel becomes visible.
+  useEffect(() => {
+    const becameVisible = visible && !wasVisibleRef.current;
+    wasVisibleRef.current = visible;
+    if (!becameVisible || activeIndex < 0) return;
+
     followPausedRef.current = false;
-    ignoreScrollRef.current = true;
-    if (scrollTimeoutRef.current) clearTimeout(scrollTimeoutRef.current);
-    lineRefs.current[activeIndex]?.scrollIntoView({
-      behavior: "smooth",
-      block: "center",
-    });
-    scrollTimeoutRef.current = setTimeout(() => {
-      ignoreScrollRef.current = false;
-    }, 1200);
-  }, [activeIndex]);
+    const syncId = requestAnimationFrame(() => setIsOutOfSync(false));
+    const t = window.setTimeout(() => scrollToActive("auto"), 100);
+    return () => {
+      cancelAnimationFrame(syncId);
+      window.clearTimeout(t);
+    };
+  }, [visible, activeIndex, scrollToActive]);
 
   useEffect(() => {
-    if (activeIndex < 0 || followPausedRef.current) return;
+    if (!visible || activeIndex < 0 || followPausedRef.current) return;
     const syncId = requestAnimationFrame(() => {
       setIsOutOfSync(false);
     });
@@ -78,7 +103,7 @@ export default function LyricsPanel({
       cancelAnimationFrame(syncId);
       if (scrollTimeoutRef.current) clearTimeout(scrollTimeoutRef.current);
     };
-  }, [activeIndex]);
+  }, [activeIndex, visible]);
 
   useEffect(() => {
     followPausedRef.current = false;
@@ -102,7 +127,7 @@ export default function LyricsPanel({
 
   const handleSyncClick = useCallback(() => {
     setIsOutOfSync(false);
-    scrollToActive();
+    scrollToActive("smooth");
   }, [scrollToActive]);
 
   const handleLineClick = useCallback(

@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { SiYoutube } from "@icons-pack/react-simple-icons";
+import { SiYoutube, SiYoutubemusic } from "@icons-pack/react-simple-icons";
 import { generateColors } from "@mantine/colors-generator";
 import {
   ActionIcon,
@@ -44,6 +44,7 @@ import {
   IconRepeatOff,
   IconRewindBackward5,
   IconRewindForward5,
+  IconVideo,
   IconVolume,
   IconVolume2,
   IconVolume3,
@@ -56,6 +57,7 @@ import { usePlayerTapGestures } from "@/hooks/usePlayerTapGestures";
 import { useStretchPlayer } from "@/hooks/useStretchPlayer";
 import { HistoryItem, LyricsSettings, Media } from "@/interfaces";
 import { stripVideoTitleFiller } from "@/lib/lyrics";
+import { getShowVideo, setShowVideo } from "@/lib/playerPrefs";
 import { getModeFromRate, getVideoState, saveVideoState } from "@/lib/videoState";
 import { getFormattedTime, getYouTubeId, isSupportedURL } from "@/utils";
 import {
@@ -264,10 +266,12 @@ export function Player({
   );
 
   const [showLyrics, setShowLyrics] = useState(savedState?.showLyrics ?? false);
+  const [showVideo, setShowVideoState] = useState(() => getShowVideo());
   const [lyricsSettings, setLyricsSettings] = useState<LyricsSettings | null>(
     savedState?.lyrics ?? null,
   );
   const [lyricsModalOpened, setLyricsModalOpened] = useState(false);
+  const videoRef = useRef<HTMLVideoElement>(null);
 
   const dominantColor = useDominantColor(media?.metadata.coverUrl);
   const barColor = useMemo(() => {
@@ -465,6 +469,45 @@ export function Player({
     },
     [sourceUrl],
   );
+
+  const handleToggleShowVideo = useCallback(() => {
+    if (!media?.videoUrl || media.isAudioTrackVideo) {
+      showToast("Video not available for this track");
+      return;
+    }
+    const next = !showVideo;
+    setShowVideoState(next);
+    setShowVideo(next);
+  }, [media, showVideo, showToast]);
+
+  /** Muted video replaces cover when enabled globally and track has real video. */
+  const showingVideo = Boolean(showVideo && media?.videoUrl && !media?.isAudioTrackVideo);
+
+  // Keep muted video in sync with the audio / stretch clock.
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video || !showingVideo) return;
+
+    video.muted = true;
+    if (Math.abs(video.playbackRate - rate) > 0.01) {
+      video.playbackRate = rate;
+    }
+
+    const drift = Math.abs(video.currentTime - currentTime);
+    if (drift > 0.35) {
+      try {
+        video.currentTime = currentTime;
+      } catch {
+        // readyState may not allow seeks yet
+      }
+    }
+
+    if (isPlaying) {
+      if (video.paused) void video.play().catch(() => {});
+    } else if (!video.paused) {
+      video.pause();
+    }
+  }, [showingVideo, isPlaying, currentTime, rate]);
 
   const handleReset = useCallback(() => {
     setRate(1);
@@ -950,7 +993,11 @@ export function Player({
         }
         initialSearchResults={searchResults}
         onSelectLyrics={(record) => {
-          applyLyricsSettings(record, () => setLyricsModalOpened(false));
+          applyLyricsSettings(record, () => {
+            setShowLyrics(true);
+            saveVideoState(sourceUrl, { showLyrics: true });
+            setLyricsModalOpened(false);
+          });
         }}
       />
 
@@ -1091,21 +1138,31 @@ export function Player({
                 </Transition>
               </Box>
 
-              {/* Album art + loading overlay + hidden audio element */}
+              {/* Album art / video + loading overlay + hidden audio element */}
               <Box
                 style={{
                   position: "relative",
-                  // Give the square wrapper a size before the cover image loads.
-                  width: isMobile ? "min(calc(100vw - 32px), 50vh)" : "min(50vw, 60vh)",
-                  height: isMobile ? "min(calc(100vw - 32px), 50vh)" : "min(50vw, 60vh)",
-                  aspectRatio: "1/1",
+                  width: (() => {
+                    const lyricsBeside = !isMobile && showLyrics;
+                    if (showingVideo) {
+                      if (isMobile) return "min(calc(100vw - 32px), 85vw)";
+                      // Cap height via width = height * 16/9
+                      return lyricsBeside
+                        ? "min(56vw, calc(44vh * 16 / 9))"
+                        : "min(86vw, calc(58vh * 16 / 9))";
+                    }
+                    if (isMobile) return "min(calc(100vw - 32px), 50vh)";
+                    return lyricsBeside ? "min(40vw, 58vh)" : "min(50vw, 60vh)";
+                  })(),
+                  aspectRatio: showingVideo ? "16 / 9" : "1 / 1",
+                  height: "auto",
                   margin: isMobile ? 16 : 0,
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "center",
                   opacity: isMobile && showLyrics ? 0 : 1,
                   pointerEvents: isMobile && showLyrics ? "none" : "auto",
-                  transition: "opacity 0.3s ease-out",
+                  transition: "opacity 0.3s ease-out, width 0.25s ease-out",
                 }}
               >
                 <audio
@@ -1114,7 +1171,27 @@ export function Player({
                   style={{ display: "none" }}
                   preload="metadata"
                 />
-                {media.metadata.coverUrl ? (
+                {showingVideo && media.videoUrl ? (
+                  <video
+                    ref={videoRef}
+                    key={media.videoUrl}
+                    src={media.videoUrl}
+                    muted
+                    playsInline
+                    preload="metadata"
+                    style={{
+                      width: "100%",
+                      height: "100%",
+                      objectFit: "contain",
+                      borderRadius: theme.radius.md,
+                      userSelect: "none",
+                      pointerEvents: "none",
+                      background: "rgba(0,0,0,0.35)",
+                      filter: stretchState === "loading" ? "blur(8px)" : "none",
+                      transition: "filter 0.3s ease-out",
+                    }}
+                  />
+                ) : media.metadata.coverUrl ? (
                   <Image
                     src={coverUrl}
                     width="100%"
@@ -1286,6 +1363,7 @@ export function Player({
                   error={lyricsError}
                   currentTimeSeconds={currentTime}
                   onSeek={seek}
+                  visible={showLyrics}
                   style={{ flex: 1, minHeight: 0 }}
                 />
               </Box>
@@ -1325,6 +1403,7 @@ export function Player({
                     onSeek={seek}
                     style={{ flex: 1, minHeight: 0 }}
                     isMobile
+                    visible={showLyrics}
                   />
                 </Box>
               )}
@@ -1380,17 +1459,39 @@ export function Player({
                   </Menu.Item>
                   {originalPlatformUrl && (
                     <Menu.Item
-                      icon={<SiYoutube size={14} />}
+                      icon={
+                        media.isAudioTrackVideo ? (
+                          <SiYoutubemusic size={14} />
+                        ) : (
+                          <SiYoutube size={14} />
+                        )
+                      }
                       component="a"
                       href={originalPlatformUrl}
                       rightSection={<IconExternalLink size={12} />}
                       target="_blank"
                     >
-                      YouTube
+                      {media.isAudioTrackVideo ? "YouTube Music" : "YouTube"}
                     </Menu.Item>
                   )}
                   <Menu.Divider />
                   <Menu.Label>Actions</Menu.Label>
+                  {!media?.isAudioTrackVideo && (
+                    <Menu.Item
+                      icon={<IconVideo size={14} />}
+                      onClick={handleToggleShowVideo}
+                      disabled={!media?.videoUrl && !showVideo}
+                      rightSection={
+                        showVideo && media?.videoUrl ? (
+                          <Text size="xs" color="dimmed">
+                            On
+                          </Text>
+                        ) : undefined
+                      }
+                    >
+                      Show video
+                    </Menu.Item>
+                  )}
                   <Menu.Item
                     icon={<IconDownload size={14} />}
                     onClick={openDownloadModal}

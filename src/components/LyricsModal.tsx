@@ -17,6 +17,7 @@ import {
   useMantineTheme,
 } from "@mantine/core";
 import {
+  IconArrowLeft,
   IconCheck,
   IconMinus,
   IconMusic,
@@ -313,8 +314,14 @@ function SearchView({
 
   return (
     <Box>
-      <Button variant="subtle" onClick={onBack} mb="sm" size="sm">
-        ← Back to Settings
+      <Button
+        variant="subtle"
+        onClick={onBack}
+        mb="sm"
+        size="sm"
+        leftIcon={<IconArrowLeft size={16} />}
+      >
+        Back to Settings
       </Button>
       <Flex gap="sm" mb="md">
         <TextInput

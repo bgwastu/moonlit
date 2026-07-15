@@ -75,6 +75,8 @@ export async function streamWithProgress(
   return {
     fileUrl: streamUrl,
     sourceUrl: url,
+    ...(data.videoToken && { videoUrl: `/api/stream/${data.videoToken}` }),
+    ...(data.isAudioTrackVideo && { isAudioTrackVideo: true }),
     metadata: resolvedMetadata,
   };
 }
@@ -163,9 +165,22 @@ async function handleDirectMedia(
     } catch {}
   }
 
+  const isVideoFile = /\.(mp4|webm)(\?|$)/i.test(
+    url.startsWith("/")
+      ? url
+      : (() => {
+          try {
+            return new URL(url).pathname;
+          } catch {
+            return url;
+          }
+        })(),
+  );
+
   return {
     fileUrl,
     sourceUrl: url,
+    ...(isVideoFile && { videoUrl: fileUrl }),
     metadata: baseMeta,
   };
 }

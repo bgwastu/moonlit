@@ -40,6 +40,89 @@ export interface StreamInfo {
   album?: string;
   thumbnail: string;
   sourceUrl: string;
+  /** Optional muted video stream (separate adaptive track or muxed). */
+  videoUrl?: string;
+  videoContentType?: string;
+  /**
+   * YouTube Music audio-track video (ATV / static art).
+   * Hide Show video — there is no real motion video.
+   */
+  isAudioTrackVideo?: boolean;
+}
+
+function readMusicVideoTypeFromPayload(
+  payload: Record<string, unknown> | undefined,
+): string | undefined {
+  if (!payload) return undefined;
+  const configs = payload.watchEndpointMusicSupportedConfigs as
+    | { watchEndpointMusicConfig?: { musicVideoType?: string } }
+    | undefined;
+  return configs?.watchEndpointMusicConfig?.musicVideoType;
+}
+
+/** Prefer endpoint, then first musicVideoType found on the Music TrackInfo tree. */
+function readMusicVideoType(musicInfo: unknown): string | undefined {
+  if (!musicInfo || typeof musicInfo !== "object") return undefined;
+
+  const info = musicInfo as {
+    current_video_endpoint?: { payload?: Record<string, unknown> };
+  };
+  const fromEndpoint = readMusicVideoTypeFromPayload(
+    info.current_video_endpoint?.payload,
+  );
+  if (fromEndpoint) return fromEndpoint;
+
+  let found: string | undefined;
+  const walk = (node: unknown, depth: number) => {
+    if (found || !node || typeof node !== "object" || depth > 14) return;
+    if (Array.isArray(node)) {
+      for (const item of node) walk(item, depth + 1);
+      return;
+    }
+    const obj = node as Record<string, unknown>;
+    if (typeof obj.musicVideoType === "string") {
+      found = obj.musicVideoType;
+      return;
+    }
+    for (const value of Object.values(obj)) walk(value, depth + 1);
+  };
+  walk(musicInfo, 0);
+  return found;
+}
+
+function isAudioTrackVideoType(type: string | undefined): boolean {
+  return type === "MUSIC_VIDEO_TYPE_ATV";
+}
+
+type YTFormat = {
+  url?: string;
+  has_audio?: boolean;
+  has_video?: boolean;
+  bitrate?: number;
+  mime_type?: string;
+  height?: number;
+  quality_label?: string;
+};
+
+/** Prefer browser-friendly MP4 ≤720p video; fall back to best available. */
+function pickVideoFormat(formats: YTFormat[]): YTFormat | undefined {
+  const withUrl = formats.filter((f) => f.has_video && f.url);
+  if (!withUrl.length) return undefined;
+
+  const mp4Under720 = withUrl
+    .filter((f) => f.mime_type?.includes("mp4") && (f.height == null || f.height <= 720))
+    .sort((a, b) => (b.height || 0) - (a.height || 0));
+  if (mp4Under720.length) {
+    // Prefer video-only (cheaper) over muxed when both exist at same height.
+    return mp4Under720.find((f) => !f.has_audio) || mp4Under720[0];
+  }
+
+  const anyMp4 = withUrl
+    .filter((f) => f.mime_type?.includes("mp4"))
+    .sort((a, b) => (a.height || 0) - (b.height || 0));
+  if (anyMp4.length) return anyMp4[0];
+
+  return withUrl.sort((a, b) => (a.height || 0) - (b.height || 0))[0];
 }
 
 const DATA_DIR = path.join(process.cwd(), "data");
@@ -321,10 +404,12 @@ async function doFullExtraction(
     );
   }
 
-  const formats = [
+  const allFormats: YTFormat[] = [
     ...(info.streaming_data.formats || []),
     ...(info.streaming_data.adaptive_formats || []),
-  ].filter((f) => f.has_audio && !f.has_video);
+  ];
+
+  const formats = allFormats.filter((f) => f.has_audio && !f.has_video);
 
   if (!formats.length) {
     throw new Error("No audio formats available for this video.");
@@ -332,7 +417,7 @@ async function doFullExtraction(
 
   const format =
     formats.find((f) => f.mime_type?.includes("mp4")) ||
-    formats.sort((a, b) => b.bitrate - a.bitrate)[0];
+    formats.sort((a, b) => (b.bitrate || 0) - (a.bitrate || 0))[0];
   const streamUrl = format.url;
 
   if (!streamUrl) {
@@ -340,10 +425,14 @@ async function doFullExtraction(
   }
 
   const contentType = format.mime_type?.split(";")[0]?.trim() || "audio/mp4";
+  const videoFormat = pickVideoFormat(allFormats);
+  const videoUrl = videoFormat?.url;
+  const videoContentType = videoFormat?.mime_type?.split(";")[0]?.trim() || undefined;
 
   let artist: string | undefined;
   let album: string | undefined;
   let thumbnail = pickThumbnail(basic.thumbnail || []);
+  let isAudioTrackVideo = false;
 
   try {
     const musicInfo = await yt.music.getInfo(id);
@@ -365,6 +454,8 @@ async function doFullExtraction(
     if (musicThumb) {
       thumbnail = musicThumb;
     }
+
+    isAudioTrackVideo = isAudioTrackVideoType(readMusicVideoType(musicInfo));
   } catch {}
 
   return {
@@ -380,6 +471,8 @@ async function doFullExtraction(
     artist: artist || basic.author,
     album,
     sourceUrl,
+    isAudioTrackVideo,
+    ...(videoUrl && !isAudioTrackVideo && { videoUrl, videoContentType }),
   };
 }
 
