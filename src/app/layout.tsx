@@ -20,7 +20,6 @@ export const metadata: Metadata = {
     "slowed music",
     "nightcore",
     "youtube player",
-    "tiktok player",
     "music remix",
     "audio effects",
     "speed control",
@@ -48,7 +47,7 @@ export const metadata: Metadata = {
     card: "summary_large_image",
     title: "Moonlit - Slowed & Nightcore Music Player",
     description:
-      "Transform your music experience with customizable playback speed. Play YouTube and TikTok videos with slowed or nightcore effects.",
+      "Transform your music experience with customizable playback speed. Play YouTube videos with slowed or nightcore effects.",
   },
   verification: {
     google: "pIhibbB-PxDaY9RoagyBKnOOxpT4YT3gV0uCETuKEUU",

@@ -2,16 +2,13 @@
 
 import { useEffect, useState } from "react";
 import { Button, Flex, Modal, Slider, Stack, Switch, Text } from "@mantine/core";
-import { IconLock, IconLockOpen } from "@tabler/icons-react";
 
 export interface CustomizePlaybackModalProps {
   opened: boolean;
   onClose: () => void;
-  /** Lite mode: native playback only (speed); no pitch/reverb. Much more stable. */
-  liteMode: boolean;
-  onLiteModeChange: (enabled: boolean) => void;
-  pitchLockedToSpeed: boolean;
-  onLockToggle: (locked: boolean) => void;
+  /** Advanced stretch mode: enables pitch shifting and reverb via signalsmith-stretch pipeline */
+  advancedStretch: boolean;
+  onAdvancedStretchChange: (enabled: boolean) => void;
   rate: number;
   onSpeedChangeEnd: (value: number) => void;
   semitones: number;
@@ -24,10 +21,8 @@ export interface CustomizePlaybackModalProps {
 export default function CustomizePlaybackModal({
   opened,
   onClose,
-  liteMode,
-  onLiteModeChange,
-  pitchLockedToSpeed,
-  onLockToggle,
+  advancedStretch,
+  onAdvancedStretchChange,
   rate,
   onSpeedChangeEnd,
   semitones,
@@ -49,7 +44,6 @@ export default function CustomizePlaybackModal({
     return () => cancelAnimationFrame(id);
   }, [opened, rate, semitones]);
 
-  const effectiveLocked = pitchLockedToSpeed;
   return (
     <Modal
       opened={opened}
@@ -59,43 +53,13 @@ export default function CustomizePlaybackModal({
       keepMounted
     >
       <Stack>
-        <Flex align="center" justify="space-between" mb="md" gap="md" wrap="wrap">
-          <Flex direction="column" gap={2}>
-            <Text size="sm" fw={500}>
-              Lite mode
-            </Text>
-            <Text size="xs" c="dimmed">
-              Much more stable. Disables custom pitch and reverb.
-            </Text>
-          </Flex>
-          <Switch
-            size="md"
-            checked={liteMode}
-            onChange={(e) => onLiteModeChange(e.currentTarget.checked)}
-          />
-        </Flex>
-
-        {!liteMode && (
-          <>
-            <Flex align="center" justify="space-between" mb="sm" gap="md" wrap="wrap">
-              <Flex align="center" gap="xs">
-                {effectiveLocked ? (
-                  <IconLock size={18} style={{ opacity: 0.8 }} />
-                ) : (
-                  <IconLockOpen size={18} style={{ opacity: 0.8 }} />
-                )}
-                <Text size="sm" fw={500}>
-                  Lock pitch to speed
-                </Text>
-              </Flex>
-              <Switch
-                size="md"
-                checked={effectiveLocked}
-                onChange={(e) => onLockToggle(e.currentTarget.checked)}
-              />
-            </Flex>
-          </>
-        )}
+        <Switch
+          labelPosition="left"
+          label="Advanced Stretch"
+          description="Enables pitch shifting and reverb. Uses more processing power."
+          checked={advancedStretch}
+          onChange={(e) => onAdvancedStretchChange(e.currentTarget.checked)}
+        />
 
         <Flex direction="column" mb={22} gap={2}>
           <Text size="sm">Speed: {speedSliderValue.toFixed(2)}x</Text>
@@ -123,24 +87,18 @@ export default function CustomizePlaybackModal({
           />
         </Flex>
 
-        {!liteMode && (
+        {advancedStretch && (
           <>
             <Flex direction="column" mb={22} gap={2}>
               <Text size="sm">
-                Pitch: {(effectiveLocked ? semitones : pitchSliderValue) >= 0 ? "+" : ""}
-                {(effectiveLocked ? semitones : pitchSliderValue).toFixed(1)} semitones
-                {effectiveLocked && (
-                  <Text component="span" size="xs" c="dimmed" ml={6}>
-                    (synced to speed)
-                  </Text>
-                )}
+                Pitch: {pitchSliderValue >= 0 ? "+" : ""}
+                {pitchSliderValue.toFixed(1)} semitones
               </Text>
               <Slider
                 min={-12}
                 max={12}
                 step={0.1}
                 thumbSize={20}
-                disabled={effectiveLocked}
                 styles={{
                   thumb: { borderWidth: 0 },
                 }}
@@ -152,8 +110,8 @@ export default function CustomizePlaybackModal({
                   { value: 12, label: "+12" },
                 ]}
                 label={(v) => `${v >= 0 ? "+" : ""}${v.toFixed(1)}`}
-                value={effectiveLocked ? semitones : pitchSliderValue}
-                onChange={effectiveLocked ? () => {} : setPitchSliderValue}
+                value={pitchSliderValue}
+                onChange={setPitchSliderValue}
                 onChangeEnd={(v) => onPitchChangeEnd(v)}
               />
             </Flex>

@@ -4,27 +4,20 @@ import { getSemitonesFromRate } from "@/utils/player";
 const STORAGE_KEY_PREFIX = "moonlit:video:";
 const MAX_STORED_VIDEOS = 50;
 
-/** Derive playback mode from rate value */
 export function getModeFromRate(
   rate: number,
-  semitones: number = 0, // Default for backward compatibility
+  semitones = 0,
 ): "slowed" | "normal" | "speedup" | "custom" {
-  // Normal: rate ~ 1.0
   if (Math.abs(rate - 1) < 0.01 && Math.abs(semitones) < 0.1) return "normal";
-
-  // Check if pitch is synced to speed
   const targetSemitones = getSemitonesFromRate(rate);
   const isSynced = Math.abs(semitones - targetSemitones) < 0.1;
-
   if (isSynced) {
     if (Math.abs(rate - 0.8) < 0.01) return "slowed";
     if (Math.abs(rate - 1.25) < 0.01) return "speedup";
   }
-
   return "custom";
 }
 
-/** Generate storage key from video URL */
 function getVideoStorageKey(url: string): string {
   try {
     const urlObj = new URL(url);
@@ -32,45 +25,33 @@ function getVideoStorageKey(url: string): string {
       const videoId = urlObj.searchParams.get("v") || urlObj.pathname.split("/").pop();
       return `${STORAGE_KEY_PREFIX}yt:${videoId}`;
     }
-    if (urlObj.hostname.includes("tiktok")) {
-      const match = urlObj.pathname.match(/video\/(\d+)/);
-      if (match) return `${STORAGE_KEY_PREFIX}tt:${match[1]}`;
-    }
     return `${STORAGE_KEY_PREFIX}${btoa(url).slice(0, 32)}`;
   } catch {
     return `${STORAGE_KEY_PREFIX}${btoa(url).slice(0, 32)}`;
   }
 }
 
-/** Save video playback state to localStorage */
 export function saveVideoState(url: string, state: Partial<State>): void {
   try {
     const key = getVideoStorageKey(url);
     const existing = getVideoState(url);
-
     const newState: State = {
-      position: state.position ?? existing?.position ?? 0,
       rate: state.rate ?? existing?.rate ?? 1,
       semitones: state.semitones ?? existing?.semitones ?? 0,
       reverbAmount: state.reverbAmount ?? existing?.reverbAmount ?? 0,
-      pitchLockedToSpeed:
-        state.pitchLockedToSpeed ?? existing?.pitchLockedToSpeed ?? false,
       isRepeat: state.isRepeat ?? existing?.isRepeat ?? false,
       volume: state.volume ?? existing?.volume ?? 1,
       lastUpdated: Date.now(),
       lyrics: state.lyrics !== undefined ? state.lyrics : (existing?.lyrics ?? null),
-      videoDisabled:
-        state.videoDisabled !== undefined
-          ? state.videoDisabled
-          : (existing?.videoDisabled ?? false),
       showLyrics:
         state.showLyrics !== undefined
           ? state.showLyrics
           : (existing?.showLyrics ?? false),
-      liteMode:
-        state.liteMode !== undefined ? state.liteMode : (existing?.liteMode ?? true),
+      advancedStretch:
+        state.advancedStretch !== undefined
+          ? state.advancedStretch
+          : (existing?.advancedStretch ?? false),
     };
-
     localStorage.setItem(key, JSON.stringify(newState));
     cleanupOldEntries();
   } catch (e) {
@@ -78,7 +59,6 @@ export function saveVideoState(url: string, state: Partial<State>): void {
   }
 }
 
-/** Get video playback state from localStorage */
 export function getVideoState(url: string): State | null {
   try {
     const key = getVideoStorageKey(url);
@@ -90,11 +70,9 @@ export function getVideoState(url: string): State | null {
   }
 }
 
-/** Remove oldest entries when exceeding storage limit */
 function cleanupOldEntries(): void {
   try {
     const entries: { key: string; lastUpdated: number }[] = [];
-
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i);
       if (key?.startsWith(STORAGE_KEY_PREFIX)) {
@@ -109,12 +87,11 @@ function cleanupOldEntries(): void {
         }
       }
     }
-
     if (entries.length > MAX_STORED_VIDEOS) {
       entries.sort((a, b) => a.lastUpdated - b.lastUpdated);
-      entries.slice(0, entries.length - MAX_STORED_VIDEOS).forEach(({ key }) => {
-        localStorage.removeItem(key);
-      });
+      entries
+        .slice(0, entries.length - MAX_STORED_VIDEOS)
+        .forEach(({ key }) => localStorage.removeItem(key));
     }
   } catch {}
 }

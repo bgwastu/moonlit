@@ -51,15 +51,9 @@ import Icon from "@/components/Icon";
 import LoadingOverlay from "@/components/LoadingOverlay";
 import ResetModal from "@/components/ResetModal";
 import { useAppContext } from "@/context/AppContext";
-import useNoSleep from "@/hooks/useNoSleep";
 import type { Media } from "@/interfaces";
-import {
-  getTikTokCreatorAndVideoId,
-  getYouTubeId,
-  isDirectMediaURL,
-  isTikTokURL,
-  isYoutubeURL,
-} from "@/utils";
+import { getYouTubeId, isDirectMediaURL, isYoutubeURL } from "@/utils";
+import { setMediaCache } from "@/utils/cache";
 
 const LOCAL_FILE_ACCEPT = ["audio/mpeg", "video/mp4", "audio/wav"];
 
@@ -105,22 +99,17 @@ function LocalUpload({ dropzoneMinHeight }: { dropzoneMinHeight: number }) {
   const [fullScreenActive, setFullScreenActive] = useState(false);
   const { setMedia } = useAppContext();
   const { push } = useRouter();
-  const [, noSleep] = useNoSleep();
   const theme = useMantineTheme();
   const isMobile = useMediaQuery(`(max-width: ${theme.breakpoints.sm})`);
 
   const handleDrop = async (files: File[]) => {
     if (!files.length) return;
-    setLoading({ status: true, message: "Saving to library..." });
+    setLoading({ status: true, message: "Loading file..." });
     setFullScreenActive(false);
 
     const fileId = `local-${Date.now()}`;
     const sourceUrl = `local:${fileId}:video`;
-    const [{ setMedia: cacheSetMedia, setMeta }, tags] = await Promise.all([
-      import("@/utils/cache"),
-      convertFileToBuffer(files[0]).then(parse),
-    ]);
-    await cacheSetMedia(sourceUrl, files[0]);
+    const tags = await convertFileToBuffer(files[0]).then(parse);
     const metadata: Media["metadata"] =
       tags !== false
         ? {
@@ -135,11 +124,10 @@ function LocalUpload({ dropzoneMinHeight }: { dropzoneMinHeight: number }) {
           }
         : { id: fileId, title: files[0].name, author: "Unknown", coverUrl: "" };
 
-    await setMeta(`local:${fileId}`, metadata);
+    await setMediaCache(sourceUrl, files[0]);
     setMedia({ fileUrl: URL.createObjectURL(files[0]), sourceUrl, metadata });
     push("/player");
     setLoading({ status: false, message: null });
-    noSleep.enable();
   };
 
   return (
@@ -260,7 +248,7 @@ function SearchPanel({
   const form = useForm({ initialValues: { query: "" } });
   const query = form.values.query.trim();
   const [debouncedQuery] = useDebouncedValue(query, 180);
-  const isLink = isYoutubeURL(query) || isDirectMediaURL(query) || isTikTokURL(query);
+  const isLink = isYoutubeURL(query) || isDirectMediaURL(query);
   const rightSectionWidth = isLink ? (isMobile ? 54 : 64) : isMobile ? 12 : 16;
 
   const showSkeleton =
@@ -278,8 +266,7 @@ function SearchPanel({
     const isPlainTextSearch =
       cleanQuery.length >= 2 &&
       !isYoutubeURL(cleanQuery) &&
-      !isDirectMediaURL(cleanQuery) &&
-      !isTikTokURL(cleanQuery);
+      !isDirectMediaURL(cleanQuery);
 
     setSearchActive(hasQuery && (nextFocused || hasVisibleResults || isPlainTextSearch));
   }
@@ -344,12 +331,7 @@ function SearchPanel({
     const controller = new AbortController();
     const value = debouncedQuery.trim();
 
-    if (
-      value.length < 2 ||
-      isYoutubeURL(value) ||
-      isDirectMediaURL(value) ||
-      isTikTokURL(value)
-    ) {
+    if (value.length < 2 || isYoutubeURL(value) || isDirectMediaURL(value)) {
       queueMicrotask(() => {
         setResults([]);
         setResultsForQuery("");
@@ -375,12 +357,6 @@ function SearchPanel({
     const clean = value.trim();
     if (!clean) return;
 
-    if (isTikTokURL(clean)) {
-      const { creator, videoId } = getTikTokCreatorAndVideoId(clean);
-      if (creator && videoId) push(`/@${creator}/video/${videoId}`);
-      return;
-    }
-
     if (isDirectMediaURL(clean)) {
       push(`/player?url=${encodeURIComponent(clean)}`);
       return;
@@ -396,10 +372,7 @@ function SearchPanel({
     }
 
     const isPlainSearch =
-      clean.length >= 2 &&
-      !isYoutubeURL(clean) &&
-      !isDirectMediaURL(clean) &&
-      !isTikTokURL(clean);
+      clean.length >= 2 && !isYoutubeURL(clean) && !isDirectMediaURL(clean);
     if (isPlainSearch && results.length > 0 && clean === resultsForQuery) {
       onLoadingStart(true);
       push(watchPath(results[0]));
@@ -411,6 +384,20 @@ function SearchPanel({
 
   function watchPath(result: YouTubeResult) {
     const id = getYouTubeId(result.url) ?? result.id;
+    // Store search metadata in sessionStorage so Player can use it immediately
+    try {
+      sessionStorage.setItem(
+        `moonlit-search-meta:${id}`,
+        JSON.stringify({
+          title: result.title,
+          author: result.author,
+          coverUrl: result.thumbnail,
+          duration: result.lengthSeconds,
+        }),
+      );
+    } catch {
+      // sessionStorage may be full or unavailable — proceed without cache
+    }
     return `/watch?v=${id}`;
   }
 
@@ -419,7 +406,7 @@ function SearchPanel({
       <form onSubmit={form.onSubmit((values) => submit(values.query))}>
         <TextInput
           icon={<IconSearch size={isMobile ? 18 : 20} stroke={2.2} />}
-          placeholder="Search YouTube, TikTok, or paste a URL..."
+          placeholder="Search YouTube or paste a URL..."
           size={isMobile ? "md" : "lg"}
           radius="md"
           value={form.values.query}
@@ -430,14 +417,12 @@ function SearchPanel({
             setPendingSearch(
               nextQuery.trim().length >= 2 &&
                 !isYoutubeURL(nextQuery) &&
-                !isDirectMediaURL(nextQuery) &&
-                !isTikTokURL(nextQuery),
+                !isDirectMediaURL(nextQuery),
             );
             if (
               nextQuery.trim().length < 2 ||
               isYoutubeURL(nextQuery) ||
-              isDirectMediaURL(nextQuery) ||
-              isTikTokURL(nextQuery)
+              isDirectMediaURL(nextQuery)
             ) {
               setHasSearched(false);
             }
@@ -838,7 +823,7 @@ export default function UploadPage() {
 
   return (
     <>
-      <LoadingOverlay visible={globalLoading} message="Loading video..." />
+      <LoadingOverlay visible={globalLoading} message="Processing..." />
       <CookiesModal opened={cookiesOpened} onClose={() => setCookiesOpened(false)} />
       <HistoryModal
         opened={historyOpened}
@@ -922,7 +907,7 @@ export default function UploadPage() {
                     })}
                   >
                     Apply slowed + reverb, nightcore, or custom pitch shifts instantly to
-                    YouTube links, TikToks, or local files.
+                    YouTube links or local files.
                   </Text>
                 </Stack>
 

@@ -1,24 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import {
-  Alert,
-  Anchor,
-  Button,
-  Flex,
-  Loader,
-  Modal,
-  Stack,
-  Switch,
-  Text,
-  Textarea,
-} from "@mantine/core";
-import {
-  IconAlertCircle,
-  IconCheck,
-  IconInfoCircle,
-  IconShieldLock,
-} from "@tabler/icons-react";
+import { Button, Flex, Modal, Stack, Switch, Text, Textarea } from "@mantine/core";
 import {
   getUserCookies,
   isCustomCookiesEnabled,
@@ -35,167 +18,78 @@ interface CookiesModalProps {
 export default function CookiesModal({ opened, onClose }: CookiesModalProps) {
   const [cookies, setCookiesState] = useState("");
   const [customEnabled, setCustomEnabled] = useState(false);
-  const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState(false);
 
-  // Load cookies and preferences when modal opens
   useEffect(() => {
     if (!opened) return;
-    const task = Promise.resolve().then(async () => {
-      setLoading(true);
-      setError(null);
-      setSuccess(false);
-
-      try {
-        const [userCookies, isCustom] = await Promise.all([
-          getUserCookies(),
-          isCustomCookiesEnabled(),
-        ]);
-        setCookiesState(userCookies);
-        setCustomEnabled(isCustom);
-      } catch {
-        setError("Failed to load settings");
-      } finally {
-        setLoading(false);
-      }
+    const id = requestAnimationFrame(() => {
+      setCookiesState(getUserCookies());
+      setCustomEnabled(isCustomCookiesEnabled());
     });
-    void task;
+    return () => cancelAnimationFrame(id);
   }, [opened]);
 
   const handleSave = async () => {
     setSaving(true);
-    setError(null);
-    setSuccess(false);
-
     try {
-      // Validate format if custom cookies enabled and user provided cookies
       if (customEnabled && cookies.trim()) {
         const validation = validateCookies(cookies);
         if (!validation.valid) {
-          setError(validation.error || "Invalid cookie format");
           setSaving(false);
           return;
         }
       }
-
-      // Save user cookies and preference
-      await setUserCookies(cookies);
-      await setCustomCookiesEnabled(customEnabled);
-
-      setSuccess(true);
-      setTimeout(() => {
-        onClose();
-      }, 1000);
+      setUserCookies(cookies);
+      setCustomCookiesEnabled(customEnabled);
+      onClose();
     } catch {
-      setError("Failed to save settings");
-    } finally {
       setSaving(false);
     }
   };
 
   return (
-    <Modal opened={opened} onClose={onClose} title="Cookies" size="lg" centered>
+    <Modal opened={opened} onClose={onClose} title="Cookies" size="md" centered>
       <Stack spacing="md">
-        {/* Privacy Notice */}
-        <Alert icon={<IconShieldLock size={16} />} color="gray" variant="light">
-          <Text size="sm">
-            Moonlit <strong>does not store or log</strong> your cookies. They are kept
-            locally in your browser and sent directly for downloads. This app is{" "}
-            <Anchor
-              href="https://github.com/bgwastu/moonlit"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              open-source
-            </Anchor>
-            {" — "}you can self-host for full control.
-          </Text>
-        </Alert>
-
-        {/* Info about cookies */}
-        <Alert icon={<IconInfoCircle size={16} />} color="blue" variant="light">
-          <Text size="sm">
-            Cookies help bypass age restrictions, avoid captchas, and improve download
-            reliability for YouTube and TikTok. Export from your browser using the{" "}
-            <Anchor
-              href="https://chromewebstore.google.com/detail/get-cookiestxt-locally/cclelndahbckbenkjhflpdbgdldlbecc"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              Get cookies.txt LOCALLY extension
-            </Anchor>
-            .
-          </Text>
-        </Alert>
-
-        {/* Custom Cookies Toggle */}
         <Switch
+          labelPosition="left"
           label="Enable custom cookies"
-          description="Use your own cookies for downloads"
+          description={
+            <Text size="xs" c="dimmed">
+              Cookies help bypass age restrictions and rate limits for YouTube. Export
+              from your browser using{" "}
+              <Text
+                component="a"
+                href="https://chromewebstore.google.com/detail/get-cookiestxt-locally/cclelndahbckbenkjhflpdbgdldlbecc"
+                target="_blank"
+                underline
+                inherit
+              >
+                This extension
+              </Text>
+              .
+            </Text>
+          }
           checked={customEnabled}
           onChange={(e) => setCustomEnabled(e.currentTarget.checked)}
-          size="md"
         />
 
-        {/* Cookie input - only shown when custom cookies enabled */}
         {customEnabled && (
-          <>
-            <Text weight={600} size="sm">
-              Your Cookies (Netscape Format)
-            </Text>
-
-            {loading ? (
-              <Flex align="center" justify="center" py="xl">
-                <Loader size="sm" />
-              </Flex>
-            ) : (
-              <Textarea
-                value={cookies}
-                onChange={(e) => setCookiesState(e.currentTarget.value)}
-                placeholder={`# Netscape HTTP Cookie File
-# Paste your exported cookies here
-
-.youtube.com\tTRUE\t/\tTRUE\t0\tCOOKIE_NAME\tCOOKIE_VALUE`}
-                minRows={8}
-                maxRows={12}
-                autosize
-                styles={{
-                  input: {
-                    fontFamily: "monospace",
-                    fontSize: "11px",
-                  },
-                }}
-              />
-            )}
-
-            {!cookies.trim() && (
-              <Text size="xs" color="orange">
-                Custom cookies enabled but no cookies provided. Downloads may fail for
-                age-restricted content or encounter rate limits.
-              </Text>
-            )}
-          </>
-        )}
-
-        {error && (
-          <Alert icon={<IconAlertCircle size={16} />} color="red" variant="light">
-            {error}
-          </Alert>
-        )}
-
-        {success && (
-          <Alert icon={<IconCheck size={16} />} color="green" variant="light">
-            Saved successfully!
-          </Alert>
+          <Textarea
+            value={cookies}
+            onChange={(e) => setCookiesState(e.currentTarget.value)}
+            placeholder="Paste your exported cookies.txt here..."
+            minRows={6}
+            maxRows={10}
+            autosize
+            styles={{ input: { fontFamily: "monospace", fontSize: "11px" } }}
+          />
         )}
 
         <Flex gap="sm" justify="flex-end">
           <Button variant="default" onClick={onClose} disabled={saving}>
             Cancel
           </Button>
-          <Button onClick={handleSave} loading={saving} disabled={loading}>
+          <Button onClick={handleSave} loading={saving}>
             Save
           </Button>
         </Flex>

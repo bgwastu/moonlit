@@ -1,7 +1,11 @@
+"use client";
+
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { SiTiktok, SiYoutube, SiYoutubemusic } from "@icons-pack/react-simple-icons";
+import { useRouter } from "next/navigation";
+import { SiYoutube } from "@icons-pack/react-simple-icons";
+import { generateColors } from "@mantine/colors-generator";
 import {
   ActionIcon,
   Box,
@@ -13,6 +17,7 @@ import {
   MantineProvider,
   MediaQuery,
   Menu,
+  Progress,
   SegmentedControl,
   Slider,
   Text,
@@ -20,17 +25,17 @@ import {
   useMantineTheme,
 } from "@mantine/core";
 import { useDisclosure, useHotkeys, useMediaQuery } from "@mantine/hooks";
+import { notifications } from "@mantine/notifications";
 import {
   IconAdjustments,
   IconChevronsLeft,
   IconChevronsRight,
   IconDownload,
   IconExternalLink,
-  IconFileMusic,
   IconHome,
   IconMenu2,
-  IconMicrophone2,
   IconMusic,
+  IconPlayerPauseFilled,
   IconPlayerPlay,
   IconPlayerPlayFilled,
   IconPlayerTrackNextFilled,
@@ -39,40 +44,31 @@ import {
   IconRepeatOff,
   IconRewindBackward5,
   IconRewindForward5,
-  IconVideo,
-  IconVideoOff,
   IconVolume,
   IconVolume2,
   IconVolume3,
   IconVolumeOff,
 } from "@tabler/icons-react";
-import { Pause } from "lucide-react";
-import AmbientCanvas from "@/components/AmbientCanvas";
-import LoadingOverlay from "@/components/LoadingOverlay";
+import { useAppContext } from "@/context/AppContext";
 import { useDominantColor } from "@/hooks/useDominantColor";
 import { useLyrics } from "@/hooks/useLyrics";
-import { useMediaSession } from "@/hooks/useMediaSession";
 import { usePlayerTapGestures } from "@/hooks/usePlayerTapGestures";
 import { useStretchPlayer } from "@/hooks/useStretchPlayer";
-import { useToast } from "@/hooks/useToast";
-import { useVideoStatePersistence } from "@/hooks/useVideoStatePersistence";
-import { Media } from "@/interfaces";
-import { LyricsSettings } from "@/interfaces";
-import { LyricsSearchRecord, stripVideoTitleFiller } from "@/lib/lyrics";
-import { getModeFromRate, getVideoState } from "@/lib/videoState";
-import { saveVideoState } from "@/lib/videoState";
-import { getFormattedTime, getPlatform } from "@/utils";
+import { HistoryItem, LyricsSettings, Media } from "@/interfaces";
+import { stripVideoTitleFiller } from "@/lib/lyrics";
+import { getModeFromRate, getVideoState, saveVideoState } from "@/lib/videoState";
+import { getFormattedTime, getYouTubeId, isSupportedURL } from "@/utils";
 import {
   createDynamicTheme,
   getOriginalPlatformUrl,
   getSemitonesFromRate,
-  getYouTubeMusicUrl,
 } from "@/utils/player";
+import { StreamState, streamWithProgress } from "@/utils/streamer";
 import CustomizePlaybackModal from "./CustomizePlaybackModal";
 import DownloadModal from "./DownloadModal";
+import LoadingOverlay from "./LoadingOverlay";
+import LyricsModal from "./LyricsModal";
 import LyricsPanel from "./LyricsPanel";
-import LyricsSearchModal from "./LyricsSearchModal";
-import LyricsSettingsModal from "./LyricsSettingsModal";
 
 type PlaybackMode = "slowed" | "normal" | "speedup" | "custom";
 
@@ -90,12 +86,134 @@ const PLAYBACK_MODE_ICONS: Record<PlaybackMode, ReactNode> = {
   custom: <IconAdjustments size={24} />,
 };
 
-export function Player({ media, repeating }: { media: Media; repeating: boolean }) {
+function getPrepopulatedMetadata(
+  url: string,
+): Record<string, string | number> | undefined {
+  try {
+    const id = url.match(
+      /^.*(?:youtu\.be\/|v\/|vi\/|u\/\w\/|embed\/|shorts\/|watch\?v=|\&v=)([^#\&\?]*).*/,
+    )?.[1];
+    if (!id) return undefined;
+    const stored = sessionStorage.getItem(`moonlit-search-meta:${id}`);
+    if (!stored) return undefined;
+    const parsed = JSON.parse(stored);
+    sessionStorage.removeItem(`moonlit-search-meta:${id}`);
+    return parsed;
+  } catch {
+    return undefined;
+  }
+}
+
+export function Player({
+  url,
+  duration: propDuration,
+  metadataLoadError: propMetadataLoadError,
+  media: propMedia,
+  repeating,
+}: {
+  url?: string;
+  duration?: number;
+  metadataLoadError?: string;
+  media?: Media;
+  repeating?: boolean;
+}) {
+  const router = useRouter();
   const theme = useMantineTheme();
   const isMobile = useMediaQuery("(max-width: 1024px)");
+  const { media: contextMedia, history, setHistory } = useAppContext();
+
+  // Phase management: extracting while URL is being resolved, then playing
+  const [extractedMedia, setExtractedMedia] = useState<Media | null>(null);
+  const [streamState, setStreamState] = useState<StreamState>({ status: "idle" });
+  const streamStarted = useRef(false);
+  const audioErrorCount = useRef(0);
+
+  // Check for pre-populated metadata from search results (sessionStorage)
+  const initialMeta = useMemo(
+    () => (url ? getPrepopulatedMetadata(url) : undefined),
+    [url],
+  );
+
+  // Derive provisional media from pre-populated metadata (sessionStorage).
+  // This is NOT state — it's a derived value that lets the UI show content
+  // immediately while the real extraction runs in background.
+  const provisionalMedia = useMemo<Media | null>(() => {
+    if (!url || !initialMeta) return null;
+    const ytId = getYouTubeId(url);
+    return {
+      fileUrl: "",
+      sourceUrl: url,
+      metadata: {
+        id: ytId || null,
+        title: (initialMeta.title as string) || "Unknown",
+        author: (initialMeta.author as string) || "Unknown",
+        artist: (initialMeta.artist as string) || undefined,
+        album: (initialMeta.album as string) || undefined,
+        coverUrl: initialMeta.coverUrl
+          ? `/api/cover?url=${encodeURIComponent(initialMeta.coverUrl as string)}`
+          : "",
+      },
+    };
+  }, [url, initialMeta]);
+
+  const media = useMemo(
+    () => propMedia || extractedMedia || provisionalMedia || (url ? null : contextMedia),
+    [propMedia, extractedMedia, provisionalMedia, url, contextMedia],
+  );
+  const metadataLoadError = propMetadataLoadError;
+  // Show extracting UI only when we have a URL and absolutely no media of any kind
+  const isExtracting = !media && !!url;
+
+  // Inlined extraction logic (was in InitialPlayer + useMediaStreamer)
+  const startStream = useCallback(() => {
+    if (!url || !isSupportedURL(url)) {
+      notifications.show({ title: "Error", message: "Invalid URL provided." });
+      return () => {};
+    }
+    setStreamState({ status: "idle" });
+    const abortController = new AbortController();
+    const updateStreamState = (next: StreamState) => {
+      setStreamState((prev) => ({ ...prev, ...next }));
+    };
+    streamWithProgress(url, updateStreamState, abortController.signal)
+      .then((streamedMedia: Media) => {
+        setExtractedMedia(streamedMedia);
+      })
+      .catch((e) => {
+        if (e.name === "AbortError") return;
+        console.error("Stream error:", e);
+        const message = e.message || "Could not process the media.";
+        setStreamState({ status: "error", message });
+        notifications.show({
+          title: "Stream failed",
+          message: `${message} Try configuring cookies from a logged-in account in the app settings if the problem persists.`,
+          color: "red",
+          autoClose: 10000,
+        });
+      });
+    return () => abortController.abort();
+  }, [url]);
+
+  // Auto-start stream for URL mode — check extractedMedia, not media (which includes provisionalMedia)
+  useEffect(() => {
+    if (extractedMedia || metadataLoadError || streamStarted.current) return;
+    if (!url) return;
+    streamStarted.current = true;
+    setTimeout(() => startStream(), 0);
+  }, [url, metadataLoadError, extractedMedia, startStream]);
+
+  // Add to history when playback starts (media excluded intentionally — it changes reference on every render)
+  useEffect(() => {
+    if (!media) return;
+    setHistory((prev) => {
+      const filtered = prev.filter((item) => item.sourceUrl !== media.sourceUrl);
+      const newItem: HistoryItem = { ...media, playedAt: Date.now() };
+      return [newItem, ...filtered].slice(0, 50);
+    });
+  }, [media?.sourceUrl, setHistory]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Use sourceUrl from media state
-  const sourceUrl = media.sourceUrl;
+  const sourceUrl = media?.sourceUrl ?? url ?? "";
 
   // Load saved state
   const savedState = useMemo(() => getVideoState(sourceUrl), [sourceUrl]);
@@ -106,41 +224,67 @@ export function Player({ media, repeating }: { media: Media; repeating: boolean 
   const [playbackMode, setPlaybackMode] = useState<PlaybackMode>(
     getModeFromRate(initialRate, initialSemitones),
   );
-  const initialStartAt = savedState?.position ?? 0;
+  const initialStartAt = 0;
   const [stateLoaded, setStateLoaded] = useState(false);
-  const [isAudioOnly, setIsAudioOnly] = useState(false);
-  const [videoAspectRatio, setVideoAspectRatio] = useState<number>(16 / 9);
-  const [isRepeat, setIsRepeat] = useState(savedState?.isRepeat ?? repeating);
-  const [pitchLockedToSpeed, setPitchLockedToSpeed] = useState(
-    savedState?.pitchLockedToSpeed ?? false,
-  );
-  const [videoDisabled, setVideoDisabled] = useState(savedState?.videoDisabled ?? false);
+  const [isRepeat, setIsRepeat] = useState(savedState?.isRepeat ?? repeating ?? false);
 
-  // Lite mode: native playback only (much more stable); default on for everyone
-  const [liteMode, setLiteMode] = useState(() => savedState?.liteMode ?? true);
-  useEffect(() => {
-    const id = requestAnimationFrame(() => {
-      setLiteMode(savedState?.liteMode ?? true);
-    });
-    return () => cancelAnimationFrame(id);
-  }, [sourceUrl, savedState?.liteMode]);
+  // Per-mode state: remember rate+semitones for each mode independently
+  const [slowedRate, setSlowedRate] = useState(0.8);
+  const [normalRate, setNormalRate] = useState(1);
+  const [speedupRate, setSpeedupRate] = useState(1.25);
+  const [customRate, setCustomRate] = useState(initialRate);
+  const [customSemitones, setCustomSemitones] = useState(initialSemitones);
 
   // Volume UI state (actual volume is managed by useStretchPlayer)
   const [isMuted, setIsMuted] = useState(false);
   const [isVolumeHovered, setIsVolumeHovered] = useState(false);
   const previousVolumeRef = useRef(savedState?.volume ?? 1);
-  const pitchLockedToSpeedRef = useRef(pitchLockedToSpeed);
+
+  const [advancedStretch, setAdvancedStretch] = useState(
+    savedState?.advancedStretch ?? false,
+  );
 
   const [showLyrics, setShowLyrics] = useState(savedState?.showLyrics ?? false);
   const [lyricsSettings, setLyricsSettings] = useState<LyricsSettings | null>(
     savedState?.lyrics ?? null,
   );
-  const [lyricsSearchModalOpened, setLyricsSearchModalOpened] = useState(false);
-  const [lyricsSettingsModalOpened, setLyricsSettingsModalOpened] = useState(false);
-  const autoOpenedLyricsSearchForRef = useRef<string | null>(null);
+  const [lyricsModalOpened, setLyricsModalOpened] = useState(false);
 
-  const dominantColor = useDominantColor(media.metadata.coverUrl);
-  const { toast, showToast } = useToast();
+  const dominantColor = useDominantColor(media?.metadata.coverUrl);
+  const barColor = useMemo(() => {
+    if (!dominantColor) return theme.colors.violet[5];
+    return generateColors(dominantColor)[5];
+  }, [dominantColor, theme.colors.violet]);
+  const coverUrl = media?.metadata.coverUrl;
+
+  // Set document title to current track name
+  useEffect(() => {
+    const title = media?.metadata.title;
+    document.title = title ? `${title} | Moonlit` : "Moonlit";
+  }, [media?.metadata.title]);
+
+  // Sync dominant color as CSS variable
+  useEffect(() => {
+    document.body.style.setProperty("--dominant-color", dominantColor || "transparent");
+  }, [dominantColor]);
+
+  // Inlined useToast
+  const [toast, setToast] = useState<{
+    message: React.ReactNode;
+    visible: boolean;
+    isCircular?: boolean;
+  }>({
+    message: null,
+    visible: false,
+  });
+  const toastTimeoutRef = useRef<NodeJS.Timeout | undefined>(undefined);
+  const showToast = useCallback((message: React.ReactNode, isCircular?: boolean) => {
+    if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
+    setToast({ message, visible: true, isCircular });
+    toastTimeoutRef.current = setTimeout(() => {
+      setToast((prev) => ({ ...prev, visible: false }));
+    }, 1200);
+  }, []);
 
   // Initialize state loaded flag
   useEffect(() => {
@@ -148,13 +292,19 @@ export function Player({ media, repeating }: { media: Media; repeating: boolean 
     return () => cancelAnimationFrame(id);
   }, []);
 
-  // Unified player (video + audio processing)
+  // Re-extract when audio fails to load (stream URL may have expired)
+  const handleAudioError = useCallback(() => {
+    if (audioErrorCount.current >= 1) return;
+    audioErrorCount.current++;
+    setExtractedMedia(null);
+    streamStarted.current = false;
+    setStreamState({ status: "idle" });
+    setTimeout(() => startStream(), 500);
+  }, [startStream]);
+
+  // Unified player (audio + DSP processing)
   const {
-    // Video
-    videoRef,
-    videoElement,
-    isVideoReady,
-    // State
+    audioRef,
     state: stretchState,
     isPlaying,
     currentTime,
@@ -163,6 +313,8 @@ export function Player({ media, repeating }: { media: Media; repeating: boolean 
     semitones,
     reverbAmount,
     volume,
+    progress,
+    isNativeFallback,
     // Controls
     play,
     pause,
@@ -170,206 +322,344 @@ export function Player({ media, repeating }: { media: Media; repeating: boolean 
     setRate,
     setSemitones,
     setReverbAmount,
+    buffered,
+    isWaiting,
     setVolume,
     seek,
   } = useStretchPlayer({
-    fileUrl: media.fileUrl,
-    liteMode,
+    fileUrl: media?.fileUrl || "",
+    advancedStretch,
     initialRate: initialRate,
     initialSemitones: savedState?.semitones ?? 0,
     initialReverbAmount: savedState?.reverbAmount ?? 0,
     initialVolume: savedState?.volume ?? 1,
     initialPosition: stateLoaded ? initialStartAt : 0,
     isRepeat,
+    autoPlay: false,
+    onError: handleAudioError,
   });
+
+  // Try autoplay when media and audio are ready
+  const autoPlayedRef = useRef(false);
+  useEffect(() => {
+    if (!media || stretchState !== "ready" || autoPlayedRef.current) return;
+    autoPlayedRef.current = true;
+    const id = setTimeout(async () => {
+      try {
+        await play();
+      } catch {}
+    }, 100);
+    return () => clearTimeout(id);
+  }, [media, stretchState, play]);
+
+  const applyLyricsSettings = useCallback(
+    (
+      d: {
+        id: number;
+        trackName: string;
+        artistName: string;
+        albumName?: string;
+        syncedLyrics: string;
+      },
+      extra?: () => void,
+    ) => {
+      const newSettings: LyricsSettings = {
+        id: d.id,
+        syncedLyrics: d.syncedLyrics,
+        trackName: d.trackName,
+        artistName: d.artistName,
+        albumName: d.albumName,
+        offset: 0,
+      };
+      setLyricsSettings(newSettings);
+      saveVideoState(sourceUrl, { lyrics: newSettings });
+      extra?.();
+    },
+    [sourceUrl],
+  );
+
+  const onLyricsDiscover = useCallback(
+    (d: Parameters<typeof applyLyricsSettings>[0]) => applyLyricsSettings(d),
+    [applyLyricsSettings],
+  );
 
   const {
     lyrics,
     state: lyricsState,
     error: lyricsError,
-    discoveredLyrics,
     searchResults,
   } = useLyrics({
-    trackName: media.metadata.title,
-    artistName: media.metadata.artist ?? media.metadata.author,
+    trackName: media?.metadata.title || "",
+    artistName: (media?.metadata.artist ?? media?.metadata.author) || "",
     durationSeconds: duration,
-    enabled: showLyrics && duration > 0,
+    enabled: duration > 0,
     selectedSyncedLyrics: lyricsSettings?.syncedLyrics,
     offsetSeconds: lyricsSettings?.offset ?? 0,
+    onDiscover: onLyricsDiscover,
   });
 
-  // Populate lyricsSettings when lyrics are auto-discovered
-  useEffect(() => {
-    if (!discoveredLyrics || lyricsSettings) return;
-    const id = requestAnimationFrame(() => {
-      const newSettings: LyricsSettings = {
-        id: discoveredLyrics.id,
-        syncedLyrics: discoveredLyrics.syncedLyrics,
-        trackName: discoveredLyrics.trackName,
-        artistName: discoveredLyrics.artistName,
-        albumName: discoveredLyrics.albumName,
-        offset: 0,
-      };
-      setLyricsSettings(newSettings);
-      saveVideoState(sourceUrl, { lyrics: newSettings });
-    });
-    return () => cancelAnimationFrame(id);
-  }, [discoveredLyrics, lyricsSettings, sourceUrl]);
-
-  // Whether lyrics are available (either discovered or manually selected)
-  const hasLyrics = lyricsState === "ready" && lyrics.length > 0;
-
-  // If automatic lyrics discovery fails, immediately show the manual search modal.
-  useEffect(() => {
-    if (!showLyrics || lyricsState !== "not_found" || !duration) return;
-    if (autoOpenedLyricsSearchForRef.current === sourceUrl) return;
-
-    autoOpenedLyricsSearchForRef.current = sourceUrl;
-    setLyricsSearchModalOpened(true);
-  }, [duration, lyricsState, showLyrics, sourceUrl]);
-
-  // Lyrics handlers
-  const handleSelectLyrics = useCallback(
-    (record: LyricsSearchRecord) => {
-      const newSettings: LyricsSettings = {
-        id: record.id,
-        syncedLyrics: record.syncedLyrics,
-        trackName: record.trackName,
-        artistName: record.artistName,
-        albumName: record.albumName,
-        offset: 0,
-      };
-      setLyricsSettings(newSettings);
-      saveVideoState(sourceUrl, { lyrics: newSettings });
-      setLyricsSearchModalOpened(false);
+  const handleOffsetChange = useCallback(
+    (offset: number) => {
+      setLyricsSettings((prev) => {
+        const updated = prev ? { ...prev, offset } : null;
+        saveVideoState(sourceUrl, { lyrics: updated });
+        return updated;
+      });
     },
     [sourceUrl],
   );
 
-  const handleLyricsOffsetChange = useCallback(
-    (offset: number) => {
-      setLyricsSettings((prev) => (prev ? { ...prev, offset } : null));
-      saveVideoState(sourceUrl, {
-        lyrics: lyricsSettings ? { ...lyricsSettings, offset } : null,
-      });
-    },
-    [sourceUrl, lyricsSettings],
-  );
-
-  const isLoading = stretchState === "loading";
+  const isLoading = stretchState === "loading" || isWaiting;
   const isReady = stretchState === "ready";
   const isEnded =
     stretchState === "ready" &&
     currentTime >= duration - 0.05 &&
     duration > 0 &&
+    !isWaiting &&
     !isPlaying &&
     !isRepeat;
 
-  const handleLiteModeChange = useCallback(
+  const handleAdvancedStretchChange = useCallback(
     (enabled: boolean) => {
-      setLiteMode(enabled);
-      saveVideoState(sourceUrl, { liteMode: enabled });
+      setAdvancedStretch(enabled);
+      saveVideoState(sourceUrl, { advancedStretch: enabled });
     },
     [sourceUrl],
   );
+
+  const handleReset = useCallback(() => {
+    setRate(1);
+    setSemitones(0);
+    setReverbAmount(0);
+    setVolume(1);
+    setPlaybackMode("normal");
+    setSlowedRate(0.8);
+    setNormalRate(1);
+    setSpeedupRate(1.25);
+    setCustomRate(1);
+    setCustomSemitones(0);
+  }, [setRate, setSemitones, setReverbAmount, setVolume]);
+
+  function toastContent(icon: React.ReactNode, text: React.ReactNode) {
+    return (
+      <Flex align="center" gap="xs">
+        {icon}
+        <Text weight={600}>{text}</Text>
+      </Flex>
+    );
+  }
 
   // Media session (browser controls)
   const handleBackward = useCallback(() => {
     const newTime = Math.max(0, currentTime - 5);
     seek(newTime);
-    showToast(
-      <Flex align="center" gap="xs">
-        <IconRewindBackward5 size={24} />
-        <Text weight={600}>-5s</Text>
-      </Flex>,
-    );
+    showToast(toastContent(<IconRewindBackward5 size={24} />, "-5s"));
   }, [currentTime, seek, showToast]);
 
   const handleForward = useCallback(() => {
     const newTime = Math.min(duration, currentTime + 5);
     seek(newTime);
-    showToast(
-      <Flex align="center" gap="xs">
-        <IconRewindForward5 size={24} />
-        <Text weight={600}>+5s</Text>
-      </Flex>,
-    );
+    showToast(toastContent(<IconRewindForward5 size={24} />, "+5s"));
   }, [currentTime, duration, seek, showToast]);
 
-  useMediaSession({
-    media,
-    isPlaying,
-    currentTime,
-    duration,
-    rate,
-    onPlay: play,
-    onPause: pause,
-    onSeekBackward: handleBackward,
-    onSeekForward: handleForward,
-    onSeek: seek,
-  });
+  // Inlined useMediaSession
+  useEffect(() => {
+    if (!media || !("mediaSession" in navigator)) return;
 
-  // Video state persistence (lyrics are saved separately on change)
-  useVideoStatePersistence({
-    sourceUrl,
-    currentTime,
+    const highResCover = coverUrl;
+
+    navigator.mediaSession.metadata = new MediaMetadata({
+      title: media.metadata.title,
+      artist: media.metadata.artist ?? media.metadata.author,
+      album: media.metadata.album ?? "",
+      artwork: [{ src: highResCover, sizes: "512x512", type: "image/jpeg" }],
+    });
+
+    navigator.mediaSession.setActionHandler("play", () => play());
+    navigator.mediaSession.setActionHandler("pause", () => pause());
+    navigator.mediaSession.setActionHandler("seekbackward", () => handleBackward());
+    navigator.mediaSession.setActionHandler("seekforward", () => handleForward());
+    navigator.mediaSession.setActionHandler("previoustrack", () => handleBackward());
+    navigator.mediaSession.setActionHandler("nexttrack", () => handleForward());
+    try {
+      navigator.mediaSession.setActionHandler("seekto", (details) => {
+        if (details.seekTime !== undefined) seek(details.seekTime);
+      });
+    } catch {}
+
+    return () => {
+      for (const a of [
+        "play",
+        "pause",
+        "seekbackward",
+        "seekforward",
+        "previoustrack",
+        "nexttrack",
+      ]) {
+        navigator.mediaSession.setActionHandler(a as MediaSessionAction, null);
+      }
+      try {
+        navigator.mediaSession.setActionHandler("seekto", null);
+      } catch {}
+    };
+  }, [media, coverUrl, play, pause, handleBackward, handleForward, seek]);
+
+  // Inlined useVideoStatePersistence
+  const lastSaveRef = useRef<number>(0);
+  useEffect(() => {
+    if (!stateLoaded || !isReady) return;
+    const now = Date.now();
+    if (now - lastSaveRef.current < 5000) return;
+    lastSaveRef.current = now;
+    saveVideoState(sourceUrl, {
+      rate,
+      semitones,
+      reverbAmount,
+      isRepeat,
+      volume,
+      showLyrics,
+      advancedStretch,
+    });
+  }, [
     rate,
     semitones,
     reverbAmount,
-    pitchLockedToSpeed,
     isRepeat,
     volume,
-    isReady,
+    sourceUrl,
     stateLoaded,
-    videoDisabled,
+    isReady,
     showLyrics,
-    liteMode,
-  });
+    advancedStretch,
+  ]);
 
-  // Keep ref in sync so rate-change handler always sees current lock state
+  // Wake Lock API: keep screen on during playback
+  const wakeLockRef = useRef<WakeLockSentinel | null>(null);
   useEffect(() => {
-    pitchLockedToSpeedRef.current = pitchLockedToSpeed;
-  }, [pitchLockedToSpeed]);
-
-  // Sync media dimensions (audio-only vs video with aspect ratio)
-  useEffect(() => {
-    if (!videoElement) return;
-
-    const sync = () => {
-      const { videoWidth, videoHeight } = videoElement;
-      const audioOnly = videoWidth === 0 && videoHeight === 0;
-      setIsAudioOnly(audioOnly);
-      if (!audioOnly && videoWidth && videoHeight) {
-        setVideoAspectRatio(videoWidth / videoHeight);
-      }
+    const acquireWakeLock = async () => {
+      try {
+        if (wakeLockRef.current) return;
+        wakeLockRef.current = await navigator.wakeLock.request("screen");
+      } catch {}
+    };
+    const releaseWakeLock = async () => {
+      try {
+        await wakeLockRef.current?.release();
+      } catch {}
+      wakeLockRef.current = null;
     };
 
-    if (videoElement.readyState >= 1) sync();
-    videoElement.addEventListener("loadedmetadata", sync);
-    return () => videoElement.removeEventListener("loadedmetadata", sync);
-  }, [videoElement]);
+    if (isPlaying && stateLoaded) acquireWakeLock();
+    else releaseWakeLock();
+
+    return () => {
+      releaseWakeLock();
+    };
+  }, [isPlaying, stateLoaded]);
+
+  useEffect(() => {
+    const saveState = () => {
+      if (!stateLoaded) return;
+      saveVideoState(sourceUrl, {
+        rate,
+        semitones,
+        reverbAmount,
+        isRepeat,
+        volume,
+        showLyrics,
+        advancedStretch,
+      });
+    };
+    const handler = () => {
+      if (document.hidden) saveState();
+    };
+    window.addEventListener("beforeunload", saveState);
+    document.addEventListener("visibilitychange", handler);
+    return () => {
+      saveState();
+      window.removeEventListener("beforeunload", saveState);
+      document.removeEventListener("visibilitychange", handler);
+    };
+  }, [
+    rate,
+    semitones,
+    reverbAmount,
+    isRepeat,
+    volume,
+    sourceUrl,
+    stateLoaded,
+    showLyrics,
+    advancedStretch,
+  ]);
 
   // Modal controls
   const [modalOpened, { open: openModal, close: closeModal }] = useDisclosure(false);
   const [downloadModalOpened, { open: openDownloadModal, close: closeDownloadModal }] =
     useDisclosure(false);
 
-  // Seeking state
-  const [isSeeking, setIsSeeking] = useState(false);
-  const [seekPosition, setSeekPosition] = useState(0);
+  const [seekPosition, setSeekPosition] = useState<number | null>(null);
+  const seekPositionRef = useRef<number | null>(null);
+  const [isSeekTrackHovered, setIsSeekTrackHovered] = useState(false);
 
   const handleSliderChange = useCallback((value: number) => {
+    if (process.env.NODE_ENV !== "production") {
+      console.debug("[Player slider] onChange", value);
+    }
+    seekPositionRef.current = value;
     setSeekPosition(value);
-    setIsSeeking(true);
   }, []);
 
-  const handleSeekChange = useCallback(
+  const handleSeekEnd = useCallback(
     (value: number) => {
-      setIsSeeking(false);
-      seek(value);
-      play(value); // Always resume after seeking, force start at seek time
+      const finalPosition = seekPositionRef.current ?? value;
+      if (process.env.NODE_ENV !== "production") {
+        console.debug("[Player slider] onChangeEnd", {
+          callbackValue: value,
+          latestPosition: seekPositionRef.current,
+          finalPosition,
+        });
+      }
+      seek(finalPosition);
+      seekPositionRef.current = null;
+      setSeekPosition(null);
     },
-    [seek, play],
+    [seek],
+  );
+
+  const seekTrackRef = useRef<HTMLDivElement>(null);
+  const handleTrackPointerDown = useCallback(
+    (event: React.PointerEvent<HTMLDivElement>) => {
+      if (event.button !== 0 || duration <= 0) return;
+      const track = seekTrackRef.current;
+      if (!track) return;
+
+      event.preventDefault();
+      event.stopPropagation();
+      track.setPointerCapture?.(event.pointerId);
+
+      const updatePosition = (clientX: number) => {
+        const rect = track.getBoundingClientRect();
+        const ratio = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+        const value = Math.round(ratio * duration * 10) / 10;
+        handleSliderChange(value);
+        return value;
+      };
+
+      updatePosition(event.clientX);
+      const onMove = (moveEvent: PointerEvent) => {
+        updatePosition(moveEvent.clientX);
+      };
+      const onUp = (upEvent: PointerEvent) => {
+        const value = updatePosition(upEvent.clientX);
+        handleSeekEnd(value);
+        document.removeEventListener("pointermove", onMove);
+        document.removeEventListener("pointerup", onUp);
+      };
+
+      document.addEventListener("pointermove", onMove);
+      document.addEventListener("pointerup", onUp, { once: true });
+    },
+    [duration, handleSeekEnd, handleSliderChange],
   );
 
   const handleTogglePlayer = useCallback(() => {
@@ -380,7 +670,7 @@ export function Player({ media, repeating }: { media: Media; repeating: boolean 
     } else {
       togglePlayback();
       if (isPlaying) {
-        showToast(<Pause size={40} fill="currentColor" />, true);
+        showToast(<IconPlayerPauseFilled size={40} />, true);
       } else {
         showToast(<IconPlayerPlayFilled size={40} />, true);
       }
@@ -390,89 +680,73 @@ export function Player({ media, repeating }: { media: Media; repeating: boolean 
   const handleRateChange = useCallback(
     (newRate: number) => {
       setRate(newRate);
-      let effectiveSemitones = semitones;
-
-      if (pitchLockedToSpeedRef.current) {
-        effectiveSemitones = getSemitonesFromRate(newRate);
-        setSemitones(effectiveSemitones);
-      }
-
-      // Update mode based on rate AND pitch
-      setPlaybackMode(getModeFromRate(newRate, effectiveSemitones));
+      // Save rate per current mode
+      const mode = getModeFromRate(newRate, semitones);
+      if (mode === "slowed") setSlowedRate(newRate);
+      else if (mode === "normal") setNormalRate(newRate);
+      else if (mode === "speedup") setSpeedupRate(newRate);
+      else setCustomRate(newRate);
+      setPlaybackMode(mode);
     },
-    [setRate, setSemitones, semitones],
+    [setRate, semitones],
   );
 
   const handleSemitonesChange = useCallback(
     (newSemitones: number) => {
-      if (!pitchLockedToSpeed) setSemitones(newSemitones);
+      setSemitones(newSemitones);
+      if (playbackMode === "custom") setCustomSemitones(newSemitones);
     },
-    [pitchLockedToSpeed, setSemitones],
-  );
-
-  const handleLockToggle = useCallback(
-    (locked: boolean) => {
-      setPitchLockedToSpeed(locked);
-      if (locked) {
-        const syncedSemitones = getSemitonesFromRate(rate);
-        setSemitones(syncedSemitones);
-        setPlaybackMode(getModeFromRate(rate, syncedSemitones));
-      } else {
-        setPlaybackMode(getModeFromRate(rate, semitones));
-      }
-    },
-    [rate, semitones, setSemitones],
+    [setSemitones, playbackMode],
   );
 
   const handlePlaybackModeChange = useCallback(
     (mode: PlaybackMode) => {
       setPlaybackMode(mode);
-      let newRate = rate;
-      let newSemitones = semitones;
+      let newRate: number;
+      let newSemitones: number;
 
       if (mode === "slowed") {
-        newRate = 0.8;
-        newSemitones = getSemitonesFromRate(0.8);
+        newRate = slowedRate;
+        newSemitones = getSemitonesFromRate(newRate);
       } else if (mode === "normal") {
-        newRate = 1;
+        newRate = normalRate;
         newSemitones = 0;
       } else if (mode === "speedup") {
-        newRate = 1.25;
-        newSemitones = getSemitonesFromRate(1.25);
+        newRate = speedupRate;
+        newSemitones = getSemitonesFromRate(newRate);
+      } else {
+        newRate = customRate;
+        newSemitones = customSemitones;
       }
 
-      if (mode !== "custom") {
-        setRate(newRate);
-        setSemitones(newSemitones);
-        showToast(
-          <Flex align="center" gap="xs">
-            {PLAYBACK_MODE_ICONS[mode]}
-            <Text weight={600}>
-              {PLAYBACK_MODE_LABELS[mode]} ({newRate.toFixed(2)}x)
-            </Text>
-          </Flex>,
-        );
-      } else {
-        showToast(
-          <Flex align="center" gap="xs">
-            {PLAYBACK_MODE_ICONS.custom}
-            <Text weight={600}>
-              {PLAYBACK_MODE_LABELS.custom} ({rate.toFixed(2)}x)
-            </Text>
-          </Flex>,
-        );
-      }
+      setRate(newRate);
+      setSemitones(newSemitones);
+      showToast(
+        toastContent(
+          PLAYBACK_MODE_ICONS[mode],
+          `${PLAYBACK_MODE_LABELS[mode]} (${newRate.toFixed(2)}x)`,
+        ),
+      );
     },
-    [rate, semitones, setRate, setSemitones, showToast],
+    [
+      slowedRate,
+      normalRate,
+      speedupRate,
+      customRate,
+      customSemitones,
+      setRate,
+      setSemitones,
+      showToast,
+    ],
   );
 
   const toggleLoop = useCallback(() => {
     setIsRepeat(!isRepeat);
     showToast(
-      <Flex align="center" gap="xs">
-        {!isRepeat ? <IconRepeat size={24} /> : <IconRepeatOff size={24} />}
-        <Text weight={600}>{!isRepeat ? "Repeat On" : "Repeat Off"}</Text>
-      </Flex>,
+      toastContent(
+        !isRepeat ? <IconRepeat size={24} /> : <IconRepeatOff size={24} />,
+        !isRepeat ? "Repeat On" : "Repeat Off",
+      ),
     );
   }, [isRepeat, showToast]);
 
@@ -482,22 +756,12 @@ export function Player({ media, repeating }: { media: Media; repeating: boolean 
       const newVol = previousVolumeRef.current > 0 ? previousVolumeRef.current : 1;
       setVolume(newVol);
       setIsMuted(false);
-      showToast(
-        <Flex align="center" gap="xs">
-          <IconVolume3 size={24} />
-          <Text weight={600}>Unmuted</Text>
-        </Flex>,
-      );
+      showToast(toastContent(<IconVolume3 size={24} />, "Unmuted"));
     } else {
       previousVolumeRef.current = volume;
       setVolume(0);
       setIsMuted(true);
-      showToast(
-        <Flex align="center" gap="xs">
-          <IconVolumeOff size={24} />
-          <Text weight={600}>Muted</Text>
-        </Flex>,
-      );
+      showToast(toastContent(<IconVolumeOff size={24} />, "Muted"));
     }
   }, [isMuted, volume, setVolume, showToast]);
 
@@ -517,12 +781,7 @@ export function Player({ media, repeating }: { media: Media; repeating: boolean 
 
   const showRateToast = useCallback(
     (newRate: number, icon: React.ReactNode) => {
-      showToast(
-        <Flex align="center" gap="xs">
-          {icon}
-          <Text weight={600}>{newRate.toFixed(2)}x</Text>
-        </Flex>,
-      );
+      showToast(toastContent(icon, `${newRate.toFixed(2)}x`));
     },
     [showToast],
   );
@@ -551,8 +810,6 @@ export function Player({ media, repeating }: { media: Media; repeating: boolean 
     ],
   ]);
 
-  const originalPlatformUrl = getOriginalPlatformUrl(media, currentTime);
-  const youtubeMusicUrl = getYouTubeMusicUrl(media);
   const dynamicTheme = useMemo(
     () => createDynamicTheme(dominantColor, theme),
     [dominantColor, theme],
@@ -566,31 +823,57 @@ export function Player({ media, repeating }: { media: Media; repeating: boolean 
     enabled: true,
   });
 
+  // Redirect to home when the URL itself is bad (not stream extraction errors)
+  useEffect(() => {
+    if (metadataLoadError) {
+      router.replace("/");
+    }
+  }, [metadataLoadError, router]);
+
+  // === Extraction UI (shown before player mounts) ===
+  if (isExtracting) {
+    return (
+      <div style={{ position: "relative", height: "100dvh" }}>
+        <LoadingOverlay visible message="Extracting stream..." />
+      </div>
+    );
+  }
+
+  if (!media) return null;
+
+  const originalPlatformUrl = getOriginalPlatformUrl(media, currentTime);
+
   return (
     <MantineProvider theme={dynamicTheme} inherit>
-      <LoadingOverlay
-        visible={isLoading || !isVideoReady || !videoElement}
-        message={isLoading ? "Decoding the audio..." : "Loading..."}
-      />
+      {/* Blurred cover background */}
+      {coverUrl && (
+        <Box
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 0,
+            backgroundImage: `url(${coverUrl})`,
+            backgroundSize: "cover",
+            backgroundPosition: "center",
+            filter: "blur(60px) saturate(1.5)",
+            opacity: 0.4,
+            transform: "scale(1.1)",
+          }}
+        />
+      )}
 
       <CustomizePlaybackModal
         opened={modalOpened}
         onClose={closeModal}
-        liteMode={liteMode}
-        onLiteModeChange={handleLiteModeChange}
-        pitchLockedToSpeed={pitchLockedToSpeed}
-        onLockToggle={handleLockToggle}
+        advancedStretch={advancedStretch}
+        onAdvancedStretchChange={handleAdvancedStretchChange}
         rate={rate}
         onSpeedChangeEnd={handleRateChange}
         semitones={semitones}
         onPitchChangeEnd={handleSemitonesChange}
         reverbAmount={reverbAmount}
         onReverbChange={setReverbAmount}
-        onReset={() => {
-          handleRateChange(1);
-          setSemitones(0);
-          setReverbAmount(0);
-        }}
+        onReset={handleReset}
       />
 
       <DownloadModal
@@ -602,29 +885,25 @@ export function Player({ media, repeating }: { media: Media; repeating: boolean 
         currentReverbAmount={reverbAmount}
       />
 
-      <LyricsSearchModal
-        opened={lyricsSearchModalOpened}
-        onClose={() => setLyricsSearchModalOpened(false)}
-        initialSearchQuery={
-          stripVideoTitleFiller(media.metadata.title) || media.metadata.title
-        }
-        initialResults={searchResults}
-        trackDurationSeconds={duration}
-        currentLyricsId={lyricsSettings?.id ?? null}
-        onSelectLyrics={handleSelectLyrics}
-      />
-
-      <LyricsSettingsModal
-        opened={lyricsSettingsModalOpened}
-        onClose={() => setLyricsSettingsModalOpened(false)}
+      <LyricsModal
+        opened={lyricsModalOpened}
+        onClose={() => setLyricsModalOpened(false)}
         showLyrics={showLyrics}
         onToggleLyrics={setShowLyrics}
+        trackDurationSeconds={duration}
+        currentLyricsId={lyricsSettings?.id ?? null}
         currentLyricsTrackName={lyricsSettings?.trackName ?? null}
         currentLyricsArtistName={lyricsSettings?.artistName ?? null}
         currentLyricsAlbumName={lyricsSettings?.albumName ?? null}
         currentOffset={lyricsSettings?.offset ?? 0}
-        onOffsetChange={handleLyricsOffsetChange}
-        onChangeLyrics={() => setLyricsSearchModalOpened(true)}
+        onOffsetChange={handleOffsetChange}
+        initialSearchQuery={
+          stripVideoTitleFiller(media.metadata.title) || media.metadata.title
+        }
+        initialSearchResults={searchResults}
+        onSelectLyrics={(record) => {
+          applyLyricsSettings(record, () => setLyricsModalOpened(false));
+        }}
       />
 
       <Box style={{ position: "relative", height: "100dvh" }}>
@@ -649,6 +928,7 @@ export function Player({ media, repeating }: { media: Media; repeating: boolean 
             gap="sm"
           >
             <SegmentedControl
+              disabled={isLoading}
               tabIndex={-1}
               bg={theme.colors.dark[6]}
               color="brand"
@@ -697,7 +977,7 @@ export function Player({ media, repeating }: { media: Media; repeating: boolean 
           <Flex
             align="center"
             justify="center"
-            gap={isMobile ? 0 : 32}
+            gap={!isMobile && showLyrics ? 32 : 0}
             style={{
               height: "100%",
               width: "100%",
@@ -763,168 +1043,138 @@ export function Player({ media, repeating }: { media: Media; repeating: boolean 
                 </Transition>
               </Box>
 
-              {/* Ambient background - always visible */}
-              {!isAudioOnly && (
-                <AmbientCanvas
-                  videoElement={videoElement}
-                  isAudioOnly={isAudioOnly}
-                  isPlaying={isPlaying}
-                  imageUrl={videoDisabled ? media.metadata.coverUrl : null}
+              {/* Album art + loading overlay + hidden audio element */}
+              <Box
+                style={{
+                  position: "relative",
+                  // Give the square wrapper a size before the cover image loads.
+                  width: isMobile ? "min(calc(100vw - 32px), 50vh)" : "min(50vw, 60vh)",
+                  height: isMobile ? "min(calc(100vw - 32px), 50vh)" : "min(50vw, 60vh)",
+                  aspectRatio: "1/1",
+                  margin: isMobile ? 16 : 0,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  opacity: isMobile && showLyrics ? 0 : 1,
+                  pointerEvents: isMobile && showLyrics ? "none" : "auto",
+                  transition: "opacity 0.3s ease-out",
+                }}
+              >
+                <audio
+                  ref={audioRef}
+                  key={media.fileUrl}
+                  style={{ display: "none" }}
+                  preload="metadata"
                 />
-              )}
-
-              {/* Album Art (when video disabled) */}
-              {!isAudioOnly && videoDisabled && (
-                <Box
-                  style={{
-                    position: "relative",
-                    width: "auto",
-                    height: "auto",
-                    maxWidth: isMobile ? "100vw" : "60vw",
-                    maxHeight: "60vh",
-                    aspectRatio: "1/1",
-                    borderRadius: theme.radius.md,
-                    margin: isMobile ? "10px" : 0,
-                    // Hide when lyrics are open (same optimization as video)
-                    opacity: isMobile && showLyrics ? 0 : 1,
-                    pointerEvents: isMobile && showLyrics ? "none" : "auto",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                  }}
-                >
+                {media.metadata.coverUrl ? (
                   <Image
-                    src={
-                      media.metadata.coverUrl?.replace(
-                        /(?<!maxres)(hq|mq|sd)?default/,
-                        "maxresdefault",
-                      ) || media.metadata.coverUrl
-                    }
+                    src={coverUrl}
                     width="100%"
                     height="100%"
                     radius={theme.radius.md}
                     fit="contain"
-                    style={{ userSelect: "none", pointerEvents: "none" }}
+                    style={{
+                      userSelect: "none",
+                      pointerEvents: "none",
+                      filter: stretchState === "loading" ? "blur(8px)" : "none",
+                      transition: "filter 0.3s ease-out",
+                    }}
                     alt={media.metadata.title}
                   />
-                </Box>
-              )}
-
-              {/* Video element - always mounted for playback/seek; hidden when audio-only */}
-              <Box
-                style={{
-                  position: isAudioOnly ? "absolute" : "relative",
-                  width: isAudioOnly ? 0 : "auto",
-                  height: isAudioOnly ? 0 : "auto",
-                  maxWidth: isAudioOnly ? 0 : isMobile ? "calc(100vw - 20px)" : "60vw",
-                  maxHeight: isAudioOnly ? 0 : "60vh",
-                  aspectRatio: isAudioOnly ? undefined : `${videoAspectRatio}`,
-                  borderRadius: theme.radius.md,
-                  margin: isMobile ? 10 : 0,
-                  overflow: "hidden",
-                  opacity: isAudioOnly
-                    ? 0
-                    : videoDisabled
-                      ? 0
-                      : isMobile && showLyrics
-                        ? 0
-                        : 1,
-                  pointerEvents: isAudioOnly
-                    ? "none"
-                    : isMobile && showLyrics
-                      ? "none"
-                      : "auto",
-                  display: isAudioOnly ? "block" : videoDisabled ? "none" : "block",
-                }}
-              >
-                <video
-                  ref={videoRef}
-                  key={media.fileUrl}
-                  style={{
-                    width: "100%",
-                    height: "100%",
-                    objectFit: "cover",
-                    display: "block",
-                    userSelect: "none",
-                    borderRadius: theme.radius.md,
-                    cursor: "pointer",
-                    pointerEvents: "none",
-                  }}
-                  playsInline
-                  controls={false}
-                  preload="metadata"
-                  muted
-                  crossOrigin="anonymous"
-                />
-              </Box>
-
-              {/* Audio Only Display */}
-              {isAudioOnly && (
-                <Box
-                  style={{
-                    position: "relative",
-                    width: "auto",
-                    height: "auto",
-                    maxWidth: isMobile ? "calc(100vw - 20px)" : "50vw",
-                    maxHeight: isMobile ? "70vh" : "60vh",
-                    aspectRatio: "1/1",
-                    margin: isMobile ? 10 : 0,
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    pointerEvents: "none",
-                  }}
-                >
-                  {media.metadata.coverUrl ? (
-                    <Image
-                      src={
-                        media.metadata.coverUrl?.replace(
-                          /(?<!maxres)(hq|mq|sd)?default/,
-                          "maxresdefault",
-                        ) || media.metadata.coverUrl
-                      }
-                      width="100%"
-                      height="100%"
-                      radius={theme.radius.md}
-                      fit="contain"
-                      style={{ userSelect: "none", pointerEvents: "none" }}
-                      alt={media.metadata.title}
-                    />
-                  ) : (
+                ) : (
+                  <Box
+                    w="100%"
+                    h="100%"
+                    bg="rgba(255,255,255,0.1)"
+                    style={{
+                      borderRadius: theme.radius.md,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      flexDirection: "column",
+                      gap: 10,
+                      userSelect: "none",
+                      filter: stretchState === "loading" ? "blur(8px)" : "none",
+                      transition: "filter 0.3s ease-out",
+                    }}
+                  >
+                    <IconMusic size={80} style={{ opacity: 0.5 }} />
+                    <Text size="xl" weight={600} align="center">
+                      {media.metadata.title}
+                    </Text>
+                    <Text size="md" color="dimmed" align="center">
+                      {media.metadata.artist ?? media.metadata.author}
+                      {media.metadata.album && ` · ${media.metadata.album}`}
+                    </Text>
+                  </Box>
+                )}
+                {/* Buffering spinner — centered on album art, no background */}
+                {isWaiting && (
+                  <Box
+                    style={{
+                      position: "absolute",
+                      inset: 0,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      zIndex: 10,
+                      pointerEvents: "none",
+                    }}
+                  >
+                    <Loader size="md" color="white" />
+                  </Box>
+                )}
+                {/* Processing overlay with progress bar */}
+                {stretchState === "loading" && !isWaiting && (
+                  <Box
+                    style={{
+                      position: "absolute",
+                      inset: 0,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      zIndex: 10,
+                      pointerEvents: "none",
+                    }}
+                  >
                     <Box
-                      w="100%"
-                      h="100%"
-                      bg="rgba(255,255,255,0.1)"
                       style={{
-                        borderRadius: theme.radius.md,
+                        background: "rgba(0, 0, 0, 0.45)",
+                        backdropFilter: "blur(12px)",
+                        borderRadius: theme.radius.sm,
+                        padding: "16px 24px",
+                        boxShadow: "0 8px 32px rgba(0, 0, 0, 0.2)",
                         display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
                         flexDirection: "column",
-                        gap: 10,
-                        userSelect: "none",
+                        alignItems: "center",
+                        gap: 12,
                       }}
                     >
-                      <IconMusic size={80} style={{ opacity: 0.5 }} />
-                      <Text size="xl" weight={600} align="center">
-                        {media.metadata.title}
+                      <Text style={{ color: "white" }} fw={600}>
+                        Processing the audio…
                       </Text>
-                      <Text size="md" color="dimmed" align="center">
-                        {media.metadata.artist ?? media.metadata.author}
-                        {media.metadata.album && ` · ${media.metadata.album}`}
-                      </Text>
+                      <Box style={{ width: 200 }}>
+                        <Progress
+                          value={progress?.percent ?? 100}
+                          striped
+                          animate
+                          color="rgba(255, 255, 255, 0.7)"
+                          bg="rgba(255, 255, 255, 0.1)"
+                          size="sm"
+                        />
+                      </Box>
                     </Box>
-                  )}
-                </Box>
-              )}
+                  </Box>
+                )}
+              </Box>
             </Box>
 
             {/* Desktop: Lyrics panel - slides in/out as sibling */}
             {!isMobile && (
               <Box
                 style={{
-                  width: 400,
-                  maxWidth: "35vw",
+                  position: "relative",
+                  width: showLyrics ? "min(400px, 35vw)" : 0,
                   height: "80vh",
                   flexShrink: 0,
                   display: "flex",
@@ -932,9 +1182,8 @@ export function Player({ media, repeating }: { media: Media; repeating: boolean 
                   overflow: "hidden",
                   opacity: showLyrics ? 1 : 0,
                   transform: showLyrics ? "translateX(0)" : "translateX(40px)",
-                  marginRight: showLyrics ? 0 : -432, // -(width + gap) to collapse
                   transition:
-                    "opacity 0.3s ease-out, transform 0.35s cubic-bezier(0.32, 0.72, 0, 1), margin-right 0.35s cubic-bezier(0.32, 0.72, 0, 1)",
+                    "width 0.35s cubic-bezier(0.32, 0.72, 0, 1), opacity 0.3s ease-out, transform 0.35s cubic-bezier(0.32, 0.72, 0, 1)",
                   pointerEvents: showLyrics ? "auto" : "none",
                   backgroundColor: "transparent",
                 }}
@@ -1015,18 +1264,17 @@ export function Player({ media, repeating }: { media: Media; repeating: boolean 
                 WebkitUserSelect: "none",
               }}
             >
-              {`${getFormattedTime(isSeeking ? seekPosition : currentTime)} / ${getFormattedTime(duration)}`}
+              {`${getFormattedTime(seekPosition ?? currentTime)} / ${getFormattedTime(duration)}`}
             </Text>
             <Flex gap="xs">
-              {showLyrics && hasLyrics && (
-                <Button
-                  variant="default"
-                  leftIcon={<IconMicrophone2 size={18} />}
-                  onClick={() => setLyricsSettingsModalOpened(true)}
-                >
-                  Lyrics
-                </Button>
-              )}
+              <Button
+                variant="default"
+                leftIcon={<IconMusic size={18} />}
+                onClick={() => setLyricsModalOpened(true)}
+                loading={lyricsState === "loading"}
+              >
+                Lyrics
+              </Button>
               <Menu shadow="md" width={200} position="top-end">
                 <Menu.Target>
                   <Button variant="default" leftIcon={<IconMenu2 size={18} />}>
@@ -1040,30 +1288,13 @@ export function Player({ media, repeating }: { media: Media; repeating: boolean 
                   </Menu.Item>
                   {originalPlatformUrl && (
                     <Menu.Item
-                      icon={
-                        getPlatform(media.sourceUrl) === "youtube" ? (
-                          <SiYoutube size={14} />
-                        ) : (
-                          <SiTiktok size={14} />
-                        )
-                      }
+                      icon={<SiYoutube size={14} />}
                       component="a"
                       href={originalPlatformUrl}
                       rightSection={<IconExternalLink size={12} />}
                       target="_blank"
                     >
-                      {getPlatform(media.sourceUrl) === "youtube" ? "YouTube" : "TikTok"}
-                    </Menu.Item>
-                  )}
-                  {youtubeMusicUrl && (
-                    <Menu.Item
-                      icon={<SiYoutubemusic size={14} />}
-                      component="a"
-                      href={youtubeMusicUrl}
-                      rightSection={<IconExternalLink size={12} />}
-                      target="_blank"
-                    >
-                      YouTube Music
+                      YouTube
                     </Menu.Item>
                   )}
                   <Menu.Divider />
@@ -1074,62 +1305,56 @@ export function Player({ media, repeating }: { media: Media; repeating: boolean 
                   >
                     Download
                   </Menu.Item>
-                  <Menu.Divider />
-                  <Menu.Label>Display</Menu.Label>
-                  <Menu.Item
-                    icon={
-                      lyricsState === "loading" ? (
-                        <Loader size={14} variant="oval" />
-                      ) : (
-                        <IconFileMusic size={14} />
-                      )
-                    }
-                    onClick={() => setShowLyrics((prev) => !prev)}
-                    disabled={lyricsState === "loading"}
-                    rightSection={
-                      <Text size="xs" color="dimmed">
-                        {showLyrics ? "On" : "Off"}
-                      </Text>
-                    }
-                  >
-                    Lyrics
-                  </Menu.Item>
-                  {!isAudioOnly && (
-                    <Menu.Item
-                      icon={
-                        videoDisabled ? (
-                          <IconVideo size={14} />
-                        ) : (
-                          <IconVideoOff size={14} />
-                        )
-                      }
-                      onClick={() => setVideoDisabled((prev) => !prev)}
-                      rightSection={
-                        <Text size="xs" color="dimmed">
-                          {videoDisabled ? "Off" : "On"}
-                        </Text>
-                      }
-                    >
-                      Video
-                    </Menu.Item>
-                  )}
                 </Menu.Dropdown>
               </Menu>
             </Flex>
           </Flex>
 
-          <Box style={{ paddingRight: 8 }}>
+          <Box
+            ref={seekTrackRef}
+            onPointerDown={handleTrackPointerDown}
+            onMouseEnter={() => setIsSeekTrackHovered(true)}
+            onMouseLeave={() => setIsSeekTrackHovered(false)}
+            style={{
+              paddingRight: 8,
+              position: "relative",
+              touchAction: "none",
+              cursor: "pointer",
+            }}
+          >
+            {/* Buffered segments rendered behind the slider */}
+            {duration > 0 &&
+              buffered.map((range, i) => (
+                <Box
+                  key={i}
+                  style={{
+                    position: "absolute",
+                    left: `${(range.start / duration) * 100}%`,
+                    width: `${((range.end - range.start) / duration) * 100}%`,
+                    height: 3,
+                    bottom: 0,
+                    backgroundColor: "rgba(255, 255, 255, 0.12)",
+                    borderRadius: 0,
+                    pointerEvents: "none",
+                    zIndex: 0,
+                  }}
+                />
+              ))}
             <Slider
-              value={isSeeking ? seekPosition : currentTime}
+              style={{ pointerEvents: "none" }}
+              disabled={isLoading && !isNativeFallback}
+              value={seekPosition ?? currentTime}
               onChange={handleSliderChange}
-              onChangeEnd={handleSeekChange}
+              onChangeEnd={handleSeekEnd}
               min={0}
-              step={1}
+              step={0.1}
               radius={0}
               mb={-3}
               showLabelOnHover={false}
               size="xs"
               sx={{
+                position: "relative",
+                zIndex: 1,
                 "&:hover": {
                   ".mantine-Slider-track": {
                     height: 6,
@@ -1144,13 +1369,18 @@ export function Player({ media, repeating }: { media: Media; repeating: boolean 
               styles={{
                 thumb: {
                   borderWidth: 0,
-                  opacity: 0,
-                  width: 0,
-                  height: 0,
+                  opacity: isSeekTrackHovered ? 1 : 0,
+                  width: 16,
+                  height: 16,
                   transition: "opacity 0.15s, width 0.15s, height 0.15s",
                 },
                 track: {
+                  height: isSeekTrackHovered ? 6 : undefined,
                   transition: "height 0.15s",
+                  backgroundColor: "transparent",
+                },
+                bar: {
+                  backgroundColor: barColor,
                 },
               }}
               label={(v) => (currentTime >= duration - 5 ? null : getFormattedTime(v))}
@@ -1167,9 +1397,10 @@ export function Player({ media, repeating }: { media: Media; repeating: boolean 
                   title={isPlaying ? "Pause" : "Play"}
                   variant="transparent"
                   color="gray"
+                  disabled={isLoading}
                 >
                   {isPlaying ? (
-                    <Pause size={30} fill="currentColor" />
+                    <IconPlayerPauseFilled size={30} />
                   ) : (
                     <IconPlayerPlayFilled size={30} />
                   )}
@@ -1183,6 +1414,7 @@ export function Player({ media, repeating }: { media: Media; repeating: boolean 
                 >
                   <ActionIcon
                     size="lg"
+                    disabled={isLoading}
                     onClick={() => {
                       if (isMobile) {
                         setIsVolumeHovered(!isVolumeHovered);
@@ -1204,6 +1436,7 @@ export function Player({ media, repeating }: { media: Media; repeating: boolean 
                     }}
                   >
                     <Slider
+                      disabled={isLoading}
                       value={isMuted ? 0 : volume}
                       onChange={handleVolumeChange}
                       min={0}
@@ -1224,6 +1457,7 @@ export function Player({ media, repeating }: { media: Media; repeating: boolean 
                 <MediaQuery smallerThan="xs" styles={{ display: "none" }}>
                   <Flex align="center" gap={4}>
                     <ActionIcon
+                      disabled={isLoading}
                       size="lg"
                       onClick={handleBackward}
                       title="Backward 5 sec"
@@ -1233,6 +1467,7 @@ export function Player({ media, repeating }: { media: Media; repeating: boolean 
                       <IconRewindBackward5 />
                     </ActionIcon>
                     <ActionIcon
+                      disabled={isLoading}
                       size="lg"
                       onClick={handleForward}
                       title="Forward 5 sec"
@@ -1244,6 +1479,7 @@ export function Player({ media, repeating }: { media: Media; repeating: boolean 
                   </Flex>
                 </MediaQuery>
                 <ActionIcon
+                  disabled={isLoading}
                   size="lg"
                   onClick={toggleLoop}
                   title={isRepeat ? "Turn off Repeat" : "Repeat"}
@@ -1256,7 +1492,7 @@ export function Player({ media, repeating }: { media: Media; repeating: boolean 
               <Flex ml={{ base: 0, xs: "lg" }}>
                 <MediaQuery smallerThan="xs" styles={{ display: "none" }}>
                   <Image
-                    src={media.metadata.coverUrl}
+                    src={coverUrl}
                     radius="sm"
                     height={38}
                     width={38}
@@ -1279,41 +1515,6 @@ export function Player({ media, repeating }: { media: Media; repeating: boolean 
                     <Text size="sm" weight={600} lineClamp={1}>
                       {media.metadata.title}
                     </Text>
-                    {originalPlatformUrl && (
-                      <MediaQuery smallerThan="md" styles={{ display: "none" }}>
-                        <ActionIcon
-                          component="a"
-                          href={originalPlatformUrl}
-                          target="_blank"
-                          variant="transparent"
-                          size="xs"
-                          color="primary"
-                          style={{ opacity: 0.7 }}
-                        >
-                          {getPlatform(media.sourceUrl) === "youtube" ? (
-                            <SiYoutube size={16} />
-                          ) : (
-                            <SiTiktok size={14} />
-                          )}
-                        </ActionIcon>
-                      </MediaQuery>
-                    )}
-                    {youtubeMusicUrl && (
-                      <MediaQuery smallerThan="md" styles={{ display: "none" }}>
-                        <ActionIcon
-                          component="a"
-                          href={youtubeMusicUrl}
-                          target="_blank"
-                          variant="transparent"
-                          size="xs"
-                          color="primary"
-                          ml={2}
-                          style={{ opacity: 0.7 }}
-                        >
-                          <SiYoutubemusic size={15} />
-                        </ActionIcon>
-                      </MediaQuery>
-                    )}
                   </Flex>
                   <Text size="xs" color="dimmed" lineClamp={1}>
                     {media.metadata.artist ?? media.metadata.author}
