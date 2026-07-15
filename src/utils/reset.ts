@@ -1,5 +1,5 @@
 import localforage from "localforage";
-import { clearShowVideoPref } from "@/lib/playerPrefs";
+import { clearPlaybackPrefs, clearShowVideoPref } from "@/lib/playerPrefs";
 
 export interface ResetOptions {
   settings: boolean;
@@ -23,6 +23,7 @@ export async function resetAllData(options: ResetOptions = { settings: true }) {
       }
       keysToRemove.forEach((key) => localStorage.removeItem(key));
       clearShowVideoPref();
+      clearPlaybackPrefs();
     }
 
     return true;

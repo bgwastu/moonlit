@@ -359,81 +359,78 @@ export function useStretchPlayer({
     setDuration(0);
   }, []);
 
-  const setupNative = useCallback(
-    (audio: HTMLAudioElement, pos: number) => {
-      audio.muted = false;
-      audio.volume = initialVolume;
-      audio.playbackRate = initialRate;
-      (audio as any).preservesPitch = false;
-      (audio as any).mozPreservesPitch = false;
-      (audio as any).webkitPreservesPitch = false;
+  const setupNative = useCallback((audio: HTMLAudioElement, pos: number) => {
+    audio.muted = false;
+    audio.volume = runtime.current.volume;
+    audio.playbackRate = runtime.current.rate;
+    (audio as any).preservesPitch = false;
+    (audio as any).mozPreservesPitch = false;
+    (audio as any).webkitPreservesPitch = false;
 
-      const onTime = () => {
-        const ct = audio.currentTime;
-        runtime.current.currentPosition = ct;
-        setCurrentTime(ct);
-        syncMediaSession(ct, audio.duration, audio.playbackRate);
-      };
-      const onDuration = () => {
-        if (Number.isFinite(audio.duration)) {
-          runtime.current.duration = audio.duration;
-          setDuration(audio.duration);
+    const onTime = () => {
+      const ct = audio.currentTime;
+      runtime.current.currentPosition = ct;
+      setCurrentTime(ct);
+      syncMediaSession(ct, audio.duration, audio.playbackRate);
+    };
+    const onDuration = () => {
+      if (Number.isFinite(audio.duration)) {
+        runtime.current.duration = audio.duration;
+        setDuration(audio.duration);
+      }
+    };
+    const onEnd = () => {
+      if (runtime.current.repeat) {
+        audio.currentTime = 0;
+        runtime.current.currentPosition = 0;
+        audio.play().catch(() => {});
+      } else {
+        runtime.current.isPlaying = false;
+        runtime.current.currentPosition = audio.duration;
+        setIsPlaying(false);
+        setCurrentTime(audio.duration);
+        runtime.current.onEnded?.();
+      }
+    };
+    const onProgress = () => {
+      const ranges: BufferedRange[] = [];
+      try {
+        for (let i = 0; i < audio.buffered.length; i++) {
+          ranges.push({ start: audio.buffered.start(i), end: audio.buffered.end(i) });
         }
-      };
-      const onEnd = () => {
-        if (runtime.current.repeat) {
-          audio.currentTime = 0;
-          runtime.current.currentPosition = 0;
-          audio.play().catch(() => {});
-        } else {
-          runtime.current.isPlaying = false;
-          runtime.current.currentPosition = audio.duration;
-          setIsPlaying(false);
-          setCurrentTime(audio.duration);
-          runtime.current.onEnded?.();
-        }
-      };
-      const onProgress = () => {
-        const ranges: BufferedRange[] = [];
-        try {
-          for (let i = 0; i < audio.buffered.length; i++) {
-            ranges.push({ start: audio.buffered.start(i), end: audio.buffered.end(i) });
-          }
-        } catch {}
-        setBuffered(ranges);
-      };
-      const onWaiting = () => setIsWaiting(true);
-      const onPlaying = () => {
-        runtime.current.isPlaying = true;
-        setIsWaiting(false);
-      };
-      const onSeeked = () => setIsWaiting(false);
+      } catch {}
+      setBuffered(ranges);
+    };
+    const onWaiting = () => setIsWaiting(true);
+    const onPlaying = () => {
+      runtime.current.isPlaying = true;
+      setIsWaiting(false);
+    };
+    const onSeeked = () => setIsWaiting(false);
 
-      audio.addEventListener("timeupdate", onTime);
-      audio.addEventListener("loadedmetadata", onDuration);
-      audio.addEventListener("durationchange", onDuration);
-      audio.addEventListener("ended", onEnd);
-      audio.addEventListener("progress", onProgress);
-      audio.addEventListener("waiting", onWaiting);
-      audio.addEventListener("playing", onPlaying);
-      audio.addEventListener("seeked", onSeeked);
+    audio.addEventListener("timeupdate", onTime);
+    audio.addEventListener("loadedmetadata", onDuration);
+    audio.addEventListener("durationchange", onDuration);
+    audio.addEventListener("ended", onEnd);
+    audio.addEventListener("progress", onProgress);
+    audio.addEventListener("waiting", onWaiting);
+    audio.addEventListener("playing", onPlaying);
+    audio.addEventListener("seeked", onSeeked);
 
-      nativeCleanupRef.current = () => {
-        audio.removeEventListener("timeupdate", onTime);
-        audio.removeEventListener("loadedmetadata", onDuration);
-        audio.removeEventListener("durationchange", onDuration);
-        audio.removeEventListener("ended", onEnd);
-        audio.removeEventListener("progress", onProgress);
-        audio.removeEventListener("waiting", onWaiting);
-        audio.removeEventListener("playing", onPlaying);
-        audio.removeEventListener("seeked", onSeeked);
-      };
-      runtime.current.currentPosition = pos;
-      if (pos > 0) audio.currentTime = pos;
-      setCurrentTime(pos);
-    },
-    [initialRate, initialVolume],
-  );
+    nativeCleanupRef.current = () => {
+      audio.removeEventListener("timeupdate", onTime);
+      audio.removeEventListener("loadedmetadata", onDuration);
+      audio.removeEventListener("durationchange", onDuration);
+      audio.removeEventListener("ended", onEnd);
+      audio.removeEventListener("progress", onProgress);
+      audio.removeEventListener("waiting", onWaiting);
+      audio.removeEventListener("playing", onPlaying);
+      audio.removeEventListener("seeked", onSeeked);
+    };
+    runtime.current.currentPosition = pos;
+    if (pos > 0) audio.currentTime = pos;
+    setCurrentTime(pos);
+  }, []);
 
   const setupFull = useCallback(
     async (
@@ -510,9 +507,9 @@ export function useStretchPlayer({
       const masterGain = audioContext.createGain();
 
       convolver.buffer = generateImpulseResponse(audioContext, 2, 2);
-      dryGain.gain.value = 1 - initialReverbAmount * 0.5;
-      wetGain.gain.value = initialReverbAmount;
-      masterGain.gain.value = initialVolume;
+      dryGain.gain.value = 1 - rt.reverbAmount * 0.5;
+      wetGain.gain.value = rt.reverbAmount;
+      masterGain.gain.value = rt.volume;
 
       stretch.connect(dryGain);
       stretch.connect(convolver);
@@ -531,14 +528,14 @@ export function useStretchPlayer({
       stretch.schedule({
         active: false,
         input: resumePos,
-        rate: initialRate,
-        semitones: initialSemitones,
+        rate: rt.rate,
+        semitones: rt.semitones,
         loopStart: 0,
         loopEnd: 0,
       });
       setCurrentTime(resumePos);
     },
-    [fileUrl, initialRate, initialSemitones, initialReverbAmount, initialVolume],
+    [fileUrl],
   );
 
   const initFullMode = useCallback(
@@ -573,9 +570,25 @@ export function useStretchPlayer({
 
   const posBeforeSwitch = useRef(0);
   const wasPlayingBeforeSwitch = useRef(false);
+  const prevFileUrlRef = useRef<string | null>(null);
 
   useEffect(() => {
-    if (!fileUrl) return;
+    if (!fileUrl) {
+      let cancelled = false;
+      // Defer UI reset so we don't sync setState in the effect body
+      queueMicrotask(() => {
+        if (cancelled) return;
+        cleanup();
+        runtime.current.currentPosition = 0;
+        prevFileUrlRef.current = null;
+        setProgress(null);
+        setState("loading");
+      });
+      return () => {
+        cancelled = true;
+      };
+    }
+
     const audio = audioRef.current;
     if (!audio) return;
     let aborted = false;
@@ -584,20 +597,27 @@ export function useStretchPlayer({
     const isCurrent = () => !aborted && initializationId.current === id;
 
     const rt = runtime.current;
+    const fileChanged = prevFileUrlRef.current !== fileUrl;
     const currentPos = Number.isFinite(rt.currentPosition)
       ? rt.currentPosition
       : (rt.stretch?.inputTime ?? audio.currentTime ?? 0);
-    posBeforeSwitch.current = Number.isFinite(currentPos) ? currentPos : 0;
+    // Only preserve position when toggling advanced stretch on the same file
+    posBeforeSwitch.current =
+      !fileChanged && Number.isFinite(currentPos) ? currentPos : 0;
     wasPlayingBeforeSwitch.current =
       isPlayingRef.current || rt.isPlaying || !audio.paused;
+    prevFileUrlRef.current = fileUrl;
 
     const init = async () => {
       cleanup();
       setState("loading");
       setProgress(null);
 
-      const resumePos =
-        posBeforeSwitch.current > 0 ? posBeforeSwitch.current : initialPosition;
+      const resumePos = fileChanged
+        ? initialPosition
+        : posBeforeSwitch.current > 0
+          ? posBeforeSwitch.current
+          : initialPosition;
       setCurrentTime(resumePos);
 
       try {
