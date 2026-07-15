@@ -1,16 +1,13 @@
 # Node 24 LTS (Alpine) — Next.js 16
 FROM node:24-alpine AS base
 
-# Install bun
-RUN npm install -g bun
-
 # Install dependencies only when needed
 FROM base AS deps
 RUN apk add --no-cache libc6-compat
 WORKDIR /app
 
-COPY package.json bun.lockb* bun.lock* ./
-RUN bun install --frozen-lockfile
+COPY package.json package-lock.json ./
+RUN npm ci
 
 # Rebuild the source code only when needed
 FROM base AS builder
@@ -21,7 +18,7 @@ COPY . .
 # Next.js expects ./public to exist; empty dirs often aren't in the image/context.
 RUN mkdir -p public
 
-RUN bun run build
+RUN npx next build --webpack
 
 # Production image
 FROM base AS runner
