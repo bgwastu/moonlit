@@ -85,6 +85,30 @@ export default function LyricsPanel({
     };
   }, [visible, activeIndex, scrollToActive]);
 
+  // When lyrics finish loading while the panel is already open, snap to the active line.
+  useEffect(() => {
+    if (!visible || lyrics.length === 0) return;
+    followPausedRef.current = false;
+    queueMicrotask(() => setIsOutOfSync(false));
+    const t = window.setTimeout(() => scrollToActive("auto"), 80);
+    return () => window.clearTimeout(t);
+    // Only re-run when the lyric set itself changes, not on every active line tick
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional: lyrics identity/length
+  }, [lyrics, visible]);
+
+  // Re-sync when returning to this browser tab
+  useEffect(() => {
+    if (!visible) return;
+    const onVisibility = () => {
+      if (document.hidden || activeIndex < 0) return;
+      followPausedRef.current = false;
+      setIsOutOfSync(false);
+      scrollToActive("auto");
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => document.removeEventListener("visibilitychange", onVisibility);
+  }, [visible, activeIndex, scrollToActive]);
+
   useEffect(() => {
     if (!visible || activeIndex < 0 || followPausedRef.current) return;
     const syncId = requestAnimationFrame(() => {
@@ -135,10 +159,9 @@ export default function LyricsPanel({
     [onSeek],
   );
 
-  const isEmpty = state === "error" || state === "not_found" || lyrics.length === 0;
-  const isLoading = state === "loading" || state === "idle";
-  const emptyMessage =
-    state === "error" && error ? error : "No synced lyrics found for this track.";
+  const isEmpty = state === "error" || lyrics.length === 0;
+  const isLoading = state === "loading" || state === "idle" || state === "not_found";
+  const emptyMessage = state === "error" && error ? error : null;
 
   return (
     <Box
@@ -195,26 +218,28 @@ export default function LyricsPanel({
           scrollbarWidth: "none",
           msOverflowStyle: "none",
           WebkitMaskImage:
-            "linear-gradient(to bottom, transparent 0%, transparent 15%, black 40%, black 60%, transparent 85%, transparent 100%)",
+            "linear-gradient(to bottom, transparent 0%, transparent 12%, black 32%, black 68%, transparent 88%, transparent 100%)",
           maskImage:
-            "linear-gradient(to bottom, transparent 0%, transparent 15%, black 40%, black 60%, transparent 85%, transparent 100%)",
+            "linear-gradient(to bottom, transparent 0%, transparent 12%, black 32%, black 68%, transparent 88%, transparent 100%)",
         }}
         sx={{ "&::-webkit-scrollbar": { display: "none" } }}
       >
         {isLoading ? null : isEmpty ? (
-          <Box
-            h="100%"
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              gap: 8,
-              color: "rgba(255, 255, 255, 0.5)",
-              textAlign: "center",
-            }}
-          >
-            <Text size="sm">{emptyMessage}</Text>
-          </Box>
+          emptyMessage ? (
+            <Box
+              h="100%"
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 8,
+                color: "rgba(255, 255, 255, 0.5)",
+                textAlign: "center",
+              }}
+            >
+              <Text size="sm">{emptyMessage}</Text>
+            </Box>
+          ) : null
         ) : (
           lyrics.map((lyric, i) => {
             const isActive = i === activeIndex;

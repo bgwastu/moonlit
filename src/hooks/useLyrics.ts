@@ -147,9 +147,12 @@ export function useLyrics({
           setLyrics(cached.lyrics);
           setSearchResults(cached.searchResults);
           setState(cached.lyrics.length > 0 ? "ready" : "not_found");
+          // Re-persist assignment if this session has lyrics but track state was cleared
+          if (cached.discovered) onDiscoverRef.current?.(cached.discovered);
           return;
         }
 
+        setLyrics([]);
         setState("loading");
         setError(null);
 
@@ -302,25 +305,68 @@ export function useLyrics({
     [offsetMs],
   );
 
-  // Main effect: pre-fetch lyrics immediately when enabled
+  // Main effect: use saved/cached lyrics immediately; otherwise clear & fetch
   useEffect(() => {
-    if (!enabled) return;
+    let cancelled = false;
+    const apply = (fn: () => void) => {
+      queueMicrotask(() => {
+        if (!cancelled) fn();
+      });
+    };
 
+    if (!enabled) {
+      apply(() => {
+        setLyrics([]);
+        setSearchResults([]);
+        setError(null);
+        setState("idle");
+      });
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    // Already assigned to this track — parse locally, no network search
     if (selectedSyncedLyrics) {
       const parsed = parseLRC(selectedSyncedLyrics, durationSeconds * 1000);
-      queueMicrotask(() => {
-        setLyrics(applyOffset(parsed, offsetMs));
-        setState(parsed.length > 0 ? "ready" : "not_found");
+      const offsetApplied = applyOffset(parsed, offsetMs);
+      apply(() => {
+        setLyrics(offsetApplied);
+        setSearchResults([]);
+        setError(null);
+        setState(offsetApplied.length > 0 ? "ready" : "not_found");
       });
-      return;
+      return () => {
+        cancelled = true;
+      };
     }
+
+    // Hide previous song's lyrics right away while we look up this track
+    apply(() => {
+      setLyrics([]);
+      setSearchResults([]);
+      setError(null);
+      setState("loading");
+    });
 
     const controller = new AbortController();
     queueMicrotask(() => {
+      if (cancelled) return;
       void fetchLyrics(controller.signal);
     });
-    return () => controller.abort();
-  }, [enabled, selectedSyncedLyrics, durationSeconds, offsetMs, fetchLyrics]);
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [
+    enabled,
+    selectedSyncedLyrics,
+    durationSeconds,
+    offsetMs,
+    fetchLyrics,
+    trackName,
+    artistName,
+  ]);
 
   return { lyrics, state, error, searchResults };
 }

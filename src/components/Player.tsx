@@ -2,8 +2,6 @@
 
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { SiYoutube, SiYoutubemusic } from "@icons-pack/react-simple-icons";
 import { generateColors } from "@mantine/colors-generator";
 import {
@@ -28,6 +26,8 @@ import { useDisclosure, useHotkeys, useMediaQuery } from "@mantine/hooks";
 import { notifications } from "@mantine/notifications";
 import {
   IconAdjustments,
+  IconChevronDown,
+  IconChevronUp,
   IconChevronsLeft,
   IconChevronsRight,
   IconDownload,
@@ -41,7 +41,6 @@ import {
   IconPlayerTrackNextFilled,
   IconPlayerTrackPrevFilled,
   IconRepeat,
-  IconRepeatOff,
   IconRewindBackward5,
   IconRewindForward5,
   IconVideo,
@@ -50,14 +49,19 @@ import {
   IconVolume3,
   IconVolumeOff,
 } from "@tabler/icons-react";
-import { useAppContext } from "@/context/AppContext";
+import { type PlayerMode, useAppContext } from "@/context/AppContext";
 import { useDominantColor } from "@/hooks/useDominantColor";
 import { useLyrics } from "@/hooks/useLyrics";
 import { usePlayerTapGestures } from "@/hooks/usePlayerTapGestures";
 import { useStretchPlayer } from "@/hooks/useStretchPlayer";
 import { HistoryItem, LyricsSettings, Media } from "@/interfaces";
 import { stripVideoTitleFiller } from "@/lib/lyrics";
-import { getShowVideo, setShowVideo } from "@/lib/playerPrefs";
+import {
+  getPlaybackPrefs,
+  getShowVideo,
+  savePlaybackPrefs,
+  setShowVideo,
+} from "@/lib/playerPrefs";
 import { getModeFromRate, getVideoState, saveVideoState } from "@/lib/videoState";
 import { getFormattedTime, getYouTubeId, isSupportedURL } from "@/utils";
 import {
@@ -89,6 +93,9 @@ const PLAYBACK_MODE_ICONS: Record<PlaybackMode, ReactNode> = {
   custom: <IconAdjustments size={24} />,
 };
 
+/** Survives Strict Mode remounts after sessionStorage is consumed once. */
+const searchMetaCache = new Map<string, Record<string, string | number>>();
+
 function getPrepopulatedMetadata(
   url: string,
 ): Record<string, string | number> | undefined {
@@ -98,10 +105,13 @@ function getPrepopulatedMetadata(
     )?.[1];
     if (!id) return undefined;
     const stored = sessionStorage.getItem(`moonlit-search-meta:${id}`);
-    if (!stored) return undefined;
-    const parsed = JSON.parse(stored);
-    sessionStorage.removeItem(`moonlit-search-meta:${id}`);
-    return parsed;
+    if (stored) {
+      const parsed = JSON.parse(stored) as Record<string, string | number>;
+      searchMetaCache.set(id, parsed);
+      sessionStorage.removeItem(`moonlit-search-meta:${id}`);
+      return parsed;
+    }
+    return searchMetaCache.get(id);
   } catch {
     return undefined;
   }
@@ -111,17 +121,25 @@ export function Player({
   url,
   duration: propDuration,
   media: propMedia,
-  repeating,
+  repeating: _repeating,
+  mode = "expanded",
+  onRequestCollapse,
+  onRequestExpand,
+  onRequestClose,
 }: {
   url?: string;
   duration?: number;
   media?: Media;
   repeating?: boolean;
+  mode?: Exclude<PlayerMode, "hidden">;
+  onRequestCollapse?: () => void;
+  onRequestExpand?: () => void;
+  onRequestClose?: () => void;
 }) {
-  const router = useRouter();
   const theme = useMantineTheme();
   const isMobile = useMediaQuery("(max-width: 1024px)");
-  const { media: contextMedia, history, setHistory } = useAppContext();
+  const { media: contextMedia, setMedia, setHistory, setTheme } = useAppContext();
+  const isMini = mode === "mini";
 
   // Phase management: extracting while URL is being resolved, then playing
   const [extractedMedia, setExtractedMedia] = useState<Media | null>(null);
@@ -129,6 +147,9 @@ export function Player({
   const [playbackError, setPlaybackError] = useState<string | null>(null);
   const streamStarted = useRef(false);
   const audioErrorCount = useRef(0);
+  const autoPlayedRef = useRef(false);
+  const bottomBarRef = useRef<HTMLDivElement>(null);
+  const [barHeight, setBarHeight] = useState(148);
 
   // Check for pre-populated metadata from search results (sessionStorage)
   const initialMeta = useMemo(
@@ -136,34 +157,65 @@ export function Player({
     [url],
   );
 
-  // Derive provisional media from pre-populated metadata (sessionStorage).
-  // This is NOT state — it's a derived value that lets the UI show content
-  // immediately while the real extraction runs in background.
+  // Keep the player shell mounted while extracting (pasted links have no search meta).
   const provisionalMedia = useMemo<Media | null>(() => {
-    if (!url || !initialMeta) return null;
+    if (!url) return null;
     const ytId = getYouTubeId(url);
+    if (initialMeta) {
+      return {
+        fileUrl: "",
+        sourceUrl: url,
+        metadata: {
+          id: ytId || null,
+          title: (initialMeta.title as string) || "Unknown",
+          author: (initialMeta.author as string) || "Unknown",
+          artist: (initialMeta.artist as string) || undefined,
+          album: (initialMeta.album as string) || undefined,
+          coverUrl: (() => {
+            const raw = initialMeta.coverUrl as string | undefined;
+            if (!raw) {
+              return ytId
+                ? `/api/cover?url=${encodeURIComponent(`https://i.ytimg.com/vi/${ytId}/hqdefault.jpg`)}`
+                : "";
+            }
+            if (
+              raw.startsWith("/api/cover") ||
+              raw.startsWith("blob:") ||
+              raw.startsWith("data:")
+            ) {
+              return raw;
+            }
+            return `/api/cover?url=${encodeURIComponent(raw)}`;
+          })(),
+        },
+      };
+    }
+    // Bare URL — keep shell + optional YT thumb; no "Loading…" placeholder in the dock
     return {
       fileUrl: "",
       sourceUrl: url,
       metadata: {
         id: ytId || null,
-        title: (initialMeta.title as string) || "Unknown",
-        author: (initialMeta.author as string) || "Unknown",
-        artist: (initialMeta.artist as string) || undefined,
-        album: (initialMeta.album as string) || undefined,
-        coverUrl: initialMeta.coverUrl
-          ? `/api/cover?url=${encodeURIComponent(initialMeta.coverUrl as string)}`
+        title: "",
+        author: "",
+        coverUrl: ytId
+          ? `/api/cover?url=${encodeURIComponent(`https://i.ytimg.com/vi/${ytId}/hqdefault.jpg`)}`
           : "",
       },
     };
   }, [url, initialMeta]);
 
-  const media = useMemo(
-    () => propMedia || extractedMedia || provisionalMedia || (url ? null : contextMedia),
-    [propMedia, extractedMedia, provisionalMedia, url, contextMedia],
-  );
+  const media = useMemo(() => {
+    // Ignore stale extracted media from the previous track while a new URL loads
+    const extracted =
+      extractedMedia && (!url || extractedMedia.sourceUrl === url)
+        ? extractedMedia
+        : null;
+    return propMedia || extracted || provisionalMedia || (url ? null : contextMedia);
+  }, [propMedia, extractedMedia, provisionalMedia, url, contextMedia]);
   // Show extracting UI only when resolving URL and not in error state
   const isExtracting = !media && !!url && streamState.status !== "error";
+  const isMediaReady = Boolean(media?.fileUrl);
 
   // Inlined extraction logic (was in InitialPlayer + useMediaStreamer)
   const startStream = useCallback(() => {
@@ -215,6 +267,26 @@ export function Player({
     }, 0);
   }, [startStream]);
 
+  // Reset extraction when the source URL changes (new track while shell stays mounted)
+  const prevUrlRef = useRef(url);
+  useEffect(() => {
+    if (prevUrlRef.current === url) return;
+    prevUrlRef.current = url;
+    streamStarted.current = false;
+    audioErrorCount.current = 0;
+    autoPlayedRef.current = false;
+    setExtractedMedia(null);
+    setPlaybackError(null);
+    setStreamState({ status: "idle" });
+    // Drop stale context media so old cover/progress cannot linger
+    if (url) setMedia(null);
+  }, [url, setMedia]);
+
+  // Reset autoplay gate whenever the playable file changes
+  useEffect(() => {
+    autoPlayedRef.current = false;
+  }, [media?.fileUrl]);
+
   // Auto-start stream for URL mode — check extractedMedia, not media (which includes provisionalMedia)
   useEffect(() => {
     if (extractedMedia || streamStarted.current) return;
@@ -223,56 +295,122 @@ export function Player({
     setTimeout(() => startStream(), 0);
   }, [url, extractedMedia, startStream]);
 
-  // Add to history when playback starts (media excluded intentionally — it changes reference on every render)
+  // Measure bottom chrome for mini-player clip height
   useEffect(() => {
-    if (!media) return;
+    const el = bottomBarRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const update = () => {
+      const h = el.getBoundingClientRect().height;
+      if (h > 0) setBarHeight(h);
+    };
+    const ro = new ResizeObserver(() => update());
+    ro.observe(el);
+    const id = requestAnimationFrame(update);
+    return () => {
+      cancelAnimationFrame(id);
+      ro.disconnect();
+    };
+  }, [isMini, media?.metadata.title]);
+
+  useEffect(() => {
+    const inset = isMini ? `${barHeight}px` : "0px";
+    document.body.style.setProperty("--moonlit-player-inset", inset);
+    return () => {
+      document.body.style.setProperty("--moonlit-player-inset", "0px");
+    };
+  }, [isMini, barHeight]);
+
+  // Sync playable extracted media into app context (last-session + shared state)
+  useEffect(() => {
+    if (!extractedMedia?.fileUrl) return;
+    setMedia(extractedMedia);
+  }, [extractedMedia, setMedia]);
+
+  // Persist history once media is playable; refresh cover/title when extraction completes
+  useEffect(() => {
+    if (!media?.sourceUrl || !media.fileUrl) return;
+    // Local uploads are session-only — never write them to history
+    if (media.sourceUrl.startsWith("local:")) return;
+    const snapshot: HistoryItem = {
+      ...media,
+      playedAt: Date.now(),
+      metadata: { ...media.metadata },
+    };
     setHistory((prev) => {
-      const filtered = prev.filter((item) => item.sourceUrl !== media.sourceUrl);
-      const newItem: HistoryItem = { ...media, playedAt: Date.now() };
-      return [newItem, ...filtered].slice(0, 50);
+      const existingIdx = prev.findIndex((item) => item.sourceUrl === snapshot.sourceUrl);
+      const existing = existingIdx >= 0 ? prev[existingIdx] : null;
+      const coverUrl = snapshot.metadata.coverUrl || existing?.metadata.coverUrl || "";
+      const nextItem: HistoryItem = {
+        ...snapshot,
+        playedAt: existing?.playedAt ?? Date.now(),
+        metadata: {
+          ...snapshot.metadata,
+          coverUrl,
+        },
+      };
+
+      if (
+        existing &&
+        existing.fileUrl === nextItem.fileUrl &&
+        existing.metadata.coverUrl === coverUrl &&
+        existing.metadata.title === nextItem.metadata.title
+      ) {
+        return prev;
+      }
+
+      if (!existing || existing.fileUrl !== nextItem.fileUrl) {
+        nextItem.playedAt = Date.now();
+        const filtered = prev.filter((item) => item.sourceUrl !== snapshot.sourceUrl);
+        return [nextItem, ...filtered].slice(0, 50);
+      }
+
+      const next = [...prev];
+      next[existingIdx] = nextItem;
+      return next;
     });
-  }, [media?.sourceUrl, setHistory]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [media, setHistory]);
 
   // Use sourceUrl from media state
   const sourceUrl = media?.sourceUrl ?? url ?? "";
 
-  // Load saved state
+  // Global playback prefs (mode/rate/volume are session-wide, not per track)
+  const globalPrefs = useMemo(() => getPlaybackPrefs(), []);
+
+  // Per-track state is only for lyrics
   const savedState = useMemo(() => getVideoState(sourceUrl), [sourceUrl]);
 
-  // State - derive mode from rate
-  const initialRate = savedState?.rate ?? 1;
-  const initialSemitones = savedState?.semitones ?? 0;
-  const [playbackMode, setPlaybackMode] = useState<PlaybackMode>(
-    getModeFromRate(initialRate, initialSemitones),
-  );
+  const [playbackMode, setPlaybackMode] = useState<PlaybackMode>(globalPrefs.mode);
   const initialStartAt = 0;
   const [stateLoaded, setStateLoaded] = useState(false);
-  const [isRepeat, setIsRepeat] = useState(savedState?.isRepeat ?? repeating ?? false);
+  const [isRepeat, setIsRepeat] = useState(globalPrefs.isRepeat);
 
-  // Per-mode state: remember rate+semitones for each mode independently
-  const [slowedRate, setSlowedRate] = useState(0.8);
-  const [normalRate, setNormalRate] = useState(1);
-  const [speedupRate, setSpeedupRate] = useState(1.25);
-  const [customRate, setCustomRate] = useState(initialRate);
-  const [customSemitones, setCustomSemitones] = useState(initialSemitones);
+  // Per-mode rates kept in memory + global prefs
+  const [slowedRate, setSlowedRate] = useState(globalPrefs.slowedRate);
+  const [normalRate, setNormalRate] = useState(globalPrefs.normalRate);
+  const [speedupRate, setSpeedupRate] = useState(globalPrefs.speedupRate);
+  const [customRate, setCustomRate] = useState(globalPrefs.customRate);
+  const [customSemitones, setCustomSemitones] = useState(globalPrefs.customSemitones);
 
   // Volume UI state (actual volume is managed by useStretchPlayer)
   const [isMuted, setIsMuted] = useState(false);
   const [isVolumeHovered, setIsVolumeHovered] = useState(false);
-  const previousVolumeRef = useRef(savedState?.volume ?? 1);
+  const previousVolumeRef = useRef(globalPrefs.volume);
 
-  const [advancedStretch, setAdvancedStretch] = useState(
-    savedState?.advancedStretch ?? false,
-  );
+  const [advancedStretch, setAdvancedStretch] = useState(globalPrefs.advancedStretch);
 
-  const [showLyrics, setShowLyrics] = useState(savedState?.showLyrics ?? false);
+  const [showLyrics, setShowLyrics] = useState(globalPrefs.showLyrics);
   const [showVideo, setShowVideoState] = useState(() => getShowVideo());
   const [lyricsSettings, setLyricsSettings] = useState<LyricsSettings | null>(
     savedState?.lyrics ?? null,
   );
+  const [lyricsSettingsUrl, setLyricsSettingsUrl] = useState(sourceUrl);
+  // Keep lyrics settings aligned with the current track synchronously (no one-frame leak)
+  if (sourceUrl !== lyricsSettingsUrl) {
+    setLyricsSettingsUrl(sourceUrl);
+    setLyricsSettings(savedState?.lyrics ?? null);
+  }
   const [lyricsModalOpened, setLyricsModalOpened] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
-
   const dominantColor = useDominantColor(media?.metadata.coverUrl);
   const barColor = useMemo(() => {
     if (!dominantColor) return theme.colors.violet[5];
@@ -286,10 +424,19 @@ export function Player({
     document.title = title ? `${title} | Moonlit` : "Moonlit";
   }, [media?.metadata.title]);
 
-  // Sync dominant color as CSS variable
+  // Sync dominant color as CSS variable + app theme (Home accents follow track)
   useEffect(() => {
     document.body.style.setProperty("--dominant-color", dominantColor || "transparent");
-  }, [dominantColor]);
+    // Stable base — do not depend on live Mantine theme (avoids setTheme loops)
+    setTheme(
+      createDynamicTheme(dominantColor, {
+        colorScheme: "dark",
+        primaryColor: "violet",
+        primaryShade: 5,
+        white: "#f3f0ff",
+      }),
+    );
+  }, [dominantColor, setTheme]);
 
   // Inlined useToast
   const [toast, setToast] = useState<{
@@ -372,28 +519,29 @@ export function Player({
   } = useStretchPlayer({
     fileUrl: media?.fileUrl || "",
     advancedStretch,
-    initialRate: initialRate,
-    initialSemitones: savedState?.semitones ?? 0,
-    initialReverbAmount: savedState?.reverbAmount ?? 0,
-    initialVolume: savedState?.volume ?? 1,
+    initialRate: globalPrefs.rate,
+    initialSemitones: globalPrefs.semitones,
+    initialReverbAmount: globalPrefs.reverbAmount,
+    initialVolume: globalPrefs.volume,
     initialPosition: stateLoaded ? initialStartAt : 0,
     isRepeat,
     autoPlay: false,
     onError: handleAudioError,
   });
 
-  // Try autoplay when media and audio are ready
-  const autoPlayedRef = useRef(false);
+  // Try autoplay when playable media is ready (key off fileUrl so provisional media can't steal the flag)
   useEffect(() => {
-    if (!media || stretchState !== "ready" || autoPlayedRef.current) return;
+    if (!media?.fileUrl || stretchState !== "ready" || autoPlayedRef.current) return;
     autoPlayedRef.current = true;
     const id = setTimeout(async () => {
       try {
         await play();
-      } catch {}
+      } catch {
+        autoPlayedRef.current = false;
+      }
     }, 100);
     return () => clearTimeout(id);
-  }, [media, stretchState, play]);
+  }, [media?.fileUrl, stretchState, play]);
 
   const applyLyricsSettings = useCallback(
     (
@@ -441,6 +589,9 @@ export function Player({
     onDiscover: onLyricsDiscover,
   });
 
+  // Only open when we have real lyrics — loading / not found / error = lyrics-off layout
+  const lyricsOpen = showLyrics && lyricsState === "ready";
+
   const handleOffsetChange = useCallback(
     (offset: number) => {
       setLyricsSettings((prev) => {
@@ -462,13 +613,10 @@ export function Player({
     !isPlaying &&
     !isRepeat;
 
-  const handleAdvancedStretchChange = useCallback(
-    (enabled: boolean) => {
-      setAdvancedStretch(enabled);
-      saveVideoState(sourceUrl, { advancedStretch: enabled });
-    },
-    [sourceUrl],
-  );
+  const handleAdvancedStretchChange = useCallback((enabled: boolean) => {
+    setAdvancedStretch(enabled);
+    savePlaybackPrefs({ advancedStretch: enabled });
+  }, []);
 
   const handleToggleShowVideo = useCallback(() => {
     if (!media?.videoUrl || media.isAudioTrackVideo) {
@@ -520,6 +668,18 @@ export function Player({
     setSpeedupRate(1.25);
     setCustomRate(1);
     setCustomSemitones(0);
+    savePlaybackPrefs({
+      mode: "normal",
+      rate: 1,
+      semitones: 0,
+      reverbAmount: 0,
+      volume: 1,
+      slowedRate: 0.8,
+      normalRate: 1,
+      speedupRate: 1.25,
+      customRate: 1,
+      customSemitones: 0,
+    });
   }, [setRate, setSemitones, setReverbAmount, setVolume]);
 
   function toastContent(icon: React.ReactNode, text: React.ReactNode) {
@@ -586,21 +746,27 @@ export function Player({
     };
   }, [media, coverUrl, play, pause, handleBackward, handleForward, seek]);
 
-  // Inlined useVideoStatePersistence
+  // Persist global playback prefs (not per-track)
   const lastSaveRef = useRef<number>(0);
   useEffect(() => {
     if (!stateLoaded || !isReady) return;
     const now = Date.now();
     if (now - lastSaveRef.current < 5000) return;
     lastSaveRef.current = now;
-    saveVideoState(sourceUrl, {
+    savePlaybackPrefs({
+      mode: playbackMode,
       rate,
       semitones,
       reverbAmount,
       isRepeat,
       volume,
-      showLyrics,
       advancedStretch,
+      showLyrics,
+      slowedRate,
+      normalRate,
+      speedupRate,
+      customRate,
+      customSemitones,
     });
   }, [
     rate,
@@ -608,11 +774,16 @@ export function Player({
     reverbAmount,
     isRepeat,
     volume,
-    sourceUrl,
     stateLoaded,
     isReady,
-    showLyrics,
     advancedStretch,
+    showLyrics,
+    playbackMode,
+    slowedRate,
+    normalRate,
+    speedupRate,
+    customRate,
+    customSemitones,
   ]);
 
   // Wake Lock API: keep screen on during playback
@@ -642,15 +813,33 @@ export function Player({
   useEffect(() => {
     const saveState = () => {
       if (!stateLoaded) return;
-      saveVideoState(sourceUrl, {
+      savePlaybackPrefs({
+        mode: playbackMode,
         rate,
         semitones,
         reverbAmount,
         isRepeat,
         volume,
-        showLyrics,
         advancedStretch,
+        showLyrics,
+        slowedRate,
+        normalRate,
+        speedupRate,
+        customRate,
+        customSemitones,
       });
+      if (sourceUrl) {
+        saveVideoState(sourceUrl, {
+          rate,
+          semitones,
+          reverbAmount,
+          isRepeat,
+          volume,
+          showLyrics,
+          advancedStretch,
+          lyrics: lyricsSettings,
+        });
+      }
     };
     const handler = () => {
       if (document.hidden) saveState();
@@ -672,6 +861,13 @@ export function Player({
     stateLoaded,
     showLyrics,
     advancedStretch,
+    playbackMode,
+    slowedRate,
+    normalRate,
+    speedupRate,
+    customRate,
+    customSemitones,
+    lyricsSettings,
   ]);
 
   // Modal controls
@@ -681,12 +877,37 @@ export function Player({
 
   const [seekPosition, setSeekPosition] = useState<number | null>(null);
   const seekPositionRef = useRef<number | null>(null);
+  const wasPlayingOnSeekRef = useRef(false);
   const [isSeekTrackHovered, setIsSeekTrackHovered] = useState(false);
+  const [isSeeking, setIsSeeking] = useState(false);
+  const showSeekChrome = isSeekTrackHovered || isSeeking;
+  // Fixed slot so the thumb never jumps when the bar thickens
+  const seekSlotHeight = 5;
+  const seekTrackHeight = showSeekChrome ? 5 : 2;
+  const seekThumbSize = 17;
+
+  // Clear scrub UI whenever the track source changes
+  useEffect(() => {
+    seekPositionRef.current = null;
+    let cancelled = false;
+    queueMicrotask(() => {
+      if (cancelled) return;
+      setSeekPosition(null);
+      setIsSeeking(false);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [url, media?.fileUrl]);
+
+  const displayTime = isMediaReady ? (seekPosition ?? currentTime) : 0;
+  const displayDuration = isMediaReady ? duration : 0;
 
   const handleSliderChange = useCallback((value: number) => {
     if (process.env.NODE_ENV !== "production") {
       console.debug("[Player slider] onChange", value);
     }
+    setIsSeeking(true);
     seekPositionRef.current = value;
     setSeekPosition(value);
   }, []);
@@ -704,19 +925,25 @@ export function Player({
       seek(finalPosition);
       seekPositionRef.current = null;
       setSeekPosition(null);
+      setIsSeeking(false);
+      // Scrubbing can stall native/advanced playback — resume if it was playing
+      if (wasPlayingOnSeekRef.current) {
+        void play();
+      }
     },
-    [seek],
+    [seek, play],
   );
 
   const seekTrackRef = useRef<HTMLDivElement>(null);
   const handleTrackPointerDown = useCallback(
     (event: React.PointerEvent<HTMLDivElement>) => {
-      if (event.button !== 0 || duration <= 0) return;
+      if (event.button !== 0 || duration <= 0 || !isMediaReady) return;
       const track = seekTrackRef.current;
       if (!track) return;
 
       event.preventDefault();
       event.stopPropagation();
+      wasPlayingOnSeekRef.current = isPlaying;
       track.setPointerCapture?.(event.pointerId);
 
       const updatePosition = (clientX: number) => {
@@ -741,7 +968,7 @@ export function Player({
       document.addEventListener("pointermove", onMove);
       document.addEventListener("pointerup", onUp, { once: true });
     },
-    [duration, handleSeekEnd, handleSliderChange],
+    [duration, handleSeekEnd, handleSliderChange, isPlaying, isMediaReady],
   );
 
   const handleTogglePlayer = useCallback(() => {
@@ -826,7 +1053,7 @@ export function Player({
     setIsRepeat(!isRepeat);
     showToast(
       toastContent(
-        !isRepeat ? <IconRepeat size={24} /> : <IconRepeatOff size={24} />,
+        <IconRepeat size={24} style={{ opacity: !isRepeat ? 1 : 0.5 }} />,
         !isRepeat ? "Repeat On" : "Repeat Off",
       ),
     );
@@ -902,29 +1129,62 @@ export function Player({
     onBackward: handleBackward,
     onForward: handleForward,
     onTogglePlayback: handleTogglePlayer,
-    enabled: true,
+    enabled: !isMini,
   });
+
+  const handleToggleShowLyrics = useCallback((next: boolean) => {
+    setShowLyrics(next);
+    savePlaybackPrefs({ showLyrics: next });
+  }, []);
+
+  const handleChromeClick = useCallback(() => {
+    if (isMini) onRequestExpand?.();
+    else onRequestCollapse?.();
+  }, [isMini, onRequestCollapse, onRequestExpand]);
+
+  const handleChevronClick = useCallback(
+    (e: React.MouseEvent) => {
+      e.stopPropagation();
+      handleChromeClick();
+    },
+    [handleChromeClick],
+  );
 
   // === Extraction UI (shown before player mounts) ===
   if (streamState.status === "error" && !media) {
     return (
-      <ErrorScreen
-        title="Stream failed"
-        message={
-          streamState.message ||
-          "Could not process the media. Try configuring cookies from a logged-in account in settings."
-        }
-        primaryLabel="Retry"
-        onPrimary={retryExtract}
-        secondaryLabel="Go home"
-        onSecondary={() => router.push("/")}
-      />
+      <Box
+        style={{
+          position: "fixed",
+          inset: 0,
+          zIndex: 200,
+        }}
+      >
+        <ErrorScreen
+          title="Stream failed"
+          message={
+            streamState.message ||
+            "Could not process the media. Try configuring cookies from a logged-in account in settings."
+          }
+          primaryLabel="Retry"
+          onPrimary={retryExtract}
+          secondaryLabel="Go home"
+          onSecondary={() => onRequestClose?.()}
+        />
+      </Box>
     );
   }
 
   if (isExtracting) {
     return (
-      <div style={{ position: "relative", height: "100dvh" }}>
+      <div
+        style={{
+          position: "fixed",
+          inset: 0,
+          zIndex: 200,
+          backgroundColor: theme.colors.dark[7],
+        }}
+      >
         <LoadingOverlay visible message="Extracting stream..." />
       </div>
     );
@@ -936,23 +1196,6 @@ export function Player({
 
   return (
     <MantineProvider theme={dynamicTheme} inherit>
-      {/* Blurred cover background */}
-      {coverUrl && (
-        <Box
-          style={{
-            position: "fixed",
-            inset: 0,
-            zIndex: 0,
-            backgroundImage: `url(${coverUrl})`,
-            backgroundSize: "cover",
-            backgroundPosition: "center",
-            filter: "blur(60px) saturate(1.5)",
-            opacity: 0.4,
-            transform: "scale(1.1)",
-          }}
-        />
-      )}
-
       <CustomizePlaybackModal
         opened={modalOpened}
         onClose={closeModal}
@@ -980,7 +1223,7 @@ export function Player({
         opened={lyricsModalOpened}
         onClose={() => setLyricsModalOpened(false)}
         showLyrics={showLyrics}
-        onToggleLyrics={setShowLyrics}
+        onToggleLyrics={handleToggleShowLyrics}
         trackDurationSeconds={duration}
         currentLyricsId={lyricsSettings?.id ?? null}
         currentLyricsTrackName={lyricsSettings?.trackName ?? null}
@@ -994,729 +1237,866 @@ export function Player({
         initialSearchResults={searchResults}
         onSelectLyrics={(record) => {
           applyLyricsSettings(record, () => {
-            setShowLyrics(true);
-            saveVideoState(sourceUrl, { showLyrics: true });
+            handleToggleShowLyrics(true);
             setLyricsModalOpened(false);
           });
         }}
       />
 
-      <Box style={{ position: "relative", height: "100dvh" }}>
-        {/* Top Controls */}
-        <Flex
-          style={{
-            position: "absolute",
-            top: 28,
-            left: 0,
-            right: 0,
-            zIndex: 2,
-          }}
-          gap="sm"
-          wrap="wrap"
-          px="lg"
-        >
-          <Flex
-            style={{ flex: 1 }}
-            justify="center"
-            align="center"
-            direction="column"
-            gap="sm"
-          >
-            <SegmentedControl
-              disabled={isLoading}
-              tabIndex={-1}
-              bg={theme.colors.dark[6]}
-              color="brand"
-              style={{ boxShadow: "0px 0px 0px 1px #383A3F" }}
-              size="sm"
-              onChange={(value) => handlePlaybackModeChange(value as PlaybackMode)}
-              value={playbackMode}
-              data={[
-                { label: "Slowed", value: "slowed" },
-                { label: "Normal", value: "normal" },
-                { label: "Speed Up", value: "speedup" },
-                {
-                  label: (
-                    <Center>
-                      <IconAdjustments size={18} />
-                      <Box ml={10}>Custom</Box>
-                    </Center>
-                  ),
-                  value: "custom",
-                },
-              ]}
+      {/* Sliding stage — moves as one paper sheet top→bottom; dock stays fixed */}
+      <Box
+        style={{
+          position: "fixed",
+          inset: 0,
+          zIndex: 200,
+          transform: isMini ? "translateY(100%)" : "translateY(0)",
+          transition: "transform 0.4s cubic-bezier(0.32, 0.72, 0, 1)",
+          willChange: "transform",
+          pointerEvents: isMini ? "none" : "auto",
+          backgroundColor: theme.colors.dark[7],
+          overflow: "hidden",
+        }}
+      >
+        {/* Blurred cover wash */}
+        {coverUrl ? (
+          <>
+            <Box
+              key={`wash-${sourceUrl || coverUrl}`}
+              style={{
+                position: "absolute",
+                inset: 0,
+                zIndex: 0,
+                backgroundImage: `url(${coverUrl})`,
+                backgroundSize: "cover",
+                backgroundPosition: "center",
+                filter: "blur(60px) saturate(1.5)",
+                opacity: 0.4,
+                transform: "scale(1.1)",
+                pointerEvents: "none",
+              }}
             />
-            {playbackMode === "custom" && (
-              <Button variant="default" onClick={openModal}>
-                Customize Playback
-              </Button>
-            )}
-          </Flex>
-        </Flex>
+            <Box
+              style={{
+                position: "absolute",
+                inset: 0,
+                zIndex: 0,
+                backgroundColor: "rgba(26, 27, 30, 0.35)",
+                pointerEvents: "none",
+              }}
+            />
+          </>
+        ) : (
+          <Box
+            style={{
+              position: "absolute",
+              inset: 0,
+              zIndex: 0,
+              backgroundColor: theme.colors.dark[7],
+            }}
+          />
+        )}
 
-        {/* Main content: video + lyrics panel */}
         <Box
           style={{
-            position: "absolute",
-            inset: 0,
+            position: "relative",
+            height: "100%",
+            width: "100%",
             zIndex: 1,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            overflow: "hidden",
-            userSelect: "none",
-            WebkitUserSelect: "none",
           }}
         >
-          {/* Main layout container */}
+          {/* Top Controls */}
           <Flex
-            align="center"
-            justify="center"
-            gap={!isMobile && showLyrics ? 32 : 0}
             style={{
-              height: "100%",
-              width: "100%",
-              maxWidth: "100%",
-              padding: isMobile ? 0 : "0 24px",
-              position: "relative",
+              position: "absolute",
+              top: 28,
+              left: 0,
+              right: 0,
+              zIndex: 2,
+            }}
+            gap="sm"
+            wrap="wrap"
+            px="lg"
+          >
+            <Flex
+              style={{ flex: 1 }}
+              justify="center"
+              align="center"
+              direction="column"
+              gap="sm"
+            >
+              <SegmentedControl
+                disabled={isLoading}
+                tabIndex={-1}
+                bg={theme.colors.dark[6]}
+                color="brand"
+                style={{ boxShadow: "0px 0px 0px 1px #383A3F" }}
+                size="sm"
+                onChange={(value) => handlePlaybackModeChange(value as PlaybackMode)}
+                value={playbackMode}
+                data={[
+                  { label: "Slowed", value: "slowed" },
+                  { label: "Normal", value: "normal" },
+                  { label: "Speed Up", value: "speedup" },
+                  {
+                    label: (
+                      <Center>
+                        <IconAdjustments size={18} />
+                        <Box ml={10}>Custom</Box>
+                      </Center>
+                    ),
+                    value: "custom",
+                  },
+                ]}
+              />
+              {playbackMode === "custom" && (
+                <Button variant="default" onClick={openModal}>
+                  Customize Playback
+                </Button>
+              )}
+            </Flex>
+          </Flex>
+
+          {/* Main content: video + lyrics panel — center in stage above dock */}
+          <Box
+            style={{
+              position: "absolute",
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: barHeight,
+              zIndex: 1,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              // Keep art clear of top controls / expanded chrome without shifting optical center up
+              paddingTop: 56,
+              paddingBottom: isMini ? 12 : 48,
+              boxSizing: "border-box",
+              overflow: "hidden",
+              userSelect: "none",
+              WebkitUserSelect: "none",
             }}
           >
-            {/* Video area with toast overlay */}
-            <Box
-              ref={playerAreaRef}
-              data-tap-target
+            {/* Main layout container */}
+            <Flex
+              align="center"
+              justify="center"
+              gap={!isMobile && lyricsOpen ? 32 : 0}
               style={{
+                height: "100%",
+                width: "100%",
+                maxWidth: "100%",
+                padding: isMobile ? 0 : "0 24px",
                 position: "relative",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                flexShrink: 0,
-                cursor: "pointer",
-                userSelect: "none",
-                WebkitUserSelect: "none",
-                WebkitTouchCallout: "none",
               }}
             >
-              {/* Toast overlay - centered on video */}
+              {/* Video area with toast overlay */}
               <Box
+                ref={playerAreaRef}
+                data-tap-target
                 style={{
-                  position: "absolute",
-                  inset: 0,
-                  zIndex: 20,
+                  position: "relative",
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "center",
-                  pointerEvents: "none",
+                  flexShrink: 0,
+                  cursor: "pointer",
+                  userSelect: "none",
+                  WebkitUserSelect: "none",
+                  WebkitTouchCallout: "none",
                 }}
               >
-                <Transition
-                  mounted={toast.visible}
-                  transition="pop"
-                  duration={200}
-                  timingFunction="ease"
+                {/* Toast overlay - centered on video */}
+                <Box
+                  style={{
+                    position: "absolute",
+                    inset: 0,
+                    zIndex: 20,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    pointerEvents: "none",
+                  }}
                 >
-                  {(styles) => (
-                    <Box
+                  <Transition
+                    mounted={toast.visible}
+                    transition="pop"
+                    duration={200}
+                    timingFunction="ease"
+                  >
+                    {(styles) => (
+                      <Box
+                        style={{
+                          ...styles,
+                          background: "rgba(0, 0, 0, 0.45)",
+                          backdropFilter: "blur(12px)",
+                          borderRadius: toast.isCircular ? "50%" : theme.radius.xl,
+                          padding: toast.isCircular ? "20px" : "12px 24px",
+                          boxShadow: "0 8px 32px rgba(0, 0, 0, 0.2)",
+                          color: "white",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          width: toast.isCircular ? "90px" : "auto",
+                          height: toast.isCircular ? "90px" : "auto",
+                        }}
+                      >
+                        {toast.message}
+                      </Box>
+                    )}
+                  </Transition>
+                </Box>
+
+                {/* Album art / video + loading overlay + hidden audio element */}
+                <Box
+                  style={{
+                    position: "relative",
+                    width: (() => {
+                      const lyricsBeside = !isMobile && lyricsOpen;
+                      if (showingVideo) {
+                        if (isMobile) return "min(calc(100vw - 32px), 85vw)";
+                        // Cap height via width = height * 16/9
+                        return lyricsBeside
+                          ? "min(56vw, calc(44vh * 16 / 9))"
+                          : "min(86vw, calc(58vh * 16 / 9))";
+                      }
+                      if (isMobile) return "min(calc(100vw - 32px), 50vh)";
+                      return lyricsBeside ? "min(40vw, 58vh)" : "min(50vw, 60vh)";
+                    })(),
+                    aspectRatio: showingVideo ? "16 / 9" : "1 / 1",
+                    height: "auto",
+                    margin: isMobile ? 16 : 0,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    opacity: isMobile && lyricsOpen ? 0 : 1,
+                    pointerEvents: isMobile && lyricsOpen ? "none" : "auto",
+                    transition: "opacity 0.3s ease-out, width 0.25s ease-out",
+                  }}
+                >
+                  <audio
+                    ref={audioRef}
+                    key={media.fileUrl}
+                    style={{ display: "none" }}
+                    preload="metadata"
+                  />
+                  {showingVideo && media.videoUrl ? (
+                    <video
+                      ref={videoRef}
+                      key={media.videoUrl}
+                      src={media.videoUrl}
+                      muted
+                      playsInline
+                      preload="metadata"
                       style={{
-                        ...styles,
-                        background: "rgba(0, 0, 0, 0.45)",
-                        backdropFilter: "blur(12px)",
-                        borderRadius: toast.isCircular ? "50%" : theme.radius.xl,
-                        padding: toast.isCircular ? "20px" : "12px 24px",
-                        boxShadow: "0 8px 32px rgba(0, 0, 0, 0.2)",
-                        color: "white",
+                        width: "100%",
+                        height: "100%",
+                        objectFit: "contain",
+                        borderRadius: theme.radius.md,
+                        userSelect: "none",
+                        pointerEvents: "none",
+                        background: "rgba(0,0,0,0.35)",
+                        filter: stretchState === "loading" ? "blur(8px)" : "none",
+                        transition: "filter 0.3s ease-out",
+                      }}
+                    />
+                  ) : media.metadata.coverUrl ? (
+                    <Image
+                      key={sourceUrl || coverUrl}
+                      src={coverUrl}
+                      width="100%"
+                      height="100%"
+                      radius={theme.radius.md}
+                      fit="contain"
+                      style={{
+                        userSelect: "none",
+                        pointerEvents: "none",
+                        filter: stretchState === "loading" ? "blur(8px)" : "none",
+                        transition: "filter 0.3s ease-out",
+                      }}
+                      alt={media.metadata.title}
+                    />
+                  ) : (
+                    <Box
+                      w="100%"
+                      h="100%"
+                      bg="rgba(255,255,255,0.1)"
+                      style={{
+                        borderRadius: theme.radius.md,
                         display: "flex",
                         alignItems: "center",
                         justifyContent: "center",
-                        width: toast.isCircular ? "90px" : "auto",
-                        height: toast.isCircular ? "90px" : "auto",
+                        flexDirection: "column",
+                        gap: 10,
+                        userSelect: "none",
+                        filter: stretchState === "loading" ? "blur(8px)" : "none",
+                        transition: "filter 0.3s ease-out",
                       }}
                     >
-                      {toast.message}
+                      <IconMusic size={80} style={{ opacity: 0.5 }} />
+                      <Text size="xl" weight={600} align="center">
+                        {media.metadata.title}
+                      </Text>
+                      <Text size="md" color="dimmed" align="center">
+                        {media.metadata.artist ?? media.metadata.author}
+                        {media.metadata.album && ` · ${media.metadata.album}`}
+                      </Text>
                     </Box>
                   )}
-                </Transition>
-              </Box>
-
-              {/* Album art / video + loading overlay + hidden audio element */}
-              <Box
-                style={{
-                  position: "relative",
-                  width: (() => {
-                    const lyricsBeside = !isMobile && showLyrics;
-                    if (showingVideo) {
-                      if (isMobile) return "min(calc(100vw - 32px), 85vw)";
-                      // Cap height via width = height * 16/9
-                      return lyricsBeside
-                        ? "min(56vw, calc(44vh * 16 / 9))"
-                        : "min(86vw, calc(58vh * 16 / 9))";
-                    }
-                    if (isMobile) return "min(calc(100vw - 32px), 50vh)";
-                    return lyricsBeside ? "min(40vw, 58vh)" : "min(50vw, 60vh)";
-                  })(),
-                  aspectRatio: showingVideo ? "16 / 9" : "1 / 1",
-                  height: "auto",
-                  margin: isMobile ? 16 : 0,
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  opacity: isMobile && showLyrics ? 0 : 1,
-                  pointerEvents: isMobile && showLyrics ? "none" : "auto",
-                  transition: "opacity 0.3s ease-out, width 0.25s ease-out",
-                }}
-              >
-                <audio
-                  ref={audioRef}
-                  key={media.fileUrl}
-                  style={{ display: "none" }}
-                  preload="metadata"
-                />
-                {showingVideo && media.videoUrl ? (
-                  <video
-                    ref={videoRef}
-                    key={media.videoUrl}
-                    src={media.videoUrl}
-                    muted
-                    playsInline
-                    preload="metadata"
-                    style={{
-                      width: "100%",
-                      height: "100%",
-                      objectFit: "contain",
-                      borderRadius: theme.radius.md,
-                      userSelect: "none",
-                      pointerEvents: "none",
-                      background: "rgba(0,0,0,0.35)",
-                      filter: stretchState === "loading" ? "blur(8px)" : "none",
-                      transition: "filter 0.3s ease-out",
-                    }}
-                  />
-                ) : media.metadata.coverUrl ? (
-                  <Image
-                    src={coverUrl}
-                    width="100%"
-                    height="100%"
-                    radius={theme.radius.md}
-                    fit="contain"
-                    style={{
-                      userSelect: "none",
-                      pointerEvents: "none",
-                      filter: stretchState === "loading" ? "blur(8px)" : "none",
-                      transition: "filter 0.3s ease-out",
-                    }}
-                    alt={media.metadata.title}
-                  />
-                ) : (
-                  <Box
-                    w="100%"
-                    h="100%"
-                    bg="rgba(255,255,255,0.1)"
-                    style={{
-                      borderRadius: theme.radius.md,
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      flexDirection: "column",
-                      gap: 10,
-                      userSelect: "none",
-                      filter: stretchState === "loading" ? "blur(8px)" : "none",
-                      transition: "filter 0.3s ease-out",
-                    }}
-                  >
-                    <IconMusic size={80} style={{ opacity: 0.5 }} />
-                    <Text size="xl" weight={600} align="center">
-                      {media.metadata.title}
-                    </Text>
-                    <Text size="md" color="dimmed" align="center">
-                      {media.metadata.artist ?? media.metadata.author}
-                      {media.metadata.album && ` · ${media.metadata.album}`}
-                    </Text>
-                  </Box>
-                )}
-                {/* Buffering spinner — centered on album art, no background */}
-                {isWaiting && (
-                  <Box
-                    style={{
-                      position: "absolute",
-                      inset: 0,
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      zIndex: 10,
-                      pointerEvents: "none",
-                    }}
-                  >
-                    <Loader size="md" color="white" />
-                  </Box>
-                )}
-                {/* Processing overlay with progress bar */}
-                {stretchState === "loading" && !isWaiting && (
-                  <Box
-                    style={{
-                      position: "absolute",
-                      inset: 0,
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      zIndex: 10,
-                      pointerEvents: "none",
-                    }}
-                  >
+                  {/* Buffering spinner — centered on album art, no background */}
+                  {isWaiting && (
                     <Box
                       style={{
-                        background: "rgba(0, 0, 0, 0.45)",
-                        backdropFilter: "blur(12px)",
-                        borderRadius: theme.radius.sm,
-                        padding: "16px 24px",
-                        boxShadow: "0 8px 32px rgba(0, 0, 0, 0.2)",
+                        position: "absolute",
+                        inset: 0,
                         display: "flex",
-                        flexDirection: "column",
                         alignItems: "center",
-                        gap: 12,
+                        justifyContent: "center",
+                        zIndex: 10,
+                        pointerEvents: "none",
                       }}
                     >
-                      <Text style={{ color: "white" }} fw={600}>
-                        Processing the audio…
-                      </Text>
-                      <Box style={{ width: 200 }}>
-                        <Progress
-                          value={progress?.percent ?? 100}
-                          striped
-                          animate
-                          color="rgba(255, 255, 255, 0.7)"
-                          bg="rgba(255, 255, 255, 0.1)"
-                          size="sm"
-                        />
+                      <Loader size="md" color="white" />
+                    </Box>
+                  )}
+                  {/* Processing overlay with progress bar */}
+                  {stretchState === "loading" && !isWaiting && (
+                    <Box
+                      style={{
+                        position: "absolute",
+                        inset: 0,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        zIndex: 10,
+                        pointerEvents: "none",
+                      }}
+                    >
+                      <Box
+                        style={{
+                          background: "rgba(0, 0, 0, 0.45)",
+                          backdropFilter: "blur(12px)",
+                          borderRadius: theme.radius.sm,
+                          padding: "16px 24px",
+                          boxShadow: "0 8px 32px rgba(0, 0, 0, 0.2)",
+                          display: "flex",
+                          flexDirection: "column",
+                          alignItems: "center",
+                          gap: 12,
+                        }}
+                      >
+                        <Text style={{ color: "white" }} fw={600}>
+                          Processing the audio…
+                        </Text>
+                        <Box style={{ width: 200 }}>
+                          <Progress
+                            value={progress?.percent ?? 100}
+                            striped
+                            animate
+                            color="rgba(255, 255, 255, 0.7)"
+                            bg="rgba(255, 255, 255, 0.1)"
+                            size="sm"
+                          />
+                        </Box>
                       </Box>
                     </Box>
-                  </Box>
-                )}
-                {stretchState === "error" && (
-                  <Box
-                    style={{
-                      position: "absolute",
-                      inset: 0,
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      zIndex: 11,
-                    }}
-                  >
+                  )}
+                  {stretchState === "error" && (
                     <Box
                       style={{
-                        background: "rgba(0, 0, 0, 0.55)",
-                        backdropFilter: "blur(12px)",
-                        borderRadius: theme.radius.sm,
-                        padding: "16px 24px",
-                        boxShadow: "0 8px 32px rgba(0, 0, 0, 0.2)",
+                        position: "absolute",
+                        inset: 0,
                         display: "flex",
-                        flexDirection: "column",
                         alignItems: "center",
-                        gap: 12,
-                        maxWidth: 320,
-                        textAlign: "center",
+                        justifyContent: "center",
+                        zIndex: 11,
                       }}
                     >
-                      <Text style={{ color: "white" }} fw={600}>
-                        Couldn&apos;t load audio
-                      </Text>
-                      <Text style={{ color: "rgba(255,255,255,0.75)" }} size="sm">
-                        {playbackError ||
-                          "Playback failed. Try again or check cookies in settings."}
-                      </Text>
-                      <Button
-                        size="sm"
-                        variant="light"
-                        color="red"
-                        onClick={retryPlayback}
+                      <Box
+                        style={{
+                          background: "rgba(0, 0, 0, 0.55)",
+                          backdropFilter: "blur(12px)",
+                          borderRadius: theme.radius.sm,
+                          padding: "16px 24px",
+                          boxShadow: "0 8px 32px rgba(0, 0, 0, 0.2)",
+                          display: "flex",
+                          flexDirection: "column",
+                          alignItems: "center",
+                          gap: 12,
+                          maxWidth: 320,
+                          textAlign: "center",
+                        }}
                       >
-                        Retry playback
-                      </Button>
+                        <Text style={{ color: "white" }} fw={600}>
+                          Couldn&apos;t load audio
+                        </Text>
+                        <Text style={{ color: "rgba(255,255,255,0.75)" }} size="sm">
+                          {playbackError ||
+                            "Playback failed. Try again or check cookies in settings."}
+                        </Text>
+                        <Button
+                          size="sm"
+                          variant="light"
+                          color="red"
+                          onClick={retryPlayback}
+                        >
+                          Retry playback
+                        </Button>
+                      </Box>
                     </Box>
-                  </Box>
-                )}
+                  )}
+                </Box>
               </Box>
-            </Box>
 
-            {/* Desktop: Lyrics panel - slides in/out as sibling */}
-            {!isMobile && (
-              <Box
-                style={{
-                  position: "relative",
-                  width: showLyrics ? "min(400px, 35vw)" : 0,
-                  height: "80vh",
-                  flexShrink: 0,
-                  display: "flex",
-                  flexDirection: "column",
-                  overflow: "hidden",
-                  opacity: showLyrics ? 1 : 0,
-                  transform: showLyrics ? "translateX(0)" : "translateX(40px)",
-                  transition:
-                    "width 0.35s cubic-bezier(0.32, 0.72, 0, 1), opacity 0.3s ease-out, transform 0.35s cubic-bezier(0.32, 0.72, 0, 1)",
-                  pointerEvents: showLyrics ? "auto" : "none",
-                  backgroundColor: "transparent",
-                }}
-              >
-                <LyricsPanel
-                  lyrics={lyrics}
-                  state={lyricsState}
-                  error={lyricsError}
-                  currentTimeSeconds={currentTime}
-                  onSeek={seek}
-                  visible={showLyrics}
-                  style={{ flex: 1, minHeight: 0 }}
-                />
-              </Box>
-            )}
-          </Flex>
-
-          {/* Mobile: Lyrics overlay */}
-          {isMobile && (
-            <Transition
-              mounted={showLyrics}
-              transition="slide-left"
-              duration={280}
-              exitDuration={220}
-              timingFunction="ease-out"
-            >
-              {(styles) => (
+              {/* Desktop: Lyrics panel - slides in/out as sibling */}
+              {!isMobile && (
                 <Box
                   style={{
-                    ...styles,
-                    position: "absolute",
-                    inset: 0,
-                    zIndex: 2,
-                    background:
-                      "linear-gradient(to bottom, transparent 0%, transparent 15%, rgba(0,0,0,0.75) 40%, rgba(0,0,0,0.75) 60%, transparent 85%, transparent 100%)",
-                    backdropFilter: "blur(8px)",
-                    WebkitBackdropFilter: "blur(8px)",
+                    position: "relative",
+                    width: lyricsOpen ? "min(400px, 35vw)" : 0,
+                    height: "80vh",
+                    flexShrink: 0,
                     display: "flex",
                     flexDirection: "column",
                     overflow: "hidden",
+                    opacity: lyricsOpen ? 1 : 0,
+                    transform: lyricsOpen ? "translateX(0)" : "translateX(40px)",
+                    transition:
+                      "width 0.35s cubic-bezier(0.32, 0.72, 0, 1), opacity 0.3s ease-out, transform 0.35s cubic-bezier(0.32, 0.72, 0, 1)",
+                    pointerEvents: lyricsOpen ? "auto" : "none",
+                    backgroundColor: "transparent",
                   }}
                 >
                   <LyricsPanel
-                    lyrics={lyrics}
+                    lyrics={lyricsState === "ready" ? lyrics : []}
                     state={lyricsState}
                     error={lyricsError}
                     currentTimeSeconds={currentTime}
                     onSeek={seek}
+                    visible={lyricsOpen}
                     style={{ flex: 1, minHeight: 0 }}
-                    isMobile
-                    visible={showLyrics}
                   />
                 </Box>
               )}
-            </Transition>
-          )}
-        </Box>
+            </Flex>
 
-        {/* Bottom Controls */}
-        <Box
-          style={{
-            position: "absolute",
-            bottom: 0,
-            left: 0,
-            right: 0,
-            zIndex: 2,
-          }}
-        >
-          <Flex align="center" justify="space-between" m={10}>
-            <Text
-              fz="sm"
-              px={10}
-              py={6}
+            {/* Mobile: Lyrics overlay */}
+            {isMobile && (
+              <Transition
+                mounted={lyricsOpen}
+                transition="slide-left"
+                duration={280}
+                exitDuration={220}
+                timingFunction="ease-out"
+              >
+                {(styles) => (
+                  <Box
+                    style={{
+                      ...styles,
+                      position: "absolute",
+                      inset: 0,
+                      zIndex: 2,
+                      background: "transparent",
+                      backdropFilter: "blur(6px)",
+                      WebkitBackdropFilter: "blur(6px)",
+                      display: "flex",
+                      flexDirection: "column",
+                      overflow: "hidden",
+                    }}
+                  >
+                    <LyricsPanel
+                      lyrics={lyricsState === "ready" ? lyrics : []}
+                      state={lyricsState}
+                      error={lyricsError}
+                      currentTimeSeconds={currentTime}
+                      onSeek={seek}
+                      style={{ flex: 1, minHeight: 0 }}
+                      isMobile
+                      visible={lyricsOpen}
+                    />
+                  </Box>
+                )}
+              </Transition>
+            )}
+          </Box>
+
+          {/* Expanded-only: lyrics/menu (mobile timer floats above the dock) */}
+          {!isMini && (
+            <Flex
+              align="center"
+              justify="flex-end"
               style={{
-                boxShadow: "0px 0px 0px 1px #383A3F",
-                backgroundColor: theme.colors.dark[6],
-                borderRadius: theme.radius.sm,
-                fontVariantNumeric: "tabular-nums",
-                userSelect: "none",
-                WebkitUserSelect: "none",
+                position: "absolute",
+                left: 10,
+                right: 10,
+                bottom: Math.max(barHeight, 72) + 8,
+                zIndex: 2,
               }}
             >
-              {`${getFormattedTime(seekPosition ?? currentTime)} / ${getFormattedTime(duration)}`}
-            </Text>
-            <Flex gap="xs">
-              <Button
-                variant="default"
-                leftIcon={<IconMusic size={18} />}
-                onClick={() => setLyricsModalOpened(true)}
-                loading={lyricsState === "loading"}
-              >
-                Lyrics
-              </Button>
-              <Menu shadow="md" width={200} position="top-end">
-                <Menu.Target>
-                  <Button variant="default" leftIcon={<IconMenu2 size={18} />}>
-                    Menu
-                  </Button>
-                </Menu.Target>
-                <Menu.Dropdown>
-                  <Menu.Label>Navigation</Menu.Label>
-                  <Menu.Item icon={<IconHome size={14} />} component={Link} href="/">
-                    Home
-                  </Menu.Item>
-                  {originalPlatformUrl && (
+              <Flex gap="xs">
+                <Button
+                  variant="default"
+                  leftIcon={<IconMusic size={18} />}
+                  onClick={() => setLyricsModalOpened(true)}
+                  loading={lyricsState === "loading"}
+                >
+                  Lyrics
+                </Button>
+                <Menu shadow="md" width={200} position="top-end">
+                  <Menu.Target>
+                    <Button variant="default" leftIcon={<IconMenu2 size={18} />}>
+                      Menu
+                    </Button>
+                  </Menu.Target>
+                  <Menu.Dropdown>
+                    <Menu.Label>Navigation</Menu.Label>
                     <Menu.Item
-                      icon={
-                        media.isAudioTrackVideo ? (
-                          <SiYoutubemusic size={14} />
-                        ) : (
-                          <SiYoutube size={14} />
-                        )
-                      }
-                      component="a"
-                      href={originalPlatformUrl}
-                      rightSection={<IconExternalLink size={12} />}
-                      target="_blank"
+                      icon={<IconHome size={14} />}
+                      onClick={() => onRequestCollapse?.()}
                     >
-                      {media.isAudioTrackVideo ? "YouTube Music" : "YouTube"}
+                      Home
                     </Menu.Item>
-                  )}
-                  <Menu.Divider />
-                  <Menu.Label>Actions</Menu.Label>
-                  {!media?.isAudioTrackVideo && (
+                    {originalPlatformUrl && (
+                      <Menu.Item
+                        icon={
+                          media.isAudioTrackVideo ? (
+                            <SiYoutubemusic size={14} />
+                          ) : (
+                            <SiYoutube size={14} />
+                          )
+                        }
+                        component="a"
+                        href={originalPlatformUrl}
+                        rightSection={<IconExternalLink size={12} />}
+                        target="_blank"
+                      >
+                        {media.isAudioTrackVideo ? "YouTube Music" : "YouTube"}
+                      </Menu.Item>
+                    )}
+                    <Menu.Divider />
+                    <Menu.Label>Actions</Menu.Label>
+                    {!media?.isAudioTrackVideo && (
+                      <Menu.Item
+                        icon={<IconVideo size={14} />}
+                        onClick={handleToggleShowVideo}
+                        disabled={!media?.videoUrl && !showVideo}
+                        rightSection={
+                          showVideo && media?.videoUrl ? (
+                            <Text size="xs" color="dimmed">
+                              On
+                            </Text>
+                          ) : undefined
+                        }
+                      >
+                        Show video
+                      </Menu.Item>
+                    )}
                     <Menu.Item
-                      icon={<IconVideo size={14} />}
-                      onClick={handleToggleShowVideo}
-                      disabled={!media?.videoUrl && !showVideo}
-                      rightSection={
-                        showVideo && media?.videoUrl ? (
-                          <Text size="xs" color="dimmed">
-                            On
-                          </Text>
-                        ) : undefined
-                      }
+                      icon={<IconDownload size={14} />}
+                      onClick={openDownloadModal}
                     >
-                      Show video
+                      Download
                     </Menu.Item>
-                  )}
-                  <Menu.Item
-                    icon={<IconDownload size={14} />}
-                    onClick={openDownloadModal}
-                  >
-                    Download
-                  </Menu.Item>
-                </Menu.Dropdown>
-              </Menu>
+                  </Menu.Dropdown>
+                </Menu>
+              </Flex>
             </Flex>
-          </Flex>
+          )}
+        </Box>
+      </Box>
 
+      {/* Mobile: duration floats above the dock in both mini and expanded */}
+      {isMobile && (
+        <Text
+          fz="sm"
+          px={10}
+          py={6}
+          style={{
+            position: "fixed",
+            left: 10,
+            bottom: barHeight + 8,
+            zIndex: 202,
+            boxShadow: "0px 0px 0px 1px #383A3F",
+            backgroundColor: theme.colors.dark[6],
+            borderRadius: theme.radius.sm,
+            fontVariantNumeric: "tabular-nums",
+            userSelect: "none",
+            WebkitUserSelect: "none",
+            opacity: isMediaReady ? 1 : 0.45,
+            pointerEvents: "none",
+          }}
+        >
+          {`${getFormattedTime(displayTime)} / ${getFormattedTime(displayDuration)}`}
+        </Text>
+      )}
+
+      {/* Fixed dock — seek + transport; does not slide away */}
+      <Box
+        ref={bottomBarRef}
+        style={{
+          position: "fixed",
+          left: 0,
+          right: 0,
+          bottom: 0,
+          zIndex: 201,
+          pointerEvents: "auto",
+          backgroundColor: theme.colors.dark[7],
+          boxShadow: isMini ? "0 -8px 24px rgba(0,0,0,0.35)" : undefined,
+        }}
+      >
+        {/* Seek flush to dock top edge — height 0 so thumb/track never add a black band */}
+        <Box
+          style={{
+            position: "relative",
+            width: "100%",
+            height: 0,
+            flexShrink: 0,
+            overflow: "visible",
+            zIndex: 5,
+          }}
+        >
           <Box
             ref={seekTrackRef}
             onPointerDown={handleTrackPointerDown}
             onMouseEnter={() => setIsSeekTrackHovered(true)}
             onMouseLeave={() => setIsSeekTrackHovered(false)}
             style={{
-              paddingRight: 8,
-              position: "relative",
+              position: "absolute",
+              left: 0,
+              right: 0,
+              top: -12,
+              height: 24,
               touchAction: "none",
               cursor: "pointer",
+              zIndex: 3,
             }}
-          >
-            {/* Buffered segments rendered behind the slider */}
-            {duration > 0 &&
-              buffered.map((range, i) => (
-                <Box
-                  key={i}
-                  style={{
-                    position: "absolute",
-                    left: `${(range.start / duration) * 100}%`,
-                    width: `${((range.end - range.start) / duration) * 100}%`,
-                    height: 3,
-                    bottom: 0,
-                    backgroundColor: "rgba(255, 255, 255, 0.12)",
-                    borderRadius: 0,
-                    pointerEvents: "none",
-                    zIndex: 0,
-                  }}
-                />
-              ))}
-            <Slider
-              style={{ pointerEvents: "none" }}
-              disabled={isLoading && !isNativeFallback}
-              value={seekPosition ?? currentTime}
-              onChange={handleSliderChange}
-              onChangeEnd={handleSeekEnd}
-              min={0}
-              step={0.1}
-              radius={0}
-              mb={-3}
-              showLabelOnHover={false}
-              size="xs"
-              sx={{
-                position: "relative",
-                zIndex: 1,
-                "&:hover": {
-                  ".mantine-Slider-track": {
-                    height: 6,
-                  },
-                  ".mantine-Slider-thumb": {
-                    opacity: 1,
-                    width: 15,
-                    height: 15,
-                  },
-                },
-              }}
-              styles={{
-                thumb: {
-                  borderWidth: 0,
-                  opacity: isSeekTrackHovered ? 1 : 0,
-                  width: 16,
-                  height: 16,
-                  transition: "opacity 0.15s, width 0.15s, height 0.15s",
-                },
-                track: {
-                  height: isSeekTrackHovered ? 6 : undefined,
+          />
+          {displayDuration > 0 &&
+            buffered.map((range, i) => (
+              <Box
+                key={i}
+                style={{
+                  position: "absolute",
+                  left: `${(range.start / displayDuration) * 100}%`,
+                  width: `${((range.end - range.start) / displayDuration) * 100}%`,
+                  height: seekTrackHeight,
+                  top: 0,
+                  backgroundColor: "rgba(255, 255, 255, 0.12)",
+                  borderRadius: 0,
+                  pointerEvents: "none",
+                  zIndex: 0,
                   transition: "height 0.15s",
-                  backgroundColor: "transparent",
-                },
-                bar: {
-                  backgroundColor: barColor,
-                },
-              }}
-              label={(v) => (currentTime >= duration - 5 ? null : getFormattedTime(v))}
-              max={duration}
-            />
-          </Box>
+                }}
+              />
+            ))}
+          <Slider
+            style={{
+              pointerEvents: "none",
+              width: "100%",
+              height: seekSlotHeight,
+              position: "absolute",
+              left: 0,
+              right: 0,
+              top: 0,
+            }}
+            disabled={!isMediaReady || (isLoading && !isNativeFallback)}
+            value={displayTime}
+            onChange={handleSliderChange}
+            onChangeEnd={handleSeekEnd}
+            min={0}
+            step={0.1}
+            radius={0}
+            showLabelOnHover={false}
+            size="xs"
+            thumbSize={seekThumbSize}
+            styles={{
+              root: { width: "100%", height: seekSlotHeight },
+              trackContainer: {
+                overflow: "visible",
+                height: seekSlotHeight,
+              },
+              track: {
+                height: seekTrackHeight,
+                backgroundColor: "rgba(255, 255, 255, 0.12)",
+                transition: "height 0.15s",
+              },
+              bar: {
+                backgroundColor: barColor,
+                transition: "height 0.15s",
+              },
+              thumb: {
+                border: "none",
+                borderWidth: 0,
+                boxShadow: "none",
+                backgroundColor: barColor,
+                borderRadius: "50%",
+                boxSizing: "border-box",
+                padding: 0,
+                opacity: showSeekChrome ? 1 : 0,
+                transition: "opacity 0.12s ease",
+                // Never capture hover — the hit area above owns it (avoids thumb jitter)
+                pointerEvents: "none",
+              },
+            }}
+            label={(v) =>
+              displayTime >= displayDuration - 5 ? null : getFormattedTime(v)
+            }
+            max={Math.max(displayDuration, 0.1)}
+          />
+        </Box>
 
-          <Box style={{ backgroundColor: theme.colors.dark[6] }}>
-            <Flex gap="sm" px="xs" py="xs" align="center">
-              <Flex align="center" gap={4}>
+        <Box style={{ backgroundColor: theme.colors.dark[7], paddingTop: 4 }}>
+          <Flex gap={isMobile ? 4 : "sm"} px="xs" py="xs" align="center">
+            {/* Transport controls — clicks must not collapse */}
+            <Flex align="center" gap={isMobile ? 2 : 4}>
+              <ActionIcon
+                size="xl"
+                onClick={handleTogglePlayer}
+                title={isPlaying ? "Pause" : "Play"}
+                variant="transparent"
+                color="gray"
+                disabled={isLoading || !isMediaReady}
+              >
+                {isPlaying ? (
+                  <IconPlayerPauseFilled size={30} />
+                ) : (
+                  <IconPlayerPlayFilled size={30} />
+                )}
+              </ActionIcon>
+              <Flex
+                align="center"
+                onMouseEnter={() => setIsVolumeHovered(true)}
+                onMouseLeave={() => setIsVolumeHovered(false)}
+                style={{ position: "relative" }}
+              >
                 <ActionIcon
-                  size="xl"
-                  onClick={handleTogglePlayer}
-                  title={isPlaying ? "Pause" : "Play"}
+                  size="lg"
+                  disabled={isLoading}
+                  onClick={handleMuteToggle}
+                  title={isMuted || volume === 0 ? "Unmute" : "Mute"}
                   variant="transparent"
                   color="gray"
-                  disabled={isLoading}
                 >
-                  {isPlaying ? (
-                    <IconPlayerPauseFilled size={30} />
-                  ) : (
-                    <IconPlayerPlayFilled size={30} />
-                  )}
+                  {getVolumeIcon()}
                 </ActionIcon>
-                {/* Volume Control */}
-                <Flex
-                  align="center"
-                  onMouseEnter={() => !isMobile && setIsVolumeHovered(true)}
-                  onMouseLeave={() => !isMobile && setIsVolumeHovered(false)}
-                  style={{ position: "relative" }}
+                <Box
+                  style={{
+                    width: isVolumeHovered ? 80 : 0,
+                    overflow: "hidden",
+                    transition: "width 0.2s ease",
+                  }}
                 >
-                  <ActionIcon
-                    size="lg"
+                  <Slider
                     disabled={isLoading}
-                    onClick={() => {
-                      if (isMobile) {
-                        setIsVolumeHovered(!isVolumeHovered);
-                      } else {
-                        handleMuteToggle();
-                      }
-                    }}
-                    title={isMuted || volume === 0 ? "Unmute" : "Mute"}
-                    variant="transparent"
-                    color="gray"
-                  >
-                    {getVolumeIcon()}
-                  </ActionIcon>
-                  <Box
-                    style={{
-                      width: isVolumeHovered ? 80 : 0,
-                      overflow: "hidden",
-                      transition: "width 0.2s ease",
-                    }}
-                  >
-                    <Slider
-                      disabled={isLoading}
-                      value={isMuted ? 0 : volume}
-                      onChange={handleVolumeChange}
-                      min={0}
-                      max={1}
-                      step={0.01}
-                      size="sm"
-                      w={70}
-                      ml={4}
-                      styles={{
-                        thumb: {
-                          borderWidth: 0,
-                        },
-                      }}
-                    />
-                  </Box>
-                </Flex>
-                {/* Backward/Forward - hidden on mobile */}
-                <MediaQuery smallerThan="xs" styles={{ display: "none" }}>
-                  <Flex align="center" gap={4}>
-                    <ActionIcon
-                      disabled={isLoading}
-                      size="lg"
-                      onClick={handleBackward}
-                      title="Backward 5 sec"
-                      variant="transparent"
-                      color="gray"
-                    >
-                      <IconRewindBackward5 />
-                    </ActionIcon>
-                    <ActionIcon
-                      disabled={isLoading}
-                      size="lg"
-                      onClick={handleForward}
-                      title="Forward 5 sec"
-                      variant="transparent"
-                      color="gray"
-                    >
-                      <IconRewindForward5 />
-                    </ActionIcon>
-                  </Flex>
-                </MediaQuery>
-                <ActionIcon
-                  disabled={isLoading}
-                  size="lg"
-                  onClick={toggleLoop}
-                  title={isRepeat ? "Turn off Repeat" : "Repeat"}
-                  variant="transparent"
-                  color={isRepeat ? "primary" : "gray"}
-                >
-                  {isRepeat ? <IconRepeat /> : <IconRepeatOff />}
-                </ActionIcon>
-              </Flex>
-              <Flex ml={{ base: 0, xs: "lg" }}>
-                <MediaQuery smallerThan="xs" styles={{ display: "none" }}>
-                  <Image
-                    src={coverUrl}
-                    radius="sm"
-                    height={38}
-                    width={38}
-                    withPlaceholder
-                    placeholder={
-                      <Center>
-                        <IconMusic />
-                      </Center>
-                    }
-                    alt="cover image"
-                    style={{
-                      userSelect: "none",
-                      WebkitUserSelect: "none",
-                      pointerEvents: "none",
+                    value={isMuted ? 0 : volume}
+                    onChange={handleVolumeChange}
+                    min={0}
+                    max={1}
+                    step={0.01}
+                    size="sm"
+                    w={70}
+                    ml={4}
+                    styles={{
+                      thumb: {
+                        borderWidth: 0,
+                        borderRadius: "50%",
+                      },
                     }}
                   />
-                </MediaQuery>
-                <Box ml="sm">
-                  <Flex align="center" gap={6}>
-                    <Text size="sm" weight={600} lineClamp={1}>
-                      {media.metadata.title}
-                    </Text>
-                  </Flex>
+                </Box>
+              </Flex>
+              {!isMobile && (
+                <Text
+                  size="xs"
+                  color="dimmed"
+                  ml={4}
+                  style={{
+                    fontVariantNumeric: "tabular-nums",
+                    width: "13ch",
+                    flexShrink: 0,
+                    whiteSpace: "nowrap",
+                    overflow: "hidden",
+                    userSelect: "none",
+                    WebkitUserSelect: "none",
+                    opacity: isMediaReady ? 1 : 0.45,
+                  }}
+                >
+                  {`${getFormattedTime(displayTime)} / ${getFormattedTime(displayDuration)}`}
+                </Text>
+              )}
+            </Flex>
+
+            {/* Title / cover — only this area (plus chevron) toggles mini */}
+            <Flex
+              ml={isMobile ? 4 : { base: 0, xs: "lg" }}
+              style={{ minWidth: 0, flex: 1, cursor: "pointer" }}
+              onClick={handleChromeClick}
+              align="center"
+              gap={isMobile ? 6 : undefined}
+            >
+              <MediaQuery smallerThan="xs" styles={{ display: "none" }}>
+                <Image
+                  key={sourceUrl || coverUrl || "cover"}
+                  src={coverUrl || undefined}
+                  radius="sm"
+                  height={38}
+                  width={38}
+                  withPlaceholder
+                  placeholder={
+                    <Center>
+                      <IconMusic />
+                    </Center>
+                  }
+                  alt="cover image"
+                  style={{
+                    userSelect: "none",
+                    WebkitUserSelect: "none",
+                    pointerEvents: "none",
+                    flexShrink: 0,
+                    opacity: isMediaReady ? 1 : 0.55,
+                  }}
+                />
+              </MediaQuery>
+              <Box ml="sm" style={{ minWidth: 0, flex: 1 }}>
+                <Flex align="center" gap={6}>
+                  <Text size="sm" weight={600} lineClamp={1}>
+                    {media.metadata.title || "\u00A0"}
+                  </Text>
+                </Flex>
+                {(media.metadata.artist || media.metadata.author) && (
                   <Text size="xs" color="dimmed" lineClamp={1}>
                     {media.metadata.artist ?? media.metadata.author}
                     {media.metadata.album && ` · ${media.metadata.album}`}
                   </Text>
-                </Box>
-              </Flex>
+                )}
+              </Box>
             </Flex>
-          </Box>
+
+            <ActionIcon
+              size="lg"
+              disabled={isLoading}
+              onClick={toggleLoop}
+              title={isRepeat ? "Turn off Repeat" : "Repeat"}
+              variant="transparent"
+              color="gray"
+              style={{
+                flexShrink: 0,
+                opacity: isRepeat ? 1 : 0.5,
+              }}
+            >
+              <IconRepeat />
+            </ActionIcon>
+            <ActionIcon
+              size="lg"
+              variant="transparent"
+              color="gray"
+              title={isMini ? "Expand player" : "Minimize player"}
+              onClick={handleChevronClick}
+              style={{ flexShrink: 0 }}
+            >
+              {isMini ? <IconChevronUp size={22} /> : <IconChevronDown size={22} />}
+            </ActionIcon>
+          </Flex>
         </Box>
       </Box>
     </MantineProvider>

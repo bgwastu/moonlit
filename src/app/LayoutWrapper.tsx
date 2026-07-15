@@ -3,6 +3,7 @@
 import { useSyncExternalStore } from "react";
 import { MantineProvider } from "@mantine/core";
 import { Notifications } from "@mantine/notifications";
+import { PlayerHost } from "@/components/PlayerHost";
 import { AppProvider, useAppContext } from "@/context/AppContext";
 
 /** 0 until first client microtask; keeps SSR/hydration first paint identical (placeholder). */
@@ -43,6 +44,7 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
     <MantineProvider withGlobalStyles withNormalizeCSS theme={theme}>
       <Notifications />
       {children}
+      <PlayerHost />
     </MantineProvider>
   );
 }
