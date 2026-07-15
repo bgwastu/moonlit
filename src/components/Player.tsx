@@ -66,6 +66,7 @@ import {
 import { StreamState, streamWithProgress } from "@/utils/streamer";
 import CustomizePlaybackModal from "./CustomizePlaybackModal";
 import DownloadModal from "./DownloadModal";
+import { ErrorScreen } from "./ErrorScreen";
 import LoadingOverlay from "./LoadingOverlay";
 import LyricsModal from "./LyricsModal";
 import LyricsPanel from "./LyricsPanel";
@@ -107,13 +108,11 @@ function getPrepopulatedMetadata(
 export function Player({
   url,
   duration: propDuration,
-  metadataLoadError: propMetadataLoadError,
   media: propMedia,
   repeating,
 }: {
   url?: string;
   duration?: number;
-  metadataLoadError?: string;
   media?: Media;
   repeating?: boolean;
 }) {
@@ -125,6 +124,7 @@ export function Player({
   // Phase management: extracting while URL is being resolved, then playing
   const [extractedMedia, setExtractedMedia] = useState<Media | null>(null);
   const [streamState, setStreamState] = useState<StreamState>({ status: "idle" });
+  const [playbackError, setPlaybackError] = useState<string | null>(null);
   const streamStarted = useRef(false);
   const audioErrorCount = useRef(0);
 
@@ -160,9 +160,8 @@ export function Player({
     () => propMedia || extractedMedia || provisionalMedia || (url ? null : contextMedia),
     [propMedia, extractedMedia, provisionalMedia, url, contextMedia],
   );
-  const metadataLoadError = propMetadataLoadError;
-  // Show extracting UI only when we have a URL and absolutely no media of any kind
-  const isExtracting = !media && !!url;
+  // Show extracting UI only when resolving URL and not in error state
+  const isExtracting = !media && !!url && streamState.status !== "error";
 
   // Inlined extraction logic (was in InitialPlayer + useMediaStreamer)
   const startStream = useCallback(() => {
@@ -177,6 +176,8 @@ export function Player({
     };
     streamWithProgress(url, updateStreamState, abortController.signal)
       .then((streamedMedia: Media) => {
+        audioErrorCount.current = 0;
+        setPlaybackError(null);
         setExtractedMedia(streamedMedia);
       })
       .catch((e) => {
@@ -194,13 +195,31 @@ export function Player({
     return () => abortController.abort();
   }, [url]);
 
+  const retryExtract = useCallback(() => {
+    streamStarted.current = true;
+    setStreamState({ status: "idle" });
+    startStream();
+  }, [startStream]);
+
+  const retryPlayback = useCallback(() => {
+    audioErrorCount.current = 0;
+    setPlaybackError(null);
+    setExtractedMedia(null);
+    streamStarted.current = false;
+    setStreamState({ status: "idle" });
+    setTimeout(() => {
+      streamStarted.current = true;
+      startStream();
+    }, 0);
+  }, [startStream]);
+
   // Auto-start stream for URL mode — check extractedMedia, not media (which includes provisionalMedia)
   useEffect(() => {
-    if (extractedMedia || metadataLoadError || streamStarted.current) return;
+    if (extractedMedia || streamStarted.current) return;
     if (!url) return;
     streamStarted.current = true;
     setTimeout(() => startStream(), 0);
-  }, [url, metadataLoadError, extractedMedia, startStream]);
+  }, [url, extractedMedia, startStream]);
 
   // Add to history when playback starts (media excluded intentionally — it changes reference on every render)
   useEffect(() => {
@@ -293,14 +312,34 @@ export function Player({
   }, []);
 
   // Re-extract when audio fails to load (stream URL may have expired)
-  const handleAudioError = useCallback(() => {
-    if (audioErrorCount.current >= 1) return;
-    audioErrorCount.current++;
-    setExtractedMedia(null);
-    streamStarted.current = false;
-    setStreamState({ status: "idle" });
-    setTimeout(() => startStream(), 500);
-  }, [startStream]);
+  const handleAudioError = useCallback(
+    (e?: unknown) => {
+      if (audioErrorCount.current >= 1) {
+        const message =
+          e instanceof Error
+            ? e.message
+            : "Couldn't load audio. Try again or check cookies in settings.";
+        setPlaybackError(message);
+        notifications.show({
+          title: "Playback failed",
+          message: `${message} Try configuring cookies from a logged-in account in the app settings if the problem persists.`,
+          color: "red",
+          autoClose: 10000,
+        });
+        return;
+      }
+      audioErrorCount.current++;
+      setExtractedMedia(null);
+      streamStarted.current = false;
+      setStreamState({ status: "idle" });
+      setPlaybackError(null);
+      setTimeout(() => {
+        streamStarted.current = true;
+        startStream();
+      }, 500);
+    },
+    [startStream],
+  );
 
   // Unified player (audio + DSP processing)
   const {
@@ -823,14 +862,23 @@ export function Player({
     enabled: true,
   });
 
-  // Redirect to home when the URL itself is bad (not stream extraction errors)
-  useEffect(() => {
-    if (metadataLoadError) {
-      router.replace("/");
-    }
-  }, [metadataLoadError, router]);
-
   // === Extraction UI (shown before player mounts) ===
+  if (streamState.status === "error" && !media) {
+    return (
+      <ErrorScreen
+        title="Stream failed"
+        message={
+          streamState.message ||
+          "Could not process the media. Try configuring cookies from a logged-in account in settings."
+        }
+        primaryLabel="Retry"
+        onPrimary={retryExtract}
+        secondaryLabel="Go home"
+        onSecondary={() => router.push("/")}
+      />
+    );
+  }
+
   if (isExtracting) {
     return (
       <div style={{ position: "relative", height: "100dvh" }}>
@@ -1163,6 +1211,50 @@ export function Player({
                           size="sm"
                         />
                       </Box>
+                    </Box>
+                  </Box>
+                )}
+                {stretchState === "error" && (
+                  <Box
+                    style={{
+                      position: "absolute",
+                      inset: 0,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      zIndex: 11,
+                    }}
+                  >
+                    <Box
+                      style={{
+                        background: "rgba(0, 0, 0, 0.55)",
+                        backdropFilter: "blur(12px)",
+                        borderRadius: theme.radius.sm,
+                        padding: "16px 24px",
+                        boxShadow: "0 8px 32px rgba(0, 0, 0, 0.2)",
+                        display: "flex",
+                        flexDirection: "column",
+                        alignItems: "center",
+                        gap: 12,
+                        maxWidth: 320,
+                        textAlign: "center",
+                      }}
+                    >
+                      <Text style={{ color: "white" }} fw={600}>
+                        Couldn&apos;t load audio
+                      </Text>
+                      <Text style={{ color: "rgba(255,255,255,0.75)" }} size="sm">
+                        {playbackError ||
+                          "Playback failed. Try again or check cookies in settings."}
+                      </Text>
+                      <Button
+                        size="sm"
+                        variant="light"
+                        color="red"
+                        onClick={retryPlayback}
+                      >
+                        Retry playback
+                      </Button>
                     </Box>
                   </Box>
                 )}

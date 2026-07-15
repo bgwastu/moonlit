@@ -1,7 +1,7 @@
 "use client";
 
 import { Component, type ReactNode } from "react";
-import { Button, Container, Paper, Text, Title } from "@mantine/core";
+import { ErrorScreen } from "@/components/ErrorScreen";
 
 interface ErrorBoundaryProps {
   children: ReactNode;
@@ -23,6 +23,10 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
     return { hasError: true, error };
   }
 
+  componentDidCatch(error: Error, info: React.ErrorInfo) {
+    console.error("[Moonlit] ErrorBoundary", error, info);
+  }
+
   handleReset = () => {
     this.setState({ hasError: false, error: undefined });
   };
@@ -32,19 +36,13 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
       if (this.props.fallback) return this.props.fallback;
 
       return (
-        <Container py="xl">
-          <Paper p="lg" withBorder>
-            <Title order={3} mb="sm">
-              Something went wrong
-            </Title>
-            <Text c="dimmed" size="sm" mb="md">
-              {this.state.error?.message || "An unexpected error occurred in the player."}
-            </Text>
-            <Button onClick={this.handleReset} variant="light">
-              Try again
-            </Button>
-          </Paper>
-        </Container>
+        <ErrorScreen
+          message={
+            this.state.error?.message || "An unexpected error occurred in the player."
+          }
+          onPrimary={this.handleReset}
+          fullViewport={false}
+        />
       );
     }
 

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { parseApiError } from "@/lib/apiError";
 import { STREAM_CHUNK_BYTES } from "@/lib/streamConstants";
 
 type StretchPlayerState = "loading" | "ready" | "error";
@@ -176,9 +177,7 @@ async function fetchFile(
     signal,
   });
   if (!firstResponse.ok) {
-    throw new Error(
-      `Audio download failed: ${firstResponse.status} ${firstResponse.statusText}`,
-    );
+    throw new Error(await parseApiError(firstResponse));
   }
 
   // Some upstreams ignore Range and return the complete file. Use that response
@@ -221,7 +220,7 @@ async function fetchFile(
         signal,
       });
       if (response.status !== 206) {
-        throw new Error(`Audio range fetch failed: ${response.status}`);
+        throw new Error(await parseApiError(response));
       }
       const range = response.headers.get("content-range");
       const match = range?.match(/^bytes (\d+)-(\d+)\/(\d+)$/);

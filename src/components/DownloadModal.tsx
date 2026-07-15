@@ -5,6 +5,7 @@ import { Alert, Button, Group, Modal, Progress, Stack, Text } from "@mantine/cor
 import { notifications } from "@mantine/notifications";
 import { IconDownload, IconInfoCircle } from "@tabler/icons-react";
 import { Media } from "@/interfaces";
+import { parseApiError } from "@/lib/apiError";
 import { STREAM_CHUNK_BYTES } from "@/lib/streamConstants";
 
 interface DownloadModalProps {
@@ -39,7 +40,7 @@ async function fetchAudioFile(
   onProgress: (percent: number) => void,
 ): Promise<ArrayBuffer> {
   const probe = await fetch(url, { headers: { Range: "bytes=0-0" } });
-  if (!probe.ok) throw new Error(`Audio download failed: ${probe.status}`);
+  if (!probe.ok) throw new Error(await parseApiError(probe));
 
   const contentRange = probe.headers.get("content-range");
   const total = contentRange ? Number(contentRange.match(/\/(\d+)$/)?.[1]) : 0;
@@ -63,8 +64,7 @@ async function fetchAudioFile(
       const response = await fetch(url, {
         headers: { Range: `bytes=${start}-${end}` },
       });
-      if (!response.ok)
-        throw new Error(`Audio range download failed: ${response.status}`);
+      if (!response.ok) throw new Error(await parseApiError(response));
       chunks[index] = new Uint8Array(await response.arrayBuffer());
       onProgress((++completedChunks / chunkCount) * 100);
     }
@@ -92,6 +92,7 @@ export default function DownloadModal({
   currentReverbAmount,
 }: DownloadModalProps) {
   const [isProcessing, setIsProcessing] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
   const [exportProgress, setExportProgress] = useState({
     value: 0,
     label: "Starting...",
@@ -99,6 +100,7 @@ export default function DownloadModal({
 
   const handleDownload = async () => {
     setIsProcessing(true);
+    setExportError(null);
     const exportStartedAt = performance.now();
     const mark = (stage: string) =>
       console.log(
@@ -242,9 +244,11 @@ export default function DownloadModal({
       onClose();
     } catch (e) {
       console.error(e);
+      const message = (e as Error).message || "Download failed";
+      setExportError(message);
       notifications.show({
         title: "Download failed",
-        message: (e as Error).message,
+        message,
         color: "red",
       });
     } finally {
@@ -269,6 +273,12 @@ export default function DownloadModal({
         <Text size="sm" color="dimmed">
           {parts.join(" — ")}
         </Text>
+
+        {exportError && (
+          <Alert color="red" variant="light">
+            {exportError}
+          </Alert>
+        )}
 
         {isProcessing && (
           <Stack>

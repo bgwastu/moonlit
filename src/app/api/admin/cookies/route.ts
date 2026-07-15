@@ -30,7 +30,8 @@ export async function GET(request: Request) {
       ? await fs.readFile(SYSTEM_COOKIES_PATH, "utf-8")
       : "";
     return NextResponse.json({ cookies });
-  } catch {
+  } catch (e) {
+    console.error("[Moonlit] admin cookies read error:", e);
     return NextResponse.json({ error: "Failed to read cookies" }, { status: 500 });
   }
 }
@@ -46,7 +47,8 @@ export async function POST(request: Request) {
     }
     await fs.writeFile(SYSTEM_COOKIES_PATH, cookies || "", "utf-8");
     return NextResponse.json({ success: true });
-  } catch {
+  } catch (e) {
+    console.error("[Moonlit] admin cookies save error:", e);
     return NextResponse.json({ error: "Failed to save cookies" }, { status: 500 });
   }
 }

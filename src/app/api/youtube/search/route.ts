@@ -1,3 +1,4 @@
+import { apiError, searchErrorCode } from "@/lib/apiError";
 import {
   type MusicSearchResult,
   type YouTubeSearchResult,
@@ -40,6 +41,11 @@ export async function GET(request: Request) {
     return Response.json({ results: videoResults });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to search YouTube.";
-    return Response.json({ error: message, results: [] }, { status: 500 });
+    console.error("[Moonlit] YouTube search error:", message);
+    const code = searchErrorCode(message);
+    return Response.json(
+      { error: message, results: [], ...(code ? { code } : {}) },
+      { status: 500 },
+    );
   }
 }

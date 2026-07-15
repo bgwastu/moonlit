@@ -17,6 +17,7 @@ export async function GET(request: Request) {
     });
 
     if (!res.ok) {
+      console.error("[Moonlit] cover upstream", res.status, imageUrl);
       return new NextResponse("Failed to fetch", { status: res.status });
     }
 
@@ -28,7 +29,8 @@ export async function GET(request: Request) {
         "Access-Control-Allow-Origin": "*",
       },
     });
-  } catch {
+  } catch (e) {
+    console.error("[Moonlit] cover fetch error:", e);
     return new NextResponse("Failed to fetch", { status: 502 });
   }
 }

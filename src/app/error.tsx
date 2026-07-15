@@ -11,13 +11,13 @@ export default function Error({
   reset: () => void;
 }) {
   useEffect(() => {
-    console.error("[Moonlit] player error:", error);
+    console.error("[Moonlit] app error:", error);
   }, [error]);
 
   return (
     <ErrorScreen
-      title="Something went wrong!"
-      message={error.message || "An unexpected error occurred while loading the player."}
+      title="Something went wrong"
+      message={error.message || "An unexpected error occurred."}
       onPrimary={reset}
     />
   );
