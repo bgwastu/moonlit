@@ -1,6 +1,4 @@
 import { NextResponse } from "next/server";
-import http from "http";
-import https from "https";
 import { getTokenStore } from "@/lib/streamTokens";
 
 function corsHeaders(): Record<string, string> {
@@ -16,49 +14,6 @@ export async function OPTIONS() {
   return new Response(null, {
     status: 204,
     headers: corsHeaders(),
-  });
-}
-
-function upstreamFetch(
-  url: string,
-  headers: Record<string, string>,
-  signal?: AbortSignal,
-): Promise<{
-  status: number;
-  headers: Record<string, string>;
-  body: NodeJS.ReadableStream;
-}> {
-  return new Promise((resolve, reject) => {
-    const parsed = new URL(url);
-    const mod = parsed.protocol === "https:" ? https : http;
-    const abort = () => req.destroy();
-
-    if (signal) {
-      if (signal.aborted) {
-        reject(new DOMException("Aborted", "AbortError"));
-        return;
-      }
-      signal.addEventListener("abort", abort, { once: true });
-    }
-
-    const req = mod.get(url, { headers }, (res) => {
-      const status = res.statusCode || 502;
-      const respHeaders: Record<string, string> = {};
-      for (let i = 0; i < res.rawHeaders.length; i += 2) {
-        respHeaders[res.rawHeaders[i].toLowerCase()] = res.rawHeaders[i + 1];
-      }
-      resolve({ status, headers: respHeaders, body: res });
-    });
-
-    req.on("error", (e) => {
-      signal?.removeEventListener("abort", abort);
-      reject(e);
-    });
-
-    req.setTimeout(25_000, () => {
-      req.destroy();
-      reject(new Error("Upstream timeout"));
-    });
   });
 }
 
@@ -99,7 +54,10 @@ export async function GET(
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 30_000);
 
-    const upstream = await upstreamFetch(entry.url, upstreamHeaders, controller.signal);
+    const upstream = await fetch(entry.url, {
+      headers: upstreamHeaders,
+      signal: controller.signal,
+    });
     clearTimeout(timeoutId);
 
     if (upstream.status !== 200 && upstream.status !== 206) {
@@ -110,10 +68,10 @@ export async function GET(
       });
     }
 
-    const contentLength = upstream.headers["content-length"];
-    const acceptRanges = upstream.headers["accept-ranges"];
-    const contentRange = upstream.headers["content-range"];
-    const upstreamContentType = upstream.headers["content-type"];
+    const contentLength = upstream.headers.get("content-length");
+    const acceptRanges = upstream.headers.get("accept-ranges");
+    const contentRange = upstream.headers.get("content-range");
+    const upstreamContentType = upstream.headers.get("content-type");
 
     const responseHeaders: Record<string, string> = {
       ...corsHeaders(),
@@ -125,7 +83,7 @@ export async function GET(
     else responseHeaders["Accept-Ranges"] = "bytes";
     if (contentRange) responseHeaders["Content-Range"] = contentRange;
 
-    return new Response(upstream.body as any, {
+    return new Response(upstream.body, {
       status: upstream.status,
       headers: responseHeaders,
     });
