@@ -25,6 +25,8 @@ export interface OpenPlayerOptions {
   expand?: boolean;
   /** Soft-replace the URL to the player/watch path (default true when expanding). */
   syncUrl?: boolean;
+  /** Defaults to true — session restore sets false so the mini bar stays paused. */
+  autoPlay?: boolean;
 }
 
 interface AppContextValue {
@@ -35,6 +37,8 @@ interface AppContextValue {
   // Persistent player shell
   playerMode: PlayerMode;
   playerUrl: string | null;
+  /** Whether the current open should auto-start playback when ready. */
+  playerAutoPlay: boolean;
   openPlayer: (options?: OpenPlayerOptions) => void;
   collapsePlayer: () => void;
   expandPlayer: () => void;
@@ -79,6 +83,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [media, setMediaState] = useState<Media | null>(null);
   const [playerMode, setPlayerMode] = useState<PlayerMode>("hidden");
   const [playerUrl, setPlayerUrl] = useState<string | null>(null);
+  const [playerAutoPlay, setPlayerAutoPlay] = useState(false);
   const [history, setHistoryState] = useState<HistoryItem[]>([]);
   const [theme, setTheme] = useState<MantineThemeOverride>(defaultTheme);
   const [isHydrated, setIsHydrated] = useState(false);
@@ -143,6 +148,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const openPlayer = useCallback((options: OpenPlayerOptions = {}) => {
     const expand = options.expand !== false;
+    setPlayerAutoPlay(options.autoPlay !== false);
     if (options.media !== undefined) {
       setMediaState(options.media);
     }
@@ -180,12 +186,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const closePlayer = useCallback(() => {
     setPlayerMode("hidden");
     setPlayerUrl(null);
+    setPlayerAutoPlay(false);
     setMediaState(null);
     clearLastSession();
     softReplaceUrl("/");
   }, []);
 
-  // Restore last session (≤3 days) once after hydration
+  // Restore last session (≤3 days) once after hydration — always mini + paused
   useEffect(() => {
     if (!isHydrated || restoredRef.current) return;
     restoredRef.current = true;
@@ -210,8 +217,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     const timer = window.setTimeout(() => {
       openPlayer({
         url: session.sourceUrl,
-        expand: session.mode === "expanded",
-        syncUrl: false,
+        expand: false,
+        autoPlay: false,
+        syncUrl: true,
       });
     }, 0);
     return () => window.clearTimeout(timer);
@@ -230,7 +238,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       savedAt: Date.now(),
       sourceUrl,
       metadata: { ...metadata },
-      mode: playerMode === "expanded" ? "expanded" : "mini",
+      // Always restore as mini; mode is kept for backwards-compatible session shape
+      mode: "mini",
     });
   }, [isHydrated, playerMode, playerUrl, media]);
 
@@ -241,6 +250,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         setMedia,
         playerMode,
         playerUrl,
+        playerAutoPlay,
         openPlayer,
         collapsePlayer,
         expandPlayer,

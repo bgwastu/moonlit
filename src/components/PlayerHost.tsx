@@ -8,8 +8,15 @@ import { useAppContext } from "@/context/AppContext";
  * so Web Audio / stretch playback is not torn down when collapsing to the mini bar.
  */
 export function PlayerHost() {
-  const { playerMode, playerUrl, media, collapsePlayer, expandPlayer, closePlayer } =
-    useAppContext();
+  const {
+    playerMode,
+    playerUrl,
+    media,
+    playerAutoPlay,
+    collapsePlayer,
+    expandPlayer,
+    closePlayer,
+  } = useAppContext();
 
   if (playerMode === "hidden" && !playerUrl && !media) return null;
 
@@ -17,6 +24,7 @@ export function PlayerHost() {
     <Player
       url={playerUrl ?? undefined}
       mode={playerMode === "hidden" ? "expanded" : playerMode}
+      autoPlay={playerAutoPlay}
       onRequestCollapse={collapsePlayer}
       onRequestExpand={expandPlayer}
       onRequestClose={closePlayer}

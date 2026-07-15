@@ -124,6 +124,7 @@ export function Player({
   media: propMedia,
   repeating: _repeating,
   mode = "expanded",
+  autoPlay = true,
   onRequestCollapse,
   onRequestExpand,
   onRequestClose,
@@ -133,6 +134,8 @@ export function Player({
   media?: Media;
   repeating?: boolean;
   mode?: Exclude<PlayerMode, "hidden">;
+  /** When false (session restore), load the track but stay paused. */
+  autoPlay?: boolean;
   onRequestCollapse?: () => void;
   onRequestExpand?: () => void;
   onRequestClose?: () => void;
@@ -531,6 +534,7 @@ export function Player({
 
   // Try autoplay when playable media is ready (key off fileUrl so provisional media can't steal the flag)
   useEffect(() => {
+    if (!autoPlay) return;
     if (!media?.fileUrl || stretchState !== "ready" || autoPlayedRef.current) return;
     autoPlayedRef.current = true;
     const id = setTimeout(async () => {
@@ -541,7 +545,7 @@ export function Player({
       }
     }, 100);
     return () => clearTimeout(id);
-  }, [media?.fileUrl, stretchState, play]);
+  }, [autoPlay, media?.fileUrl, stretchState, play]);
 
   const applyLyricsSettings = useCallback(
     (
