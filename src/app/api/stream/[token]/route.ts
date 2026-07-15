@@ -46,9 +46,7 @@ export async function GET(
   const upstreamHeaders: Record<string, string> = {
     ...entry.headers,
   };
-  if (range) {
-    upstreamHeaders["Range"] = range;
-  }
+  upstreamHeaders["Range"] = range || "bytes=0-65535";
 
   try {
     const controller = new AbortController();
