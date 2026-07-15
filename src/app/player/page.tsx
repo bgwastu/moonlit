@@ -1,5 +1,5 @@
 import { ErrorBoundary } from "@/components/ErrorBoundary";
-import { Player } from "@/components/Player";
+import PlayerRouteBridge from "@/components/PlayerRouteBridge";
 import { isDirectMediaURL, isYoutubeURL } from "@/utils";
 
 type SearchParams = { [key: string]: string | string[] | undefined };
@@ -14,19 +14,20 @@ export default async function Page({
   searchParams: Promise<SearchParams>;
 }) {
   const params = await searchParams;
-  const url = params.url as string;
+  const url = params.url as string | undefined;
 
-  if (!url)
+  if (!url) {
     return (
       <ErrorBoundary>
-        <Player />
+        <PlayerRouteBridge />
       </ErrorBoundary>
     );
+  }
 
   if (isDirectMediaURL(url) || isYoutubeURL(url)) {
     return (
       <ErrorBoundary>
-        <Player url={url} />
+        <PlayerRouteBridge url={url} />
       </ErrorBoundary>
     );
   }

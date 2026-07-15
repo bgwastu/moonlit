@@ -1,8 +1,17 @@
 "use client";
 
-import { useRouter } from "next/navigation";
-import { Box, Button, Flex, Modal, Stack, Text, useMantineTheme } from "@mantine/core";
-import { IconTrash } from "@tabler/icons-react";
+import {
+  Avatar,
+  Box,
+  Button,
+  Center,
+  Flex,
+  Modal,
+  Stack,
+  Text,
+  useMantineTheme,
+} from "@mantine/core";
+import { IconMusic, IconTrash } from "@tabler/icons-react";
 import { useAppContext } from "@/context/AppContext";
 import { HistoryItem } from "@/interfaces";
 import { timeAgo } from "@/utils";
@@ -13,19 +22,27 @@ interface HistoryModalProps {
   onLoadingStart: (loading: boolean) => void;
 }
 
-export default function HistoryModal({
-  opened,
-  onClose,
-  onLoadingStart,
-}: HistoryModalProps) {
-  const { history, setHistory } = useAppContext();
-  const router = useRouter();
+export default function HistoryModal({ opened, onClose }: HistoryModalProps) {
+  const { history, setHistory, openPlayer } = useAppContext();
   const theme = useMantineTheme();
 
   const handlePlay = (item: HistoryItem) => {
     onClose();
-    onLoadingStart(true);
-    router.push(`/watch?v=${item.metadata.id}`);
+    if (item.sourceUrl.startsWith("local:")) {
+      openPlayer({ media: item, expand: true });
+      return;
+    }
+
+    const youtubeId = item.metadata.id;
+    const url = item.sourceUrl.startsWith("http")
+      ? item.sourceUrl
+      : youtubeId
+        ? `https://www.youtube.com/watch?v=${youtubeId}`
+        : null;
+
+    if (!url) return;
+
+    openPlayer({ url, expand: true });
   };
 
   const clearHistory = () => {
@@ -93,6 +110,16 @@ export default function HistoryModal({
                         }}
                       >
                         <Flex align="center" gap="sm">
+                          <Avatar
+                            src={meta.coverUrl || undefined}
+                            size={48}
+                            radius="md"
+                            styles={{ image: { objectFit: "cover" } }}
+                          >
+                            <Center>
+                              <IconMusic size={20} />
+                            </Center>
+                          </Avatar>
                           <Box style={{ flex: 1, minWidth: 0 }}>
                             <Text size="sm" weight={500} lineClamp={1}>
                               {meta.title || "Unknown"}
