@@ -54,6 +54,7 @@ import { useDominantColor } from "@/hooks/useDominantColor";
 import { useLyrics } from "@/hooks/useLyrics";
 import { usePlayerTapGestures } from "@/hooks/usePlayerTapGestures";
 import { useStretchPlayer } from "@/hooks/useStretchPlayer";
+import { useSyncedVideo } from "@/hooks/useSyncedVideo";
 import { HistoryItem, LyricsSettings, Media } from "@/interfaces";
 import { stripVideoTitleFiller } from "@/lib/lyrics";
 import {
@@ -410,7 +411,6 @@ export function Player({
     setLyricsSettings(savedState?.lyrics ?? null);
   }
   const [lyricsModalOpened, setLyricsModalOpened] = useState(false);
-  const videoRef = useRef<HTMLVideoElement>(null);
   const dominantColor = useDominantColor(media?.metadata.coverUrl);
   const barColor = useMemo(() => {
     if (!dominantColor) return theme.colors.violet[5];
@@ -628,34 +628,19 @@ export function Player({
     setShowVideo(next);
   }, [media, showVideo, showToast]);
 
-  /** Muted video replaces cover when enabled globally and track has real video. */
-  const showingVideo = Boolean(showVideo && media?.videoUrl && !media?.isAudioTrackVideo);
+  /** Real motion video available (not YouTube Music ATV static art). */
+  const hasVideoStream = Boolean(media?.videoUrl && !media?.isAudioTrackVideo);
+  /** User wants video and this track can show it. */
+  const showingVideo = Boolean(showVideo && hasVideoStream);
 
-  // Keep muted video in sync with the audio / stretch clock.
-  useEffect(() => {
-    const video = videoRef.current;
-    if (!video || !showingVideo) return;
-
-    video.muted = true;
-    if (Math.abs(video.playbackRate - rate) > 0.01) {
-      video.playbackRate = rate;
-    }
-
-    const drift = Math.abs(video.currentTime - currentTime);
-    if (drift > 0.35) {
-      try {
-        video.currentTime = currentTime;
-      } catch {
-        // readyState may not allow seeks yet
-      }
-    }
-
-    if (isPlaying) {
-      if (video.paused) void video.play().catch(() => {});
-    } else if (!video.paused) {
-      video.pause();
-    }
-  }, [showingVideo, isPlaying, currentTime, rate]);
+  const { videoRef, isVideoReady } = useSyncedVideo({
+    src: hasVideoStream ? media?.videoUrl : undefined,
+    active: showingVideo,
+    isPlaying,
+    currentTime,
+    rate,
+  });
+  const showVideoCover = !showingVideo || !isVideoReady;
 
   const handleReset = useCallback(() => {
     setRate(1);
@@ -692,17 +677,26 @@ export function Player({
   }
 
   // Media session (browser controls)
+  const seekFromUser = useCallback(
+    (timeSeconds: number) => {
+      const resumeAfterEnd = isEnded;
+      seek(timeSeconds);
+      if (resumeAfterEnd) void play();
+    },
+    [isEnded, seek, play],
+  );
+
   const handleBackward = useCallback(() => {
     const newTime = Math.max(0, currentTime - 5);
-    seek(newTime);
+    seekFromUser(newTime);
     showToast(toastContent(<IconRewindBackward5 size={24} />, "-5s"));
-  }, [currentTime, seek, showToast]);
+  }, [currentTime, seekFromUser, showToast]);
 
   const handleForward = useCallback(() => {
     const newTime = Math.min(duration, currentTime + 5);
-    seek(newTime);
+    seekFromUser(newTime);
     showToast(toastContent(<IconRewindForward5 size={24} />, "+5s"));
-  }, [currentTime, duration, seek, showToast]);
+  }, [currentTime, duration, seekFromUser, showToast]);
 
   // Inlined useMediaSession
   useEffect(() => {
@@ -725,7 +719,7 @@ export function Player({
     navigator.mediaSession.setActionHandler("nexttrack", () => handleForward());
     try {
       navigator.mediaSession.setActionHandler("seekto", (details) => {
-        if (details.seekTime !== undefined) seek(details.seekTime);
+        if (details.seekTime !== undefined) seekFromUser(details.seekTime);
       });
     } catch {}
 
@@ -744,7 +738,7 @@ export function Player({
         navigator.mediaSession.setActionHandler("seekto", null);
       } catch {}
     };
-  }, [media, coverUrl, play, pause, handleBackward, handleForward, seek]);
+  }, [media, coverUrl, play, pause, handleBackward, handleForward, seekFromUser]);
 
   // Persist global playback prefs (not per-track)
   const lastSaveRef = useRef<number>(0);
@@ -922,16 +916,18 @@ export function Player({
           finalPosition,
         });
       }
+      const resumeAfterEnd = isEnded;
       seek(finalPosition);
       seekPositionRef.current = null;
       setSeekPosition(null);
       setIsSeeking(false);
       // Scrubbing can stall native/advanced playback — resume if it was playing
-      if (wasPlayingOnSeekRef.current) {
+      // or if the track had finished (seek-from-end should autoplay).
+      if (wasPlayingOnSeekRef.current || resumeAfterEnd) {
         void play();
       }
     },
-    [seek, play],
+    [seek, play, isEnded],
   );
 
   const seekTrackRef = useRef<HTMLDivElement>(null);
@@ -943,7 +939,7 @@ export function Player({
 
       event.preventDefault();
       event.stopPropagation();
-      wasPlayingOnSeekRef.current = isPlaying;
+      wasPlayingOnSeekRef.current = isPlaying || isEnded;
       track.setPointerCapture?.(event.pointerId);
 
       const updatePosition = (clientX: number) => {
@@ -968,7 +964,7 @@ export function Player({
       document.addEventListener("pointermove", onMove);
       document.addEventListener("pointerup", onUp, { once: true });
     },
-    [duration, handleSeekEnd, handleSliderChange, isPlaying, isMediaReady],
+    [duration, handleSeekEnd, handleSliderChange, isPlaying, isEnded, isMediaReady],
   );
 
   const handleTogglePlayer = useCallback(() => {
@@ -1480,15 +1476,19 @@ export function Player({
                     style={{ display: "none" }}
                     preload="metadata"
                   />
-                  {showingVideo && media.videoUrl ? (
+                  {/* Keep video mounted whenever a stream exists — hide instead of unmount. */}
+                  {hasVideoStream && media.videoUrl ? (
                     <video
                       ref={videoRef}
                       key={media.videoUrl}
                       src={media.videoUrl}
                       muted
                       playsInline
-                      preload="metadata"
+                      preload={showingVideo ? "auto" : "metadata"}
+                      poster={coverUrl || undefined}
                       style={{
+                        position: "absolute",
+                        inset: 0,
                         width: "100%",
                         height: "100%",
                         objectFit: "contain",
@@ -1496,53 +1496,57 @@ export function Player({
                         userSelect: "none",
                         pointerEvents: "none",
                         background: "rgba(0,0,0,0.35)",
+                        opacity: showingVideo && isVideoReady ? 1 : 0,
                         filter: stretchState === "loading" ? "blur(8px)" : "none",
-                        transition: "filter 0.3s ease-out",
+                        transition: "opacity 0.2s ease-out, filter 0.3s ease-out",
                       }}
                     />
-                  ) : media.metadata.coverUrl ? (
-                    <Image
-                      key={sourceUrl || coverUrl}
-                      src={coverUrl}
-                      width="100%"
-                      height="100%"
-                      radius={theme.radius.md}
-                      fit="contain"
-                      style={{
-                        userSelect: "none",
-                        pointerEvents: "none",
-                        filter: stretchState === "loading" ? "blur(8px)" : "none",
-                        transition: "filter 0.3s ease-out",
-                      }}
-                      alt={media.metadata.title}
-                    />
-                  ) : (
-                    <Box
-                      w="100%"
-                      h="100%"
-                      bg="rgba(255,255,255,0.1)"
-                      style={{
-                        borderRadius: theme.radius.md,
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        flexDirection: "column",
-                        gap: 10,
-                        userSelect: "none",
-                        filter: stretchState === "loading" ? "blur(8px)" : "none",
-                        transition: "filter 0.3s ease-out",
-                      }}
-                    >
-                      <IconMusic size={80} style={{ opacity: 0.5 }} />
-                      <Text size="xl" weight={600} align="center">
-                        {media.metadata.title}
-                      </Text>
-                      <Text size="md" color="dimmed" align="center">
-                        {media.metadata.artist ?? media.metadata.author}
-                        {media.metadata.album && ` · ${media.metadata.album}`}
-                      </Text>
-                    </Box>
-                  )}
+                  ) : null}
+                  {showVideoCover ? (
+                    media.metadata.coverUrl ? (
+                      <Image
+                        key={sourceUrl || coverUrl}
+                        src={coverUrl}
+                        width="100%"
+                        height="100%"
+                        radius={theme.radius.md}
+                        fit="contain"
+                        style={{
+                          userSelect: "none",
+                          pointerEvents: "none",
+                          filter: stretchState === "loading" ? "blur(8px)" : "none",
+                          transition: "filter 0.3s ease-out",
+                        }}
+                        alt={media.metadata.title}
+                      />
+                    ) : (
+                      <Box
+                        w="100%"
+                        h="100%"
+                        bg="rgba(255,255,255,0.1)"
+                        style={{
+                          borderRadius: theme.radius.md,
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          flexDirection: "column",
+                          gap: 10,
+                          userSelect: "none",
+                          filter: stretchState === "loading" ? "blur(8px)" : "none",
+                          transition: "filter 0.3s ease-out",
+                        }}
+                      >
+                        <IconMusic size={80} style={{ opacity: 0.5 }} />
+                        <Text size="xl" weight={600} align="center">
+                          {media.metadata.title}
+                        </Text>
+                        <Text size="md" color="dimmed" align="center">
+                          {media.metadata.artist ?? media.metadata.author}
+                          {media.metadata.album && ` · ${media.metadata.album}`}
+                        </Text>
+                      </Box>
+                    )
+                  ) : null}
                   {/* Buffering spinner — centered on album art, no background */}
                   {isWaiting && (
                     <Box
@@ -1672,7 +1676,7 @@ export function Player({
                     state={lyricsState}
                     error={lyricsError}
                     currentTimeSeconds={currentTime}
-                    onSeek={seek}
+                    onSeek={seekFromUser}
                     visible={lyricsOpen}
                     style={{ flex: 1, minHeight: 0 }}
                   />
@@ -1709,7 +1713,7 @@ export function Player({
                       state={lyricsState}
                       error={lyricsError}
                       currentTimeSeconds={currentTime}
-                      onSeek={seek}
+                      onSeek={seekFromUser}
                       style={{ flex: 1, minHeight: 0 }}
                       isMobile
                       visible={lyricsOpen}

@@ -35,11 +35,16 @@ const DEFAULT_PLAYBACK_PREFS: GlobalPlaybackPrefs = {
   customSemitones: 0,
 };
 
+/**
+ * Global show-video preference.
+ * Missing key ⇒ on (non-music tracks with a videoUrl show video by default).
+ * Explicit `"0"` ⇒ user disabled; `"1"` ⇒ user enabled.
+ */
 export function getShowVideo(): boolean {
   try {
-    return localStorage.getItem(SHOW_VIDEO_KEY) === "1";
+    return localStorage.getItem(SHOW_VIDEO_KEY) !== "0";
   } catch {
-    return false;
+    return true;
   }
 }
 
