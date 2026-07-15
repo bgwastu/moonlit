@@ -1,8 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { SiGithub, SiYoutube } from "@icons-pack/react-simple-icons";
 import {
   ActionIcon,
@@ -29,7 +28,7 @@ import {
 } from "@mantine/core";
 import { Dropzone } from "@mantine/dropzone";
 import { useForm } from "@mantine/form";
-import { useDebouncedValue, useMediaQuery } from "@mantine/hooks";
+import { useMediaQuery } from "@mantine/hooks";
 import { notifications } from "@mantine/notifications";
 import {
   IconAlertCircle,
@@ -37,6 +36,7 @@ import {
   IconCookie,
   IconFileMusic,
   IconHistory,
+  IconLink,
   IconMessage,
   IconMusic,
   IconSearch,
@@ -91,14 +91,19 @@ function formatViews(views?: number) {
   return `${views} views`;
 }
 
+/** Theme primary (track brand when playing, else violet). */
+function accent(t: MantineTheme, shade: number) {
+  const key = t.primaryColor;
+  return (t.colors[key] ?? t.colors.violet)[shade];
+}
+
 function LocalUpload({ dropzoneMinHeight }: { dropzoneMinHeight: number }) {
   const [loading, setLoading] = useState<{ status: boolean; message: string | null }>({
     status: false,
     message: null,
   });
   const [fullScreenActive, setFullScreenActive] = useState(false);
-  const { setMedia } = useAppContext();
-  const { push } = useRouter();
+  const { openPlayer } = useAppContext();
   const theme = useMantineTheme();
   const isMobile = useMediaQuery(`(max-width: ${theme.breakpoints.sm})`);
 
@@ -127,13 +132,15 @@ function LocalUpload({ dropzoneMinHeight }: { dropzoneMinHeight: number }) {
     await setMediaCache(sourceUrl, files[0]);
     const fileUrl = URL.createObjectURL(files[0]);
     const isVideo = files[0].type.startsWith("video/") || /\.mp4$/i.test(files[0].name);
-    setMedia({
-      fileUrl,
-      sourceUrl,
-      metadata,
-      ...(isVideo && { videoUrl: fileUrl }),
+    openPlayer({
+      media: {
+        fileUrl,
+        sourceUrl,
+        metadata,
+        ...(isVideo && { videoUrl: fileUrl }),
+      },
+      expand: true,
     });
-    push("/player");
     setLoading({ status: false, message: null });
   };
 
@@ -148,7 +155,7 @@ function LocalUpload({ dropzoneMinHeight }: { dropzoneMinHeight: number }) {
           onDrop={handleDrop}
         >
           <Stack align="center" justify="center" spacing="lg" mih={260}>
-            <IconUpload size="3.2rem" stroke={1.5} color={theme.colors.violet[4]} />
+            <IconUpload size="3.2rem" stroke={1.5} color={accent(theme, 4)} />
             <Text size="xl" color="white" weight={600}>
               Drop file anywhere
             </Text>
@@ -176,12 +183,12 @@ function LocalUpload({ dropzoneMinHeight }: { dropzoneMinHeight: number }) {
           transition: "border-color 150ms ease, background-color 150ms ease",
           "&:hover": {
             backgroundColor: t.fn.rgba(t.colors.dark[7], 0.42),
-            borderColor: t.fn.rgba(t.colors.violet[5], 0.58),
+            borderColor: t.fn.rgba(accent(t, 5), 0.58),
           },
           "&:hover .upload-icon-card": {
-            backgroundColor: t.fn.rgba(t.colors.violet[9], 0.34),
-            color: t.colors.violet[2],
-            filter: `drop-shadow(0 0 ${rem(12)} ${t.fn.rgba(t.colors.violet[4], 0.38)})`,
+            backgroundColor: t.fn.rgba(accent(t, 9), 0.34),
+            color: accent(t, 2),
+            filter: `drop-shadow(0 0 ${rem(12)} ${t.fn.rgba(accent(t, 4), 0.38)})`,
             transform: "scale(1.06)",
           },
         })}
@@ -241,7 +248,7 @@ function SearchPanel({
   searchActive: boolean;
   setSearchActive: (active: boolean) => void;
 }) {
-  const { push } = useRouter();
+  const { openPlayer } = useAppContext();
   const theme = useMantineTheme();
   const isMobile = useMediaQuery(`(max-width: ${theme.breakpoints.sm})`) ?? false;
   const contentMinH = panelContentMinHeight(isMobile);
@@ -249,38 +256,30 @@ function SearchPanel({
   /** Query string that produced the current `results` (avoids picking #1 on stale lists). */
   const [resultsForQuery, setResultsForQuery] = useState("");
   const [loading, setLoading] = useState(false);
-  const [pendingSearch, setPendingSearch] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
   const focusedRef = useRef(false);
   const form = useForm({ initialValues: { query: "" } });
   const query = form.values.query.trim();
-  const [debouncedQuery] = useDebouncedValue(query, 180);
   const isLink = isYoutubeURL(query) || isDirectMediaURL(query);
   const rightSectionWidth = isLink ? (isMobile ? 54 : 64) : isMobile ? 12 : 16;
 
-  const showSkeleton =
-    !isLink && (pendingSearch || loading || (!hasSearched && results.length === 0));
-  const showEmpty =
-    !isLink && hasSearched && results.length === 0 && !pendingSearch && !loading;
-  const showResultCards = !isLink && hasSearched && results.length > 0 && !showSkeleton;
+  // Shimmer only while a search request is in flight — not while typing
+  const showSkeleton = !isLink && loading;
+  const showEmpty = !isLink && hasSearched && results.length === 0 && !loading;
+  const showResultCards = !isLink && hasSearched && results.length > 0 && !loading;
+  const showPressHint =
+    query.length > 0 && !loading && !showSkeleton && !showResultCards && !showEmpty;
 
   function updateSearchActive(nextFocused: boolean, nextQuery: string) {
     const cleanQuery = nextQuery.trim();
     const hasQuery = cleanQuery.length > 0;
-    const hasVisibleResults =
-      results.length > 0 || hasSearched || pendingSearch || loading;
-    /** Keep the results sheet open while typing a normal search (2+ chars) even if the input blurs */
-    const isPlainTextSearch =
-      cleanQuery.length >= 2 &&
-      !isYoutubeURL(cleanQuery) &&
-      !isDirectMediaURL(cleanQuery);
-
-    setSearchActive(hasQuery && (nextFocused || hasVisibleResults || isPlainTextSearch));
+    const hasVisibleResults = results.length > 0 || hasSearched || loading;
+    // Keep the sheet open for any non-empty query (incl. 1 char + links)
+    setSearchActive(hasQuery && (nextFocused || hasVisibleResults || hasQuery));
   }
 
   const search = useCallback(
     async (value: string, signal?: AbortSignal, showErrors = true) => {
-      setPendingSearch(false);
       setLoading(true);
       try {
         const response = await fetch(
@@ -326,54 +325,21 @@ function SearchPanel({
     [setSearchActive],
   );
 
-  /** Keep latest `search` without listing it on the debounced effect — otherwise any
-   * `useCallback` identity change (e.g. after blur → parent re-render) re-runs the effect,
-   * clears results, and refetches for the same query. */
-  const searchLatestRef = useRef(search);
-  useEffect(() => {
-    searchLatestRef.current = search;
-  });
-
-  useEffect(() => {
-    const controller = new AbortController();
-    const value = debouncedQuery.trim();
-
-    if (value.length < 2 || isYoutubeURL(value) || isDirectMediaURL(value)) {
-      queueMicrotask(() => {
-        setResults([]);
-        setResultsForQuery("");
-        setPendingSearch(false);
-        setHasSearched(false);
-      });
-      return () => controller.abort();
-    }
-
-    queueMicrotask(() => {
-      setHasSearched(false);
-      setResults([]);
-      setResultsForQuery("");
-    });
-    void searchLatestRef.current(value, controller.signal, false);
-
-    return () => {
-      controller.abort();
-    };
-  }, [debouncedQuery]);
-
   async function submit(value: string) {
     const clean = value.trim();
     if (!clean) return;
 
     if (isDirectMediaURL(clean)) {
-      push(`/player?url=${encodeURIComponent(clean)}`);
+      resetSearchUi();
+      openPlayer({ url: clean, expand: true });
       return;
     }
 
     if (isYoutubeURL(clean)) {
       const id = getYouTubeId(clean);
       if (id) {
-        onLoadingStart(true);
-        push(`/watch?v=${id}`);
+        resetSearchUi();
+        openPlayer({ url: `https://www.youtube.com/watch?v=${id}`, expand: true });
       }
       return;
     }
@@ -381,17 +347,24 @@ function SearchPanel({
     const isPlainSearch =
       clean.length >= 2 && !isYoutubeURL(clean) && !isDirectMediaURL(clean);
     if (isPlainSearch && results.length > 0 && clean === resultsForQuery) {
-      onLoadingStart(true);
-      push(watchPath(results[0]));
+      playResult(results[0]);
       return;
     }
 
     await search(clean, undefined, true);
   }
 
-  function watchPath(result: YouTubeResult) {
+  function resetSearchUi() {
+    form.reset();
+    setResults([]);
+    setResultsForQuery("");
+    setHasSearched(false);
+    setSearchActive(false);
+    focusedRef.current = false;
+  }
+
+  function playResult(result: YouTubeResult) {
     const id = getYouTubeId(result.url) ?? result.id;
-    // Store search metadata in sessionStorage so Player can use it immediately
     try {
       sessionStorage.setItem(
         `moonlit-search-meta:${id}`,
@@ -405,12 +378,18 @@ function SearchPanel({
     } catch {
       // sessionStorage may be full or unavailable — proceed without cache
     }
-    return `/watch?v=${id}`;
+    resetSearchUi();
+    openPlayer({ url: `https://www.youtube.com/watch?v=${id}`, expand: true });
   }
 
   return (
-    <Stack spacing={0}>
-      <form onSubmit={form.onSubmit((values) => submit(values.query))}>
+    <Stack spacing={0} sx={{ flex: 1, minHeight: 0, display: "flex" }}>
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          void submit(form.values.query);
+        }}
+      >
         <TextInput
           icon={<IconSearch size={isMobile ? 18 : 20} stroke={2.2} />}
           placeholder="Search YouTube or paste a URL..."
@@ -421,17 +400,19 @@ function SearchPanel({
             const nextQuery = event.currentTarget.value;
             form.setFieldValue("query", nextQuery);
             updateSearchActive(focusedRef.current, nextQuery);
-            setPendingSearch(
-              nextQuery.trim().length >= 2 &&
-                !isYoutubeURL(nextQuery) &&
-                !isDirectMediaURL(nextQuery),
-            );
+            const trimmed = nextQuery.trim();
             if (
-              nextQuery.trim().length < 2 ||
+              trimmed.length < 2 ||
               isYoutubeURL(nextQuery) ||
               isDirectMediaURL(nextQuery)
             ) {
               setHasSearched(false);
+              setResults([]);
+              setResultsForQuery("");
+            } else if (trimmed !== resultsForQuery) {
+              // Typing a new query — clear prior results; fetch only on Enter
+              setHasSearched(false);
+              setResults([]);
             }
           }}
           onFocus={() => {
@@ -450,7 +431,7 @@ function SearchPanel({
                 radius="sm"
                 loading={loading}
                 variant="filled"
-                color="violet"
+                color={theme.primaryColor}
               >
                 <IconArrowRight size={isMobile ? 18 : 22} />
               </ActionIcon>
@@ -470,7 +451,7 @@ function SearchPanel({
               "&::placeholder": { color: t.fn.rgba(t.colors.gray[4], 0.75) },
             },
             icon: {
-              color: query ? t.colors.violet[3] : t.colors.gray[6],
+              color: query ? accent(t, 3) : t.colors.gray[6],
               width: isMobile ? rem(38) : rem(44),
             },
           })}
@@ -479,18 +460,17 @@ function SearchPanel({
 
       {searchActive ? (
         <Box
-          mt={searchActive && !isLink ? rem(20) : 0}
+          mt={rem(12)}
           sx={{
-            flexShrink: 0,
-            minHeight: isLink ? 0 : rem(contentMinH),
+            flex: 1,
+            minHeight: rem(contentMinH),
             display: "flex",
             flexDirection: "column",
             overflow: "visible",
-            transition: "min-height 200ms ease, opacity 180ms ease, transform 180ms ease",
           }}
         >
-          {!isLink && (
-            <Stack spacing="md" sx={{ flex: 1, minHeight: 0, overflow: "visible" }}>
+          <Stack spacing="md" sx={{ flex: 1, minHeight: 0, display: "flex" }}>
+            {(showSkeleton || showResultCards) && (
               <Group position="apart" px={4} sx={{ flexShrink: 0 }}>
                 <Text
                   transform="uppercase"
@@ -509,155 +489,189 @@ function SearchPanel({
                   </Text>
                 </Group>
               </Group>
-              <Stack
-                spacing="md"
-                sx={{
-                  flex: 1,
-                  minHeight: 0,
-                  overflow: "visible",
-                }}
-              >
-                {showSkeleton ? (
-                  Array.from({ length: 3 }).map((_, index) => (
-                    <Paper
-                      key={index}
-                      p="xs"
-                      radius="sm"
-                      sx={(th) => ({
-                        backgroundColor: th.fn.rgba(th.colors.dark[9], 0.36),
-                      })}
+            )}
+            <Stack
+              spacing="md"
+              sx={{
+                flex: 1,
+                minHeight: 0,
+                display: "flex",
+                justifyContent: showPressHint || showEmpty ? "center" : "flex-start",
+                alignItems: showPressHint || showEmpty ? "center" : "stretch",
+              }}
+            >
+              {showSkeleton ? (
+                Array.from({ length: 3 }).map((_, index) => (
+                  <Paper
+                    key={index}
+                    p="xs"
+                    radius="sm"
+                    w="100%"
+                    sx={(th) => ({
+                      backgroundColor: th.fn.rgba(th.colors.dark[9], 0.36),
+                    })}
+                  >
+                    <Flex gap="lg" align="center">
+                      <Skeleton
+                        width={isMobile ? 80 : 100}
+                        height={isMobile ? 56 : 60}
+                        radius="sm"
+                      />
+                      <Box sx={{ flex: 1, minWidth: 0 }}>
+                        <Skeleton height={16} radius="sm" />
+                        <Skeleton height={12} radius="sm" width="45%" mt={rem(3)} />
+                      </Box>
+                    </Flex>
+                  </Paper>
+                ))
+              ) : showPressHint ? (
+                <Stack
+                  spacing={isMobile ? "xs" : "sm"}
+                  align="center"
+                  justify="center"
+                  ta="center"
+                  sx={{ minHeight: rem(contentMinH) }}
+                >
+                  <Center
+                    w={isMobile ? 38 : 48}
+                    h={isMobile ? 38 : 48}
+                    sx={(t) => ({
+                      borderRadius: t.radius.md,
+                      background: t.fn.rgba(t.colors.dark[5], 0.55),
+                      color: t.colors.gray[4],
+                    })}
+                  >
+                    {isLink ? (
+                      <IconLink size={isMobile ? 20 : 26} stroke={1.5} />
+                    ) : (
+                      <IconSearch size={isMobile ? 20 : 26} stroke={1.5} />
+                    )}
+                  </Center>
+                  <Box ta="center" px={isMobile ? 4 : 0}>
+                    <Text size={isMobile ? "sm" : "md"} weight={600} color="white">
+                      {isLink ? "Press Enter to play" : "Press Enter to search"}
+                    </Text>
+                    <Text
+                      size={isMobile ? "xs" : "sm"}
+                      color="dimmed"
+                      mt={isMobile ? 4 : 6}
+                      maw={360}
                     >
-                      <Flex gap="lg" align="center">
-                        <Skeleton
+                      {isLink
+                        ? "Open this YouTube or media link in the player"
+                        : "Search YouTube, or paste a link to play it directly"}
+                    </Text>
+                  </Box>
+                </Stack>
+              ) : showEmpty ? (
+                <Stack
+                  spacing={isMobile ? "xs" : "sm"}
+                  align="center"
+                  justify="center"
+                  ta="center"
+                  sx={{ minHeight: rem(contentMinH) }}
+                >
+                  <Center
+                    w={isMobile ? 38 : 48}
+                    h={isMobile ? 38 : 48}
+                    sx={(t) => ({
+                      borderRadius: t.radius.md,
+                      background: t.fn.rgba(t.colors.dark[5], 0.55),
+                      color: t.colors.gray[4],
+                    })}
+                  >
+                    <IconSearch size={isMobile ? 20 : 26} stroke={1.5} />
+                  </Center>
+                  <Box ta="center" px={isMobile ? 4 : 0}>
+                    <Text size={isMobile ? "sm" : "md"} weight={600} color="white">
+                      No videos found
+                    </Text>
+                    <Text
+                      size={isMobile ? "xs" : "sm"}
+                      color="dimmed"
+                      mt={isMobile ? 4 : 6}
+                      maw={360}
+                    >
+                      Try a different keyword or paste a YouTube link directly.
+                    </Text>
+                  </Box>
+                </Stack>
+              ) : showResultCards ? (
+                results.map((result) => (
+                  <Paper
+                    key={result.id}
+                    component="button"
+                    type="button"
+                    p="xs"
+                    radius="sm"
+                    onClick={() => playResult(result)}
+                    sx={(th) => ({
+                      display: "block",
+                      width: "100%",
+                      textAlign: "left",
+                      textDecoration: "none",
+                      color: "inherit",
+                      cursor: "pointer",
+                      backgroundColor: th.fn.rgba(th.colors.dark[9], 0.36),
+                      border: `${rem(1)} solid transparent`,
+                      boxShadow: `0 ${rem(12)} ${rem(28)} ${th.fn.rgba(th.black, 0.18)}`,
+                      transition: "transform 150ms ease, border-color 150ms ease",
+                      "&:hover": {
+                        transform: "translateY(-2px)",
+                        borderColor: th.fn.rgba(accent(th, 5), 0.45),
+                      },
+                    })}
+                  >
+                    <Flex gap="md" align="center">
+                      <Box pos="relative" sx={{ flexShrink: 0 }}>
+                        <Image
+                          src={result.thumbnail}
+                          alt=""
                           width={isMobile ? 80 : 100}
                           height={isMobile ? 56 : 60}
                           radius="sm"
+                          fit="cover"
+                          withPlaceholder
+                          placeholder={
+                            <Center h="100%">
+                              <IconMusic size={24} />
+                            </Center>
+                          }
                         />
-                        <Box sx={{ flex: 1, minWidth: 0 }}>
-                          <Skeleton height={16} radius="sm" />
-                          <Skeleton height={12} radius="sm" width="45%" mt={rem(3)} />
-                        </Box>
-                      </Flex>
-                    </Paper>
-                  ))
-                ) : showEmpty ? (
-                  <Paper
-                    p="md"
-                    radius="sm"
-                    sx={(th) => ({
-                      backgroundColor: th.fn.rgba(th.colors.dark[9], 0.28),
-                      border: `${rem(1)} solid ${th.fn.rgba(th.colors.gray[7], 0.34)}`,
-                    })}
-                  >
-                    <Stack align="center" spacing="xs" ta="center">
-                      <Center
-                        w={44}
-                        h={44}
-                        sx={(th) => ({
-                          borderRadius: th.radius.md,
-                          backgroundColor: th.fn.rgba(th.colors.dark[6], 0.65),
-                          color: th.colors.gray[5],
-                        })}
-                      >
-                        <IconSearch size={24} />
-                      </Center>
-                      <Text color="white" weight={600}>
-                        No videos found
-                      </Text>
-                      <Text color="dimmed" size="sm" maw={360}>
-                        Try a different keyword or paste a YouTube link directly.
-                      </Text>
-                    </Stack>
+                        <Badge
+                          pos="absolute"
+                          right={6}
+                          bottom={6}
+                          color={result.isLive ? "red" : "dark"}
+                          variant="filled"
+                          radius="sm"
+                          size="md"
+                        >
+                          {result.isLive ? "LIVE" : formatDuration(result.lengthSeconds)}
+                        </Badge>
+                      </Box>
+                      <Box sx={{ minWidth: 0 }}>
+                        <Text
+                          color="white"
+                          weight={600}
+                          size={isMobile ? "sm" : "md"}
+                          lineClamp={2}
+                        >
+                          {result.title}
+                        </Text>
+                        <Text color="dimmed" size="sm" mt={4} lineClamp={1}>
+                          {result.author}
+                          {formatViews(result.viewCount)
+                            ? `  •  ${formatViews(result.viewCount)}`
+                            : ""}
+                        </Text>
+                      </Box>
+                    </Flex>
                   </Paper>
-                ) : showResultCards ? (
-                  results.map((result) => (
-                    <Paper
-                      key={result.id}
-                      component={Link}
-                      href={watchPath(result)}
-                      prefetch={false}
-                      p="xs"
-                      radius="sm"
-                      onClick={(e: React.MouseEvent) => {
-                        if (
-                          e.metaKey ||
-                          e.ctrlKey ||
-                          e.shiftKey ||
-                          e.altKey ||
-                          e.button !== 0
-                        ) {
-                          return;
-                        }
-                        onLoadingStart(true);
-                      }}
-                      sx={(th) => ({
-                        display: "block",
-                        textDecoration: "none",
-                        color: "inherit",
-                        cursor: "pointer",
-                        backgroundColor: th.fn.rgba(th.colors.dark[9], 0.36),
-                        border: `${rem(1)} solid transparent`,
-                        boxShadow: `0 ${rem(12)} ${rem(28)} ${th.fn.rgba(th.black, 0.18)}`,
-                        transition: "transform 150ms ease, border-color 150ms ease",
-                        "&:hover": {
-                          transform: "translateY(-2px)",
-                          borderColor: th.fn.rgba(th.colors.violet[5], 0.45),
-                        },
-                      })}
-                    >
-                      <Flex gap="md" align="center">
-                        <Box pos="relative" sx={{ flexShrink: 0 }}>
-                          <Image
-                            src={result.thumbnail}
-                            alt=""
-                            width={isMobile ? 80 : 100}
-                            height={isMobile ? 56 : 60}
-                            radius="sm"
-                            fit="cover"
-                            withPlaceholder
-                            placeholder={
-                              <Center h="100%">
-                                <IconMusic size={24} />
-                              </Center>
-                            }
-                          />
-                          <Badge
-                            pos="absolute"
-                            right={6}
-                            bottom={6}
-                            color={result.isLive ? "red" : "dark"}
-                            variant="filled"
-                            radius="sm"
-                            size="md"
-                          >
-                            {result.isLive
-                              ? "LIVE"
-                              : formatDuration(result.lengthSeconds)}
-                          </Badge>
-                        </Box>
-                        <Box sx={{ minWidth: 0 }}>
-                          <Text
-                            color="white"
-                            weight={600}
-                            size={isMobile ? "sm" : "md"}
-                            lineClamp={2}
-                          >
-                            {result.title}
-                          </Text>
-                          <Text color="dimmed" size="sm" mt={4} lineClamp={1}>
-                            {result.author}
-                            {formatViews(result.viewCount)
-                              ? `  •  ${formatViews(result.viewCount)}`
-                              : ""}
-                          </Text>
-                        </Box>
-                      </Flex>
-                    </Paper>
-                  ))
-                ) : null}
-              </Stack>
+                ))
+              ) : null}
             </Stack>
-          )}
+          </Stack>
         </Box>
       ) : null}
     </Stack>
@@ -676,7 +690,7 @@ function FooterLinks() {
       opacity: 1,
       color: t.colors.gray[2],
       textDecoration: "none",
-      filter: `drop-shadow(0 0 ${rem(10)} ${t.fn.rgba(t.colors.violet[4], 0.35)})`,
+      filter: `drop-shadow(0 0 ${rem(10)} ${t.fn.rgba(accent(t, 4), 0.35)})`,
     },
   });
   const iconSz = isMobile ? 17 : 20;
@@ -753,12 +767,12 @@ function Header({
   return (
     <Box
       px="md"
-      pb={isMobile ? "sm" : "md"}
-      pt={isMobile ? undefined : "xl"}
+      pb={isMobile ? "xs" : "sm"}
+      pt={isMobile ? undefined : "md"}
       sx={(t) =>
         isMobile
           ? {
-              paddingTop: `calc(${t.spacing.lg} + env(safe-area-inset-top, 0px))`,
+              paddingTop: `calc(${t.spacing.sm} + env(safe-area-inset-top, 0px))`,
             }
           : undefined
       }
@@ -844,6 +858,8 @@ export default function UploadPage() {
           main: {
             minHeight: "100dvh",
             backgroundColor: t.colors.dark[7],
+            paddingBottom: "var(--moonlit-player-inset, 0px)",
+            transition: "padding-bottom 0.35s cubic-bezier(0.32, 0.72, 0, 1)",
           },
         })}
       >
@@ -861,14 +877,41 @@ export default function UploadPage() {
               flexDirection: isMobileLayout ? "column" : "row",
               justifyContent: isMobileLayout ? "center" : "flex-start",
               alignItems: isMobileLayout ? "stretch" : "flex-start",
-              padding: `${isMobileLayout ? rem(16) : rem(32)} ${rem(16)}`,
+              paddingTop: isMobileLayout ? rem(8) : rem(16),
+              paddingBottom: isMobileLayout ? rem(8) : rem(16),
+              paddingLeft: rem(16),
+              paddingRight: rem(16),
               [t.fn.largerThan("sm")]: {
-                padding: `${rem(32)} 0`,
+                paddingTop: rem(16),
+                paddingBottom: rem(16),
+                paddingLeft: rem(24),
+                paddingRight: rem(24),
+              },
+              [t.fn.largerThan("md")]: {
+                paddingLeft: rem(16),
+                paddingRight: rem(16),
               },
             })}
           >
-            <Container size="md" w="100%" px={0}>
-              <Stack spacing={isMobileLayout ? rem(24) : rem(56)}>
+            <Container
+              size="md"
+              w="100%"
+              px={0}
+              sx={{
+                flex: 1,
+                display: "flex",
+                flexDirection: "column",
+                minHeight: 0,
+              }}
+            >
+              <Stack
+                spacing={isMobileLayout ? rem(24) : rem(40)}
+                sx={{
+                  flex: 1,
+                  minHeight: 0,
+                  display: "flex",
+                }}
+              >
                 <Stack
                   spacing={isMobileLayout ? "sm" : "md"}
                   align="center"
@@ -886,14 +929,15 @@ export default function UploadPage() {
                   <Title
                     order={1}
                     fw={900}
+                    mt={isMobileLayout ? rem(16) : rem(32)}
                     sx={(t) => ({
                       color: t.white,
-                      fontSize: rem(48),
-                      letterSpacing: rem(-1.5),
-                      lineHeight: 1.08,
+                      fontSize: rem(36),
+                      letterSpacing: rem(-1.2),
+                      lineHeight: 1.1,
                       [t.fn.smallerThan("sm")]: {
-                        fontSize: rem(30),
-                        letterSpacing: rem(-1),
+                        fontSize: rem(24),
+                        letterSpacing: rem(-0.8),
                       },
                     })}
                   >
@@ -921,10 +965,14 @@ export default function UploadPage() {
                 <Paper
                   p={{ base: "sm", sm: "md" }}
                   radius="md"
-                  sx={() => ({
+                  sx={{
                     backgroundColor: "#222528",
                     border: `${rem(1)} solid #33363D`,
-                  })}
+                    flex: searchActive ? 1 : undefined,
+                    display: "flex",
+                    flexDirection: "column",
+                    minHeight: searchActive ? 0 : undefined,
+                  }}
                 >
                   <Stack
                     spacing={0}
@@ -932,6 +980,8 @@ export default function UploadPage() {
                       gap: t.spacing.xs,
                       [t.fn.largerThan("sm")]: { gap: t.spacing.sm },
                       transition: "gap 180ms ease",
+                      flex: searchActive ? 1 : undefined,
+                      minHeight: searchActive ? 0 : undefined,
                     })}
                   >
                     <SearchPanel
