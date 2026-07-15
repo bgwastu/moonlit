@@ -5,7 +5,7 @@ import { isDirectMediaURL, isYoutubeURL } from "@/utils";
 type SearchParams = { [key: string]: string | string[] | undefined };
 
 export const metadata = {
-  title: "Moonlit",
+  title: { absolute: "Moonlit" },
 };
 
 export default async function Page({
