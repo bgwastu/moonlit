@@ -3,6 +3,9 @@ import path from "path";
 import { Innertube, UniversalCache, YTNodes } from "youtubei.js";
 import { getYouTubeId } from "@/utils";
 
+export const YOUTUBE_ANDROID_VR_UA =
+  "com.google.android.apps.youtube.vr.oculus/1.60.19 (Linux; U; Android 12L; Quest 3 Build/SQ3A.220605.009.A1) gzip";
+
 export interface YouTubeSearchResult {
   id: string;
   url: string;
@@ -368,8 +371,7 @@ async function doFullExtraction(
     url: streamUrl,
     contentType,
     headers: {
-      "User-Agent":
-        "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.6778.200 Mobile Safari/537.36",
+      "User-Agent": YOUTUBE_ANDROID_VR_UA,
     },
     duration: Math.floor(Number(basic.duration) || 0),
     title: basic.title || "Unknown",

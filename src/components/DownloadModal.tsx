@@ -5,6 +5,7 @@ import { Alert, Button, Group, Modal, Progress, Stack, Text } from "@mantine/cor
 import { notifications } from "@mantine/notifications";
 import { IconDownload, IconInfoCircle } from "@tabler/icons-react";
 import { Media } from "@/interfaces";
+import { STREAM_CHUNK_BYTES } from "@/lib/streamConstants";
 
 interface DownloadModalProps {
   opened: boolean;
@@ -49,7 +50,7 @@ async function fetchAudioFile(
   }
   await probe.arrayBuffer();
 
-  const chunkSize = 512 * 1024;
+  const chunkSize = STREAM_CHUNK_BYTES;
   const chunkCount = Math.ceil(total / chunkSize);
   const chunks = new Array<Uint8Array>(chunkCount);
   let nextChunk = 0;

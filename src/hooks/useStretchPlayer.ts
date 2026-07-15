@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { STREAM_CHUNK_BYTES } from "@/lib/streamConstants";
 
 type StretchPlayerState = "loading" | "ready" | "error";
 
@@ -168,7 +169,7 @@ async function fetchFile(
   onProgress?: (loaded: number, total: number) => void,
   signal?: AbortSignal,
 ): Promise<ArrayBuffer> {
-  const chunkSize = 2 * 1024 * 1024;
+  const chunkSize = STREAM_CHUNK_BYTES;
   const firstEnd = chunkSize - 1;
   const firstResponse = await fetch(url, {
     headers: { Range: `bytes=0-${firstEnd}` },
