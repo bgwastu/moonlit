@@ -1047,10 +1047,9 @@ export function Player({
               <Box
                 style={{
                   position: "relative",
-                  width: "auto",
-                  height: "auto",
-                  maxWidth: isMobile ? "calc(100vw - 32px)" : "50vw",
-                  maxHeight: isMobile ? "70vh" : "90vh",
+                  // Give the square wrapper a size before the cover image loads.
+                  width: isMobile ? "min(calc(100vw - 32px), 50vh)" : "min(50vw, 60vh)",
+                  height: isMobile ? "min(calc(100vw - 32px), 50vh)" : "min(50vw, 60vh)",
                   aspectRatio: "1/1",
                   margin: isMobile ? 16 : 0,
                   display: "flex",
