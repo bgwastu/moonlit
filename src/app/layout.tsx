@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import { APP_BG } from "@/lib/theme";
 import LayoutWrapper from "./LayoutWrapper";
 
 export const viewport: Viewport = {
@@ -67,8 +68,8 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
-      <body style={{ margin: 0 }}>
+    <html lang="en" style={{ colorScheme: "dark", backgroundColor: APP_BG }}>
+      <body style={{ margin: 0, backgroundColor: APP_BG, colorScheme: "dark" }}>
         <LayoutWrapper>{children}</LayoutWrapper>
       </body>
     </html>

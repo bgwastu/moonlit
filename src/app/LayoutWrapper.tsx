@@ -5,6 +5,7 @@ import { MantineProvider } from "@mantine/core";
 import { Notifications } from "@mantine/notifications";
 import { PlayerHost } from "@/components/PlayerHost";
 import { AppProvider, useAppContext } from "@/context/AppContext";
+import { APP_BG } from "@/lib/theme";
 
 /** 0 until first client microtask; keeps SSR/hydration first paint identical (placeholder). */
 let layoutHydrationBeacon = 0;
@@ -35,9 +36,7 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
     ) > 0;
 
   if (!ready) {
-    return (
-      <div style={{ backgroundColor: "#1A1B1E", height: "100dvh", width: "100%" }} />
-    );
+    return <div style={{ backgroundColor: APP_BG, height: "100dvh", width: "100%" }} />;
   }
 
   return (

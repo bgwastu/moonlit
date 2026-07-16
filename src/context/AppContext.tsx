@@ -12,6 +12,7 @@ import { MantineThemeOverride } from "@mantine/core";
 import { HistoryItem, Media } from "@/interfaces";
 import { clearLastSession, loadLastSession, saveLastSession } from "@/lib/lastSession";
 import { playerPathForMedia, softReplaceUrl } from "@/lib/playerNavigation";
+import { appTheme } from "@/lib/theme";
 
 const HISTORY_STORAGE_KEY = "moonlit-history";
 const MAX_HISTORY_ITEMS = 50;
@@ -69,29 +70,6 @@ interface AppContextValue {
   setTheme: (theme: MantineThemeOverride) => void;
 }
 
-const defaultTheme: MantineThemeOverride = {
-  colorScheme: "dark",
-  primaryColor: "violet",
-  primaryShade: 5,
-  white: "#f3f0ff",
-  // https://v6.mantine.dev/theming/theme-object/#focusring
-  focusRing: "never",
-  // https://v6.mantine.dev/styles/global-styles/
-  globalStyles: () => ({
-    // Non-text chrome: no accidental selection while tapping/dragging
-    "img, svg, video, canvas, button, [role='button'], [role='menuitem'], [role='option'], [role='tab'], [role='slider'], [role='switch'], input[type='range'], input[type='checkbox'], input[type='radio']":
-      {
-        WebkitUserSelect: "none",
-        userSelect: "none",
-        WebkitTouchCallout: "none",
-      },
-    "button *, [role='button'] *, [role='menuitem'] *, [role='tab'] *": {
-      WebkitUserSelect: "none",
-      userSelect: "none",
-    },
-  }),
-};
-
 const AppContext = createContext<AppContextValue | null>(null);
 
 export function AppProvider({ children }: { children: React.ReactNode }) {
@@ -104,7 +82,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [playerAutoPlay, setPlayerAutoPlay] = useState(false);
   const [playerResumeAt, setPlayerResumeAt] = useState(0);
   const [history, setHistoryState] = useState<HistoryItem[]>([]);
-  const [theme, setTheme] = useState<MantineThemeOverride>(defaultTheme);
+  const [theme, setTheme] = useState<MantineThemeOverride>(appTheme);
   const [isHydrated, setIsHydrated] = useState(false);
   const mediaRef = useRef(media);
   const playerUrlRef = useRef(playerUrl);

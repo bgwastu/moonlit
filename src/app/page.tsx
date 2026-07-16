@@ -3,7 +3,7 @@
 /* Hallmark · genre: atmospheric · macrostructure: Workbench-lite · design-system: mantine-dark ·
  * home: centered search + history · accent: dynamic (theme.primaryColor)
  */
-import { useCallback, useRef, useState } from "react";
+import { type MutableRefObject, useCallback, useRef, useState } from "react";
 import { SiGithub, SiYoutubemusic } from "@icons-pack/react-simple-icons";
 import {
   ActionIcon,
@@ -17,7 +17,7 @@ import {
   Stack,
   Text,
   TextInput,
-  Title,
+  UnstyledButton,
   rem,
   useMantineTheme,
 } from "@mantine/core";
@@ -35,6 +35,7 @@ import {
   IconSearch,
   IconTrash,
   IconUpload,
+  IconX,
 } from "@tabler/icons-react";
 import parse from "id3-parser";
 import { convertFileToBuffer } from "id3-parser/lib/util";
@@ -229,9 +230,11 @@ function LocalUpload() {
 function SearchPanel({
   searchActive,
   setSearchActive,
+  clearSearchRef,
 }: {
   searchActive: boolean;
   setSearchActive: (active: boolean) => void;
+  clearSearchRef: MutableRefObject<(() => void) | null>;
 }) {
   const { openPlayer } = useAppContext();
   const theme = useMantineTheme();
@@ -242,27 +245,68 @@ function SearchPanel({
   const [hasSearched, setHasSearched] = useState(false);
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [suggestLoading, setSuggestLoading] = useState(false);
-  const focusedRef = useRef(false);
+  const [suggestionsOpen, setSuggestionsOpen] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
   const suggestTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const suggestAbortRef = useRef<AbortController | null>(null);
   const form = useForm({ initialValues: { query: "" } });
   const query = form.values.query.trim();
+  const hasQuery = form.values.query.length > 0;
   const isLink = isYoutubeURL(query) || isDirectMediaURL(query);
-  const rightSectionWidth = isLink ? (isMobile ? 54 : 64) : isMobile ? 12 : 16;
+  const clearBtnSize = isMobile ? 28 : 32;
+  const submitBtnSize = isMobile ? 36 : 40;
+  const rightSectionWidth = (() => {
+    if (isLink && hasQuery) return isMobile ? 96 : 108;
+    if (isLink || hasQuery) return isMobile ? 54 : 64;
+    return isMobile ? 12 : 16;
+  })();
   const listMaxH = isMobile ? rem(320) : rem(420);
 
   const showSkeleton = !isLink && loading;
   const showEmpty = !isLink && hasSearched && results.length === 0 && !loading;
   const showResultCards = !isLink && hasSearched && results.length > 0 && !loading;
-  const showSuggestions =
-    searchActive && !isLink && !hasSearched && !loading && query.length > 0;
-  const showLinkHint = searchActive && isLink && !loading;
+  const showLinkHint = isLink && !loading && query.length > 0;
+  const showSuggestionsDropdown =
+    suggestionsOpen &&
+    !isLink &&
+    !loading &&
+    query.length > 0 &&
+    (suggestLoading || suggestions.length > 0);
 
-  function updateSearchActive(nextFocused: boolean, nextQuery: string) {
-    const cleanQuery = nextQuery.trim();
-    const hasQuery = cleanQuery.length > 0;
-    const hasVisibleResults = results.length > 0 || hasSearched || loading;
-    setSearchActive(hasQuery && (nextFocused || hasVisibleResults || hasQuery));
+  function dismissSuggestions() {
+    setSuggestionsOpen(false);
+  }
+
+  function resetSearchUi() {
+    if (suggestTimerRef.current) clearTimeout(suggestTimerRef.current);
+    suggestAbortRef.current?.abort();
+    form.reset();
+    setResults([]);
+    setResultsForQuery("");
+    setHasSearched(false);
+    setSuggestions([]);
+    setSuggestLoading(false);
+    setSuggestionsOpen(false);
+    setSearchActive(false);
+    setLoading(false);
+    inputRef.current?.blur();
+  }
+
+  clearSearchRef.current = resetSearchUi;
+
+  function clearInput() {
+    if (suggestTimerRef.current) clearTimeout(suggestTimerRef.current);
+    suggestAbortRef.current?.abort();
+    form.setFieldValue("query", "");
+    setResults([]);
+    setResultsForQuery("");
+    setHasSearched(false);
+    setSuggestions([]);
+    setSuggestLoading(false);
+    setSuggestionsOpen(false);
+    setSearchActive(false);
+    setLoading(false);
+    inputRef.current?.focus();
   }
 
   const fetchSuggestions = useCallback(async (value: string) => {
@@ -311,6 +355,8 @@ function SearchPanel({
     async (value: string, signal?: AbortSignal, showErrors = true) => {
       setLoading(true);
       setSuggestions([]);
+      setSuggestionsOpen(false);
+      setSearchActive(true);
       try {
         const response = await fetch(
           `/api/youtube/search?q=${encodeURIComponent(value)}&limit=${SEARCH_LIMIT}`,
@@ -329,7 +375,6 @@ function SearchPanel({
         setResults(data.results ?? []);
         setResultsForQuery(value.trim());
         setHasSearched(true);
-        if (value.trim()) setSearchActive(true);
       } catch (error) {
         if (error instanceof DOMException && error.name === "AbortError") return;
         setResults([]);
@@ -358,6 +403,7 @@ function SearchPanel({
   async function submit(value: string) {
     const clean = value.trim();
     if (!clean) return;
+    dismissSuggestions();
 
     if (isDirectMediaURL(clean)) {
       resetSearchUi();
@@ -384,16 +430,6 @@ function SearchPanel({
     await search(clean, undefined, true);
   }
 
-  function resetSearchUi() {
-    form.reset();
-    setResults([]);
-    setResultsForQuery("");
-    setHasSearched(false);
-    setSuggestions([]);
-    setSearchActive(false);
-    focusedRef.current = false;
-  }
-
   function playResult(result: YouTubeResult) {
     const id = getYouTubeId(result.url) ?? result.id;
     try {
@@ -415,95 +451,206 @@ function SearchPanel({
 
   function applySuggestion(suggestion: string) {
     form.setFieldValue("query", suggestion);
-    setHasSearched(false);
-    setResults([]);
     setSuggestions([]);
+    setSuggestionsOpen(false);
     void search(suggestion);
   }
 
   return (
     <Stack spacing={0} w="100%">
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          void submit(form.values.query);
+      <Box
+        sx={{
+          position: "relative",
+          width: "100%",
+          zIndex: showSuggestionsDropdown ? 30 : 0,
         }}
       >
-        <TextInput
-          icon={<IconSearch size={isMobile ? 18 : 20} stroke={2.2} />}
-          placeholder="Search YouTube or paste a URL..."
-          size={isMobile ? "md" : "lg"}
-          radius="md"
-          value={form.values.query}
-          onChange={(event) => {
-            const nextQuery = event.currentTarget.value;
-            form.setFieldValue("query", nextQuery);
-            updateSearchActive(focusedRef.current, nextQuery);
-            const trimmed = nextQuery.trim();
-            if (
-              trimmed.length < 2 ||
-              isYoutubeURL(nextQuery) ||
-              isDirectMediaURL(nextQuery)
-            ) {
-              setHasSearched(false);
-              setResults([]);
-              setResultsForQuery("");
-              setSuggestions([]);
-            } else if (trimmed !== resultsForQuery) {
-              setHasSearched(false);
-              setResults([]);
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            void submit(form.values.query);
+          }}
+        >
+          <TextInput
+            ref={inputRef}
+            icon={<IconSearch size={isMobile ? 18 : 20} stroke={2.2} />}
+            placeholder="Search YouTube or paste a URL..."
+            size={isMobile ? "md" : "lg"}
+            radius="md"
+            value={form.values.query}
+            onChange={(event) => {
+              const nextQuery = event.currentTarget.value;
+              form.setFieldValue("query", nextQuery);
+              const trimmed = nextQuery.trim();
+              if (!trimmed) {
+                if (suggestTimerRef.current) clearTimeout(suggestTimerRef.current);
+                suggestAbortRef.current?.abort();
+                setResults([]);
+                setResultsForQuery("");
+                setHasSearched(false);
+                setSuggestions([]);
+                setSuggestLoading(false);
+                setSuggestionsOpen(false);
+                setSearchActive(false);
+                return;
+              }
+              if (isYoutubeURL(nextQuery) || isDirectMediaURL(nextQuery)) {
+                setSuggestions([]);
+                setSuggestionsOpen(false);
+                setSuggestLoading(false);
+                return;
+              }
+              setSuggestionsOpen(true);
+              scheduleSuggestions(nextQuery);
+            }}
+            onFocus={() => {
+              if (
+                form.values.query.trim().length > 0 &&
+                !isYoutubeURL(form.values.query) &&
+                !isDirectMediaURL(form.values.query)
+              ) {
+                setSuggestionsOpen(true);
+                scheduleSuggestions(form.values.query);
+              }
+            }}
+            onBlur={() => {
+              dismissSuggestions();
+            }}
+            onKeyDown={(event) => {
+              if (event.key === "Escape") {
+                event.preventDefault();
+                if (suggestionsOpen) {
+                  dismissSuggestions();
+                  return;
+                }
+                inputRef.current?.blur();
+              }
+            }}
+            rightSection={
+              hasQuery || isLink ? (
+                <Group spacing={4} noWrap pr={isMobile ? 4 : 6}>
+                  {hasQuery ? (
+                    <ActionIcon
+                      type="button"
+                      size={clearBtnSize}
+                      radius="xl"
+                      variant="subtle"
+                      color="gray"
+                      aria-label="Clear search"
+                      onMouseDown={(event) => event.preventDefault()}
+                      onClick={clearInput}
+                      sx={(t) => ({ "&:focus-visible": focusRing(t) })}
+                    >
+                      <IconX size={isMobile ? 16 : 18} stroke={2} />
+                    </ActionIcon>
+                  ) : null}
+                  {isLink ? (
+                    <ActionIcon
+                      type="submit"
+                      size={submitBtnSize}
+                      radius="sm"
+                      loading={loading}
+                      variant="filled"
+                      color={theme.primaryColor}
+                      sx={(t) => ({ "&:focus-visible": focusRing(t) })}
+                    >
+                      <IconArrowRight size={isMobile ? 18 : 22} />
+                    </ActionIcon>
+                  ) : null}
+                </Group>
+              ) : null
             }
-            scheduleSuggestions(nextQuery);
-          }}
-          onFocus={() => {
-            focusedRef.current = true;
-            updateSearchActive(true, form.values.query);
-            if (form.values.query.trim().length > 0) {
-              scheduleSuggestions(form.values.query);
-            }
-          }}
-          onBlur={() => {
-            focusedRef.current = false;
-            updateSearchActive(false, form.values.query);
-          }}
-          rightSection={
-            isLink ? (
-              <ActionIcon
-                type="submit"
-                size={isMobile ? 36 : 40}
-                radius="sm"
-                loading={loading}
-                variant="filled"
-                color={theme.primaryColor}
-                sx={(t) => ({ "&:focus-visible": focusRing(t) })}
-              >
-                <IconArrowRight size={isMobile ? 18 : 22} />
-              </ActionIcon>
-            ) : null
-          }
-          rightSectionWidth={rightSectionWidth}
-          styles={(t) => ({
-            input: {
-              height: isMobile ? rem(46) : rem(50),
-              paddingLeft: isMobile ? rem(38) : rem(44),
-              paddingRight: isLink ? (isMobile ? rem(54) : rem(60)) : rem(14),
-              backgroundColor: t.fn.rgba(t.colors.dark[9], 0.58),
-              border: `${rem(1)} solid ${t.fn.rgba(t.colors.gray[6], 0.4)}`,
-              color: t.white,
-              fontWeight: 400,
-              fontSize: isMobile ? rem(15) : rem(16),
-              "&::placeholder": { color: t.fn.rgba(t.colors.gray[4], 0.75) },
-              "&:focus, &:focus-within": {
-                borderColor: accent(t, 5),
+            rightSectionWidth={rightSectionWidth}
+            styles={(t) => ({
+              input: {
+                height: isMobile ? rem(46) : rem(50),
+                paddingLeft: isMobile ? rem(38) : rem(44),
+                paddingRight: rem(rightSectionWidth),
+                backgroundColor: t.fn.rgba(t.colors.dark[9], 0.58),
+                border: `${rem(1)} solid ${t.fn.rgba(t.colors.gray[6], 0.4)}`,
+                color: t.white,
+                fontWeight: 400,
+                fontSize: isMobile ? rem(15) : rem(16),
+                "&::placeholder": { color: t.fn.rgba(t.colors.gray[4], 0.75) },
+                "&:focus, &:focus-within": {
+                  borderColor: accent(t, 5),
+                },
               },
-            },
-            icon: {
-              color: query ? accent(t, 3) : t.colors.gray[6],
-              width: isMobile ? rem(38) : rem(44),
-            },
-          })}
-        />
-      </form>
+              icon: {
+                color: query ? accent(t, 3) : t.colors.gray[6],
+                width: isMobile ? rem(38) : rem(44),
+              },
+            })}
+          />
+        </form>
+
+        {showLinkHint ? (
+          <Group spacing="sm" noWrap mt="xs" px="sm">
+            <IconLink size={16} stroke={1.5} color={theme.colors.gray[5]} />
+            <Text size="sm" weight={600} color="dimmed">
+              Press Enter to play
+            </Text>
+          </Group>
+        ) : null}
+
+        {showSuggestionsDropdown ? (
+          <Box
+            onMouseDown={(event) => event.preventDefault()}
+            sx={(t) => ({
+              position: "absolute",
+              left: 0,
+              right: 0,
+              top: `calc(100% + ${rem(6)})`,
+              zIndex: 50,
+              maxHeight: listMaxH,
+              overflowY: "auto",
+              borderRadius: t.radius.md,
+              border: `${rem(1)} solid ${t.fn.rgba(t.colors.gray[6], 0.35)}`,
+              backgroundColor: t.fn.rgba(t.colors.dark[7], 0.97),
+              boxShadow: t.shadows.lg,
+              padding: rem(6),
+            })}
+          >
+            <Stack spacing={2}>
+              {suggestLoading && suggestions.length === 0
+                ? Array.from({ length: 4 }).map((_, index) => (
+                    <Skeleton key={index} height={36} radius="sm" />
+                  ))
+                : suggestions.map((suggestion) => (
+                    <Box
+                      key={suggestion}
+                      component="button"
+                      type="button"
+                      onClick={() => applySuggestion(suggestion)}
+                      sx={(t) => ({
+                        display: "flex",
+                        alignItems: "center",
+                        gap: rem(10),
+                        width: "100%",
+                        textAlign: "left",
+                        border: "none",
+                        borderRadius: t.radius.sm,
+                        padding: `${rem(8)} ${rem(10)}`,
+                        background: "transparent",
+                        color: t.white,
+                        cursor: "pointer",
+                        transition: "background-color 150ms ease",
+                        "&:hover": {
+                          backgroundColor: t.fn.rgba(t.colors.dark[5], 0.85),
+                        },
+                        "&:focus-visible": focusRing(t),
+                      })}
+                    >
+                      <IconSearch size={16} stroke={1.75} color={theme.colors.gray[5]} />
+                      <Text size="sm" weight={500} lineClamp={1}>
+                        {suggestion}
+                      </Text>
+                    </Box>
+                  ))}
+            </Stack>
+          </Box>
+        ) : null}
+      </Box>
 
       {searchActive ? (
         <Box mt="md">
@@ -522,12 +669,6 @@ function SearchPanel({
               </Group>
             )}
 
-            {showSuggestions && (suggestLoading || suggestions.length > 0) && (
-              <Text size="sm" weight={600} color="dimmed" px={4}>
-                Suggestions
-              </Text>
-            )}
-
             <Box
               sx={{
                 maxHeight: listMaxH,
@@ -539,15 +680,6 @@ function SearchPanel({
                   Array.from({ length: 5 }).map((_, index) => (
                     <Skeleton key={index} height={isMobile ? 64 : 76} radius="sm" />
                   ))
-                ) : showLinkHint ? (
-                  <Box py="md" px="sm">
-                    <Group spacing="sm" noWrap>
-                      <IconLink size={18} stroke={1.5} color={theme.colors.gray[5]} />
-                      <Text size="sm" weight={600} color="white">
-                        Press Enter to play
-                      </Text>
-                    </Group>
-                  </Box>
                 ) : showEmpty ? (
                   <Box py="lg" px="sm">
                     <Text size="sm" weight={600} color="white">
@@ -566,48 +698,6 @@ function SearchPanel({
                       onClick={() => playResult(result)}
                     />
                   ))
-                ) : showSuggestions ? (
-                  suggestLoading && suggestions.length === 0 ? (
-                    Array.from({ length: 4 }).map((_, index) => (
-                      <Skeleton key={index} height={36} radius="sm" />
-                    ))
-                  ) : (
-                    suggestions.map((suggestion) => (
-                      <Box
-                        key={suggestion}
-                        component="button"
-                        type="button"
-                        onClick={() => applySuggestion(suggestion)}
-                        sx={(t) => ({
-                          display: "flex",
-                          alignItems: "center",
-                          gap: rem(10),
-                          width: "100%",
-                          textAlign: "left",
-                          border: "none",
-                          borderRadius: t.radius.sm,
-                          padding: `${rem(8)} ${rem(10)}`,
-                          background: "transparent",
-                          color: t.white,
-                          cursor: "pointer",
-                          transition: "background-color 150ms ease",
-                          "&:hover": {
-                            backgroundColor: t.fn.rgba(t.colors.dark[5], 0.85),
-                          },
-                          "&:focus-visible": focusRing(t),
-                        })}
-                      >
-                        <IconSearch
-                          size={16}
-                          stroke={1.75}
-                          color={theme.colors.gray[5]}
-                        />
-                        <Text size="sm" weight={500} lineClamp={1}>
-                          {suggestion}
-                        </Text>
-                      </Box>
-                    ))
-                  )
                 ) : null}
               </Stack>
             </Box>
@@ -679,6 +769,7 @@ export default function UploadPage() {
   const [cookiesOpened, setCookiesOpened] = useState(false);
   const [resetOpened, setResetOpened] = useState(false);
   const [searchActive, setSearchActive] = useState(false);
+  const clearSearchRef = useRef<(() => void) | null>(null);
 
   return (
     <>
@@ -709,24 +800,40 @@ export default function UploadPage() {
           <Container size="md" w="100%" px={0}>
             <Stack spacing={isMobileLayout ? "md" : "lg"}>
               <Group position="apart" align="center" noWrap>
-                <Group spacing={10} noWrap>
+                <UnstyledButton
+                  type="button"
+                  aria-label="Moonlit — clear search"
+                  onClick={() => clearSearchRef.current?.()}
+                  sx={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: rem(10),
+                    userSelect: "none",
+                    WebkitUserSelect: "none",
+                    cursor: "pointer",
+                    borderRadius: rem(8),
+                    "&:focus-visible": focusRing(theme),
+                  }}
+                >
                   <Icon size={18} />
-                  <Title
-                    order={1}
+                  <Text
+                    span
                     fw={700}
                     sx={(t) => ({
                       color: t.white,
                       fontSize: rem(22),
                       letterSpacing: rem(-0.3),
                       lineHeight: 1.2,
+                      userSelect: "none",
+                      WebkitUserSelect: "none",
                       [t.fn.smallerThan("sm")]: {
                         fontSize: rem(20),
                       },
                     })}
                   >
                     Moonlit
-                  </Title>
-                </Group>
+                  </Text>
+                </UnstyledButton>
                 <AppMenu
                   setCookiesOpened={setCookiesOpened}
                   setResetOpened={setResetOpened}
@@ -737,6 +844,7 @@ export default function UploadPage() {
                 <SearchPanel
                   searchActive={searchActive}
                   setSearchActive={setSearchActive}
+                  clearSearchRef={clearSearchRef}
                 />
 
                 {!searchActive && (

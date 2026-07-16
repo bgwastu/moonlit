@@ -15,6 +15,9 @@ export default function Icon({ size }: Props) {
         borderRadius: theme.radius.md,
         display: "flex",
         alignItems: "center",
+        userSelect: "none",
+        WebkitUserSelect: "none",
+        pointerEvents: "none",
       }}
     >
       <svg

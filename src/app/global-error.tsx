@@ -1,7 +1,9 @@
 "use client";
 
 import { useEffect } from "react";
+import { MantineProvider } from "@mantine/core";
 import { ErrorScreen } from "@/components/ErrorScreen";
+import { APP_BG, appTheme } from "@/lib/theme";
 
 export default function GlobalError({
   error,
@@ -15,13 +17,15 @@ export default function GlobalError({
   }, [error]);
 
   return (
-    <html lang="en">
-      <body style={{ margin: 0 }}>
-        <ErrorScreen
-          title="Something went wrong"
-          message={error.message || "An unexpected error occurred."}
-          onPrimary={reset}
-        />
+    <html lang="en" style={{ colorScheme: "dark", backgroundColor: APP_BG }}>
+      <body style={{ margin: 0, backgroundColor: APP_BG, colorScheme: "dark" }}>
+        <MantineProvider withGlobalStyles withNormalizeCSS theme={appTheme}>
+          <ErrorScreen
+            title="Something went wrong"
+            message={error.message || "An unexpected error occurred."}
+            onPrimary={reset}
+          />
+        </MantineProvider>
       </body>
     </html>
   );
