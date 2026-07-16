@@ -54,7 +54,8 @@ export async function streamWithProgress(
   const isYouTube = isYoutubeURL(url);
 
   if (isYouTube) {
-    const cached = await mediaFromLocalCache(url);
+    const id = getYouTubeId(url);
+    const cached = await mediaFromLocalCache(url, id ? { id } : undefined);
     if (cached) {
       onState({ status: "ready" });
       return cached;

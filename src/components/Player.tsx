@@ -66,6 +66,7 @@ import {
   savePlaybackPrefs,
   setShowVideo,
 } from "@/lib/playerPrefs";
+import { consumeSearchMeta, mergeTrackMetadata, peekSearchMeta } from "@/lib/searchMeta";
 import { appTheme } from "@/lib/theme";
 import { getModeFromRate, getVideoState, saveVideoState } from "@/lib/videoState";
 import { getFormattedTime, getYouTubeId, isSupportedURL } from "@/utils";
@@ -98,9 +99,6 @@ const PLAYBACK_MODE_ICONS: Record<PlaybackMode, ReactNode> = {
   custom: <IconAdjustments size={24} />,
 };
 
-/** Survives Strict Mode remounts after sessionStorage is consumed once. */
-const searchMetaCache = new Map<string, Record<string, string | number>>();
-
 function getPrepopulatedMetadata(
   url: string,
 ): Record<string, string | number> | undefined {
@@ -109,14 +107,8 @@ function getPrepopulatedMetadata(
       /^.*(?:youtu\.be\/|v\/|vi\/|u\/\w\/|embed\/|shorts\/|watch\?v=|\&v=)([^#\&\?]*).*/,
     )?.[1];
     if (!id) return undefined;
-    const stored = sessionStorage.getItem(`moonlit-search-meta:${id}`);
-    if (stored) {
-      const parsed = JSON.parse(stored) as Record<string, string | number>;
-      searchMetaCache.set(id, parsed);
-      sessionStorage.removeItem(`moonlit-search-meta:${id}`);
-      return parsed;
-    }
-    return searchMetaCache.get(id);
+    const meta = consumeSearchMeta(id);
+    return meta as Record<string, string | number> | undefined;
   } catch {
     return undefined;
   }
@@ -249,7 +241,14 @@ export function Player({
       .then((streamedMedia: Media) => {
         audioErrorCount.current = 0;
         setPlaybackError(null);
-        setExtractedMedia(streamedMedia);
+        const ytId = getYouTubeId(url);
+        setExtractedMedia({
+          ...streamedMedia,
+          metadata: mergeTrackMetadata(
+            streamedMedia.metadata,
+            ytId ? peekSearchMeta(ytId) : undefined,
+          ),
+        });
       })
       .catch((e) => {
         if (e instanceof DOMException && e.name === "AbortError") return;
@@ -368,12 +367,13 @@ export function Player({
     setHistory((prev) => {
       const existingIdx = prev.findIndex((item) => item.sourceUrl === snapshot.sourceUrl);
       const existing = existingIdx >= 0 ? prev[existingIdx] : null;
-      const coverUrl = snapshot.metadata.coverUrl || existing?.metadata.coverUrl || "";
+      const mergedMeta = mergeTrackMetadata(snapshot.metadata, existing?.metadata);
+      const coverUrl = mergedMeta.coverUrl || existing?.metadata.coverUrl || "";
       const nextItem: HistoryItem = {
         ...snapshot,
         playedAt: existing?.playedAt ?? Date.now(),
         metadata: {
-          ...snapshot.metadata,
+          ...mergedMeta,
           coverUrl,
         },
       };

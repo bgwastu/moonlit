@@ -50,6 +50,7 @@ import { useAppContext } from "@/context/AppContext";
 import type { Media } from "@/interfaces";
 import { youtubeErrorTitle } from "@/lib/apiError";
 import { cookieRequestHeaders } from "@/lib/cookies";
+import { stashSearchMeta } from "@/lib/searchMeta";
 import { SEARCH_ACCENT_VAR } from "@/lib/theme";
 import { getYouTubeId, isDirectMediaURL, isYoutubeURL } from "@/utils";
 import { setMediaCache } from "@/utils/cache";
@@ -366,19 +367,11 @@ function SearchPanel({
 
   function playResult(result: YouTubeResult) {
     const id = getYouTubeId(result.url) ?? result.id;
-    try {
-      sessionStorage.setItem(
-        `moonlit-search-meta:${id}`,
-        JSON.stringify({
-          title: result.title,
-          author: result.author,
-          coverUrl: result.thumbnail,
-          duration: result.lengthSeconds,
-        }),
-      );
-    } catch {
-      // sessionStorage may be full or unavailable
-    }
+    stashSearchMeta(id, {
+      title: result.title,
+      author: result.author,
+      coverUrl: result.thumbnail,
+    });
     resetSearchUi();
     openPlayer({ url: `https://www.youtube.com/watch?v=${id}`, expand: true });
   }

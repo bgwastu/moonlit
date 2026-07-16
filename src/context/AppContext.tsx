@@ -14,6 +14,7 @@ import { MAX_HISTORY_ITEMS } from "@/lib/constants";
 import { clearLastSession, loadLastSession, saveLastSession } from "@/lib/lastSession";
 import { mediaFromLocalCache } from "@/lib/playFromCache";
 import { playerPathForMedia, softReplaceUrl } from "@/lib/playerNavigation";
+import { mergeTrackMetadata, stashSearchMeta } from "@/lib/searchMeta";
 import { appTheme } from "@/lib/theme";
 import { clearMediaCache } from "@/utils/cache";
 
@@ -160,7 +161,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const openPlayer = useCallback((options: OpenPlayerOptions = {}) => {
-    if (options.recordHistory !== false) {
+    if (options.recordHistory === false) {
+      skipHistoryWritesRef.current = true;
+    } else {
       skipHistoryWritesRef.current = false;
     }
     const expand = options.expand !== false;
@@ -233,30 +236,17 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
     const session = loadLastSession();
     if (!session) return;
-    try {
-      if (session.metadata?.id) {
-        sessionStorage.setItem(
-          `moonlit-search-meta:${session.metadata.id}`,
-          JSON.stringify({
-            title: session.metadata.title,
-            author: session.metadata.author,
-            artist: session.metadata.artist,
-            album: session.metadata.album,
-            coverUrl: session.metadata.coverUrl,
-          }),
-        );
-      }
-    } catch {
-      // ignore
+    if (session.metadata?.id) {
+      stashSearchMeta(session.metadata.id, session.metadata);
     }
     const timer = window.setTimeout(() => {
       void (async () => {
-        const cached = await mediaFromLocalCache(session.sourceUrl);
+        const cached = await mediaFromLocalCache(session.sourceUrl, session.metadata);
         if (cached) {
           openPlayer({
             media: {
               ...cached,
-              metadata: { ...cached.metadata, ...session.metadata },
+              metadata: mergeTrackMetadata(cached.metadata, session.metadata),
             },
             expand: false,
             autoPlay: false,
@@ -289,7 +279,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     if (!sourceUrl) return;
     if (sourceUrl.startsWith("local:")) return;
     const metadata = media?.metadata;
-    if (!metadata?.title) return;
+    if (!metadata?.title || metadata.title === "Unknown") {
+      const existing = loadLastSession();
+      if (existing?.sourceUrl === sourceUrl && existing.metadata?.title) {
+        return;
+      }
+      if (!metadata?.title) return;
+    }
     const existing = loadLastSession();
     saveLastSession({
       savedAt: Date.now(),

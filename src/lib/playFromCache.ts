@@ -1,34 +1,15 @@
 import type { HistoryItem, Media } from "@/interfaces";
+import { mergeTrackMetadata, peekSearchMeta } from "@/lib/searchMeta";
 import { getYouTubeId } from "@/utils";
 import { getCachedMediaUrl, getMedia } from "@/utils/cache";
-
-function loadSearchMeta(id: string): Partial<Media["metadata"]> {
-  if (typeof window === "undefined") return {};
-  try {
-    const raw = sessionStorage.getItem(`moonlit-search-meta:${id}`);
-    if (!raw) return {};
-    return JSON.parse(raw) as Partial<Media["metadata"]>;
-  } catch {
-    return {};
-  }
-}
 
 function buildMetadata(
   sourceUrl: string,
   metadata?: Partial<Media["metadata"]>,
 ): Media["metadata"] {
   const id = getYouTubeId(sourceUrl) ?? metadata?.id ?? null;
-  const sessionMeta = id ? loadSearchMeta(id) : {};
-  const merged = { ...sessionMeta, ...metadata };
-
-  return {
-    id,
-    title: merged.title || "Unknown",
-    author: merged.author || "Unknown",
-    ...(merged.artist != null && { artist: merged.artist }),
-    ...(merged.album != null && { album: merged.album }),
-    coverUrl: merged.coverUrl || "",
-  };
+  const sessionMeta = id ? peekSearchMeta(id) : undefined;
+  return mergeTrackMetadata(metadata, sessionMeta, { id });
 }
 
 /** Build playable media from a locally cached audio blob, if available. */
