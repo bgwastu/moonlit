@@ -130,6 +130,11 @@ jobs:
             echo "WEBHOOK_URL / WEBHOOK_TOKEN secrets are not set; skipping deploy."
             exit 0
           fi
-          curl --fail --show-error --silent \
+          response="$(mktemp)"
+          code="$(curl --silent --show-error --output "$response" --write-out '%{http_code}' \
             --request GET "$WEBHOOK_URL" \
-            --header "Authorization: Bearer $WEBHOOK_TOKEN"
+            --header "Authorization: Bearer $WEBHOOK_TOKEN")"
+          echo "HTTP $code"
+          cat "$response"
+          echo
+          test "$code" -ge 200 -a "$code" -lt 300
