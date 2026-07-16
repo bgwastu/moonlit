@@ -56,6 +56,116 @@ export interface Lyric {
   words: string; // Full line text
   durationMs: number;
   parts?: LyricPart[]; // Word-level timing if available
+  /** True for synthesized or source beat/instrumental placeholders (♪). */
+  isInstrumental?: boolean;
+}
+
+/** Gaps at least this long can get a ♪ (lead-in, outro, or clear break). */
+const LONG_PAUSE_MS = 8000;
+/**
+ * Between two sung lines, only invent a ♪ when the span is clearly an
+ * instrumental break — shorter spans are usually still the same phrase.
+ */
+const BETWEEN_LINES_PAUSE_MS = 15000;
+/** Don't insert a ♪ shorter than this. */
+const MIN_INSTRUMENTAL_MS = 2500;
+const MIN_LINE_ACTIVE_MS = 2000;
+const MAX_LINE_ACTIVE_MS = 12000;
+
+const NOTE_ONLY_RE = /^[♪♫\s·.•\-—–]+$/;
+
+function isInstrumentalText(words: string): boolean {
+  const trimmed = words.trim();
+  return !trimmed || NOTE_ONLY_RE.test(trimmed);
+}
+
+/** Rough sing-window when LRC has no word-level end times. */
+function estimateSingDurationMs(line: Lyric): number {
+  if (line.parts && line.parts.length > 0) {
+    const last = line.parts[line.parts.length - 1];
+    const sungMs = last.startTimeMs + last.durationMs - line.startTimeMs;
+    return Math.min(MAX_LINE_ACTIVE_MS, Math.max(MIN_LINE_ACTIVE_MS, sungMs));
+  }
+  const text = line.words.trim();
+  const wordCount = text.split(/\s+/).filter(Boolean).length;
+  const byLength = 1500 + text.length * 80;
+  const byWords = 1500 + wordCount * 450;
+  return Math.min(
+    MAX_LINE_ACTIVE_MS,
+    Math.max(MIN_LINE_ACTIVE_MS, Math.min(byLength, byWords)),
+  );
+}
+
+function instrumentalLine(startTimeMs: number, durationMs: number): Lyric {
+  return {
+    startTimeMs,
+    words: "♪",
+    durationMs: Math.max(0, durationMs),
+    isInstrumental: true,
+  };
+}
+
+/**
+ * Insert ♪ placeholders for long intros, explicit empty LRC rows, clear
+ * mid-song breaks, and outros — without cutting short still-sung lines.
+ */
+export function insertInstrumentalGaps(lyrics: Lyric[]): Lyric[] {
+  if (lyrics.length === 0) return lyrics;
+
+  const result: Lyric[] = [];
+
+  const first = lyrics[0];
+  if (first.startTimeMs >= LONG_PAUSE_MS) {
+    result.push(instrumentalLine(0, first.startTimeMs));
+  }
+
+  for (let i = 0; i < lyrics.length; i++) {
+    const line = lyrics[i];
+    const next = lyrics[i + 1];
+    const spanMs =
+      next != null
+        ? Math.max(0, next.startTimeMs - line.startTimeMs)
+        : Math.max(0, line.durationMs);
+    const isLast = next == null;
+
+    if (isInstrumentalText(line.words)) {
+      const prev = result[result.length - 1];
+      if (prev?.isInstrumental) {
+        prev.durationMs += spanMs;
+      } else {
+        result.push(instrumentalLine(line.startTimeMs, spanMs));
+      }
+      continue;
+    }
+
+    const singMs = Math.min(estimateSingDurationMs(line), spanMs);
+    const silenceMs = spanMs - singMs;
+    // Lead-out / last line: use the normal pause threshold.
+    // Between sung lines: require a much longer span so held phrases
+    // (e.g. 10–12s) are not replaced with ♪ mid-line.
+    const pauseThreshold = isLast ? LONG_PAUSE_MS : BETWEEN_LINES_PAUSE_MS;
+    const shouldInsertBeat = spanMs >= pauseThreshold && silenceMs >= LONG_PAUSE_MS;
+
+    if (shouldInsertBeat) {
+      const activeMs = Math.min(singMs, spanMs - MIN_INSTRUMENTAL_MS);
+      result.push({
+        ...line,
+        durationMs: activeMs,
+        isInstrumental: false,
+      });
+      result.push(instrumentalLine(line.startTimeMs + activeMs, spanMs - activeMs));
+      continue;
+    }
+
+    result.push({
+      ...line,
+      words: line.words,
+      durationMs: spanMs,
+      isInstrumental: false,
+    });
+  }
+
+  return result;
 }
 
 /** LRCLib search API result item */
@@ -224,5 +334,5 @@ export function parseLRC(lrcText: string, songDurationMs: number): Lyric[] {
       });
     }
   }
-  return result;
+  return insertInstrumentalGaps(result);
 }

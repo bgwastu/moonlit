@@ -278,6 +278,7 @@ export default function LyricsPanel({
         ) : (
           lyrics.map((lyric, i) => {
             const isActive = i === activeIndex;
+            const isBeat = !!lyric.isInstrumental;
             return (
               <Box
                 key={`${lyric.startTimeMs}-${i}`}
@@ -290,15 +291,20 @@ export default function LyricsPanel({
                   cursor: "pointer",
                   fontSize: isActive ? "1.925rem" : "1.75rem",
                   fontWeight: isActive ? 700 : 600,
-                  color: isActive ? "#fff" : "rgba(255, 255, 255, 0.3)",
+                  color: isActive
+                    ? isBeat
+                      ? "rgba(255, 255, 255, 0.7)"
+                      : "#fff"
+                    : "rgba(255, 255, 255, 0.3)",
                   transformOrigin: isMobile ? "center center" : "left center",
                   transform: `scale(${isActive ? 1 : 0.92})`,
                   lineHeight: 1.3,
                   transition: "transform 0.3s ease, color 0.3s ease",
                   textAlign: isMobile ? "center" : "left",
+                  letterSpacing: isBeat ? "0.12em" : undefined,
                 }}
               >
-                {lyric.words}
+                {isBeat ? "♪" : lyric.words}
               </Box>
             );
           })
