@@ -1,4 +1,5 @@
 import { searchErrorCode } from "@/lib/apiError";
+import { readRequestCookies } from "@/lib/cookies";
 import { getSearchSuggestions } from "@/lib/youtubei";
 
 export async function GET(request: Request) {
@@ -13,6 +14,7 @@ export async function GET(request: Request) {
   try {
     const suggestions = await getSearchSuggestions(query, {
       limit: Math.min(Math.max(limit || 10, 1), 20),
+      cookies: readRequestCookies(request),
     });
     return Response.json({ suggestions });
   } catch (error) {

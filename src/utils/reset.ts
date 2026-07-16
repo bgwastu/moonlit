@@ -1,4 +1,5 @@
 import localforage from "localforage";
+import { clearUserCookies } from "@/lib/cookies";
 import { clearPlaybackPrefs, clearShowVideoPref } from "@/lib/playerPrefs";
 
 export interface ResetOptions {
@@ -22,6 +23,7 @@ export async function resetAllData(options: ResetOptions = { settings: true }) {
         }
       }
       keysToRemove.forEach((key) => localStorage.removeItem(key));
+      clearUserCookies();
       clearShowVideoPref();
       clearPlaybackPrefs();
     }

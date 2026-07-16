@@ -19,23 +19,26 @@ export default function CookiesModal({ opened, onClose }: CookiesModalProps) {
   const [cookies, setCookiesState] = useState("");
   const [customEnabled, setCustomEnabled] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [validationError, setValidationError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!opened) return;
     const id = requestAnimationFrame(() => {
       setCookiesState(getUserCookies());
       setCustomEnabled(isCustomCookiesEnabled());
+      setValidationError(null);
     });
     return () => cancelAnimationFrame(id);
   }, [opened]);
 
   const handleSave = async () => {
     setSaving(true);
+    setValidationError(null);
     try {
       if (customEnabled && cookies.trim()) {
         const validation = validateCookies(cookies);
         if (!validation.valid) {
-          setSaving(false);
+          setValidationError(validation.error || "Invalid cookie format.");
           return;
         }
       }
@@ -43,6 +46,8 @@ export default function CookiesModal({ opened, onClose }: CookiesModalProps) {
       setCustomCookiesEnabled(customEnabled);
       onClose();
     } catch {
+      setValidationError("Failed to save cookies. Please try again.");
+    } finally {
       setSaving(false);
     }
   };
@@ -70,13 +75,20 @@ export default function CookiesModal({ opened, onClose }: CookiesModalProps) {
             </Text>
           }
           checked={customEnabled}
-          onChange={(e) => setCustomEnabled(e.currentTarget.checked)}
+          onChange={(e) => {
+            setCustomEnabled(e.currentTarget.checked);
+            setValidationError(null);
+          }}
         />
 
         {customEnabled && (
           <Textarea
             value={cookies}
-            onChange={(e) => setCookiesState(e.currentTarget.value)}
+            onChange={(e) => {
+              setCookiesState(e.currentTarget.value);
+              setValidationError(null);
+            }}
+            error={validationError}
             placeholder="Paste your exported cookies.txt here..."
             minRows={6}
             maxRows={10}

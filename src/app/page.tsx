@@ -48,6 +48,7 @@ import MediaResultRow, { type MediaResultItem } from "@/components/MediaResultRo
 import ResetModal from "@/components/ResetModal";
 import { useAppContext } from "@/context/AppContext";
 import type { Media } from "@/interfaces";
+import { cookieRequestHeaders } from "@/lib/cookies";
 import { SEARCH_ACCENT_VAR } from "@/lib/theme";
 import { getYouTubeId, isDirectMediaURL, isYoutubeURL } from "@/utils";
 import { setMediaCache } from "@/utils/cache";
@@ -318,7 +319,7 @@ function SearchPanel({
     try {
       const response = await fetch(
         `/api/youtube/suggest?q=${encodeURIComponent(clean)}&limit=10`,
-        { signal: controller.signal },
+        { signal: controller.signal, headers: cookieRequestHeaders() },
       );
       const data = (await response.json()) as {
         suggestions?: string[];
@@ -355,7 +356,7 @@ function SearchPanel({
       try {
         const response = await fetch(
           `/api/youtube/search?q=${encodeURIComponent(value)}&limit=${SEARCH_LIMIT}`,
-          { signal },
+          { signal, headers: cookieRequestHeaders() },
         );
         const data = (await response.json()) as {
           results?: YouTubeResult[];

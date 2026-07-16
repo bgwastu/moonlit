@@ -1,6 +1,8 @@
 const COOKIES_KEY = "moonlit-yt-cookies";
 const CUSTOM_COOKIES_ENABLED_KEY = "moonlit-custom-cookies-enabled";
 
+export const MOONLIT_COOKIES_HEADER = "X-Moonlit-Cookies";
+
 /** Get user cookies from localStorage */
 export function getUserCookies(): string {
   if (typeof window === "undefined") return "";
@@ -34,6 +36,26 @@ export function getCookiesToUse(): { cookies: string } {
     }
   }
   return { cookies: "" };
+}
+
+/** Headers to attach when calling server APIs that accept user cookies. */
+export function cookieRequestHeaders(): HeadersInit {
+  const { cookies } = getCookiesToUse();
+  if (!cookies.trim()) return {};
+  return { [MOONLIT_COOKIES_HEADER]: cookies };
+}
+
+/** Read user cookies sent from the client on a server request. */
+export function readRequestCookies(request: Request): string | undefined {
+  const cookies = request.headers.get(MOONLIT_COOKIES_HEADER)?.trim();
+  return cookies || undefined;
+}
+
+/** Remove saved user cookies and the enable preference. */
+export function clearUserCookies(): void {
+  if (typeof window === "undefined") return;
+  localStorage.removeItem(COOKIES_KEY);
+  localStorage.removeItem(CUSTOM_COOKIES_ENABLED_KEY);
 }
 
 /** Validate Netscape cookie format — each non-empty, non-comment line must have 7 tab-separated fields */

@@ -15,6 +15,7 @@ import {
   Title,
 } from "@mantine/core";
 import { IconAlertCircle, IconCheck, IconCookie } from "@tabler/icons-react";
+import { validateCookies } from "@/lib/cookies";
 
 export default function AdminPage() {
   const [password, setPassword] = useState("");
@@ -67,6 +68,15 @@ export default function AdminPage() {
     setCookiesLoading(true);
     setCookiesError(null);
     setCookiesSuccess(false);
+
+    if (cookies.trim()) {
+      const validation = validateCookies(cookies);
+      if (!validation.valid) {
+        setCookiesError(validation.error || "Invalid cookie format.");
+        setCookiesLoading(false);
+        return;
+      }
+    }
 
     try {
       const res = await fetch("/api/admin/cookies", {
@@ -142,6 +152,7 @@ export default function AdminPage() {
                 placeholder={`# Netscape HTTP Cookie File
 .youtube.com\tTRUE\t/\tTRUE\t0\tCOOKIE_NAME\tVALUE`}
                 minRows={8}
+                maxRows={10}
                 autosize
                 styles={{
                   input: {

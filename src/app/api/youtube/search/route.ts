@@ -1,4 +1,5 @@
-import { apiError, searchErrorCode } from "@/lib/apiError";
+import { searchErrorCode } from "@/lib/apiError";
+import { readRequestCookies } from "@/lib/cookies";
 import {
   type MusicSearchResult,
   type YouTubeSearchResult,
@@ -31,13 +32,16 @@ export async function GET(request: Request) {
   }
 
   try {
-    const musicResults = await searchMusic(query, { limit: Math.min(limit, 50) });
+    const cookies = readRequestCookies(request);
+    const searchOptions = { limit: Math.min(limit, 50), cookies };
+
+    const musicResults = await searchMusic(query, searchOptions);
 
     if (musicResults.length > 0) {
       return Response.json({ results: flattenToSearchResults(musicResults) });
     }
 
-    const videoResults = await searchYouTubeVideos(query, { limit: Math.min(limit, 50) });
+    const videoResults = await searchYouTubeVideos(query, searchOptions);
     return Response.json({ results: videoResults });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to search YouTube.";
