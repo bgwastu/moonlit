@@ -8,17 +8,16 @@ For quick access, you can replace the URL with the Moonlit URL:
 
 - **YouTube**: Replace `youtube.com` with `moonlit.wastu.net` to the URL (example: <a href="https://moonlit.wastu.net/watch?v=JGwWNGJdvx8" target="_blank">moonlit.wastu.net/watch?v=JGwWNGJdvx8</a>)
 
-https://github.com/user-attachments/assets/a54716fb-35cb-4158-b789-74a74fc359dc
+https://github.com/user-attachments/assets/64777ba1-6022-42b5-a653-c73bd4a61013
 
 # Features
 
 - **Pitch Lock & Shifting**: Change the speed without affecting pitch, or shift pitch independently (non lite mode).
 - **Reverb Effect**: Add ambiance to your tracks with adjustable reverb.
 - **Search Support**: Search for videos on YouTube for faster access.
-- **Lyrics Support**: View synchronized lyrics while listening to your tracks.
+- **Lyrics Support**: View synchronized, syllable-level lyrics while listening to your tracks.
 - **Client-Side Cookie Management**: Use your own YouTube cookies to bypass restrictions (e.g., age-gated content).
 - **Export Options**: Download the original media or export your processed remix as a WAV or MP3 file.
-- **Proxy Support**: Route all outbound server requests through an HTTP or SOCKS5 proxy.
 - **Self-Hostable**: Run with a single Docker container or directly on your host.
 
 # Quick start
@@ -78,7 +77,8 @@ NODE_ENV=production bun run start
 # Credits
 
 - **Signalsmith Stretch**: A massive shoutout to [Signalsmith Audio](https://signalsmith-audio.co.uk/) for their open-source time-stretching library. Honestly, I'm too dumb to implement complex DSP algorithms like this by myself, so this library is doing all the heavy lifting! 😅
-- **LRCLIB**: Thanks to [lrclib.net](https://lrclib.net/) for providing the lyrics API data.
+- **Better Lyrics**: Thanks to [Better Lyrics](https://better-lyrics.boidu.dev) and the [Better Lyrics API](https://lyrics-api.boidu.dev/) for syllable-synced lyrics and TTML timing data.
+- **LRCLIB**: Thanks to [lrclib.net](https://lrclib.net/) for providing additional lyrics when Better Lyrics has no match.
 
 # Donating
 
