@@ -240,7 +240,7 @@ export async function searchYouTube(
   const cleanQuery = query.trim();
   if (!cleanQuery) return [];
 
-  const limit = Math.min(Math.max(options.limit ?? 3, 1), 10);
+  const limit = Math.min(Math.max(options.limit ?? 10, 1), 20);
   const cacheKey = `q=${cleanQuery}|limit=${limit}|c=${simpleHash(options.cookies || "")}`;
 
   const cached = searchCache.get(cacheKey);
@@ -295,7 +295,7 @@ export async function searchMusic(
   const cleanQuery = query.trim();
   if (!cleanQuery) return [];
 
-  const limit = Math.min(Math.max(options.limit ?? 3, 1), 10);
+  const limit = Math.min(Math.max(options.limit ?? 10, 1), 20);
   const cacheKey = `music:q=${cleanQuery}|limit=${limit}|c=${simpleHash(options.cookies || "")}`;
 
   const cached = musicSearchCache.get(cacheKey);
@@ -356,6 +356,52 @@ export async function searchMusic(
     musicSearchCache.set(cacheKey, results);
   }
   return results;
+}
+
+// ---- Search keyword suggestions (YouTube-style autocomplete) ----
+const suggestCache = new CacheStore<string[]>();
+
+export async function getSearchSuggestions(
+  query: string,
+  options: { limit?: number; cookies?: string } = {},
+): Promise<string[]> {
+  const cleanQuery = query.trim();
+  if (!cleanQuery) return [];
+
+  const limit = Math.min(Math.max(options.limit ?? 10, 1), 20);
+  const cacheKey = `suggest:q=${cleanQuery}|limit=${limit}|c=${simpleHash(options.cookies || "")}`;
+
+  const cached = suggestCache.get(cacheKey);
+  if (cached) {
+    const age = Date.now() - cached.cachedAt;
+    if (age < SEARCH_TTL_MS) return cached.value;
+  }
+
+  const yt = await getInnertube(options.cookies, "ANDROID_VR");
+  const sections = await yt.music.getSearchSuggestions(cleanQuery);
+  const suggestions: string[] = [];
+  const seen = new Set<string>();
+
+  for (const section of sections) {
+    if (!section.is(YTNodes.SearchSuggestionsSection)) continue;
+    for (const item of section.contents ?? []) {
+      if (suggestions.length >= limit) break;
+      if (!item.is(YTNodes.SearchSuggestion)) continue;
+      const text =
+        typeof item.suggestion === "string"
+          ? item.suggestion
+          : item.suggestion?.toString?.() || "";
+      const normalized = text.trim();
+      if (!normalized || seen.has(normalized.toLowerCase())) continue;
+      seen.add(normalized.toLowerCase());
+      suggestions.push(normalized);
+    }
+  }
+
+  if (suggestions.length > 0) {
+    suggestCache.set(cacheKey, suggestions);
+  }
+  return suggestions;
 }
 
 function parseViewCount(text: string): number {

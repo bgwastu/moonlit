@@ -24,7 +24,7 @@ function flattenToSearchResults(
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const query = searchParams.get("q")?.trim() ?? "";
-  const limit = Number(searchParams.get("limit") ?? 3);
+  const limit = Number(searchParams.get("limit") ?? 10);
 
   if (!query) {
     return Response.json({ results: [] });

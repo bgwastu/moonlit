@@ -16,6 +16,17 @@ import { playerPathForMedia, softReplaceUrl } from "@/lib/playerNavigation";
 const HISTORY_STORAGE_KEY = "moonlit-history";
 const MAX_HISTORY_ITEMS = 50;
 
+/** Captured once on the client before PlayerRouteBridge can replace to `/`. */
+let capturedEntryPath: string | null = null;
+
+function getAppEntryPath(): string {
+  if (typeof window === "undefined") return "";
+  if (capturedEntryPath === null) {
+    capturedEntryPath = window.location.pathname;
+  }
+  return capturedEntryPath;
+}
+
 export type PlayerMode = "hidden" | "expanded" | "mini";
 
 export interface OpenPlayerOptions {
@@ -84,6 +95,9 @@ const defaultTheme: MantineThemeOverride = {
 const AppContext = createContext<AppContextValue | null>(null);
 
 export function AppProvider({ children }: { children: React.ReactNode }) {
+  // Capture deep-link path before PlayerRouteBridge can replace to `/`.
+  getAppEntryPath();
+
   const [media, setMediaState] = useState<Media | null>(null);
   const [playerMode, setPlayerMode] = useState<PlayerMode>("hidden");
   const [playerUrl, setPlayerUrl] = useState<string | null>(null);
@@ -207,10 +221,19 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     softReplaceUrl("/");
   }, []);
 
-  // Restore last session (≤3 days) once after hydration — always mini + paused
+  // Restore last session (≤3 days) once after hydration — always mini + paused.
+  // Skip when the app was entered via a player deep link (/watch, /player, /shorts).
   useEffect(() => {
     if (!isHydrated || restoredRef.current) return;
     restoredRef.current = true;
+
+    const entry = getAppEntryPath();
+    const isDeepLinkEntry =
+      entry === "/watch" || entry === "/player" || entry.startsWith("/shorts");
+    if (isDeepLinkEntry) return;
+    // Belt-and-suspenders: bridge may have already opened a track.
+    if (playerUrlRef.current || mediaRef.current) return;
+
     const session = loadLastSession();
     if (!session) return;
     try {
