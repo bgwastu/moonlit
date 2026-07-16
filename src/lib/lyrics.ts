@@ -336,3 +336,160 @@ export function parseLRC(lrcText: string, songDurationMs: number): Lyric[] {
   }
   return insertInstrumentalGaps(result);
 }
+
+/** True when text looks like Apple / Better Lyrics TTML rather than LRC. */
+export function isTtml(text: string): boolean {
+  const trimmed = text.trim();
+  if (!trimmed.startsWith("<")) return false;
+  return (
+    /<(?:tt|div|p|span)\b/i.test(trimmed) && /ttml|itunes:timing|<p\b/i.test(trimmed)
+  );
+}
+
+/**
+ * Parse TTML clock values to milliseconds.
+ * Supports: ss.xxx, mm:ss.xxx, hh:mm:ss.xxx
+ */
+function parseTtmlTime(timeStr: string): number {
+  const raw = timeStr.trim();
+  if (!raw) return 0;
+  const parts = raw.split(":");
+  if (parts.length === 1) {
+    const sec = parseFloat(parts[0]);
+    return Number.isFinite(sec) ? Math.round(sec * 1000) : 0;
+  }
+  if (parts.length === 2) {
+    const min = parseInt(parts[0], 10) || 0;
+    const sec = parseFloat(parts[1]);
+    if (!Number.isFinite(sec)) return min * 60000;
+    return Math.round(min * 60000 + sec * 1000);
+  }
+  const h = parseInt(parts[0], 10) || 0;
+  const m = parseInt(parts[1], 10) || 0;
+  const sec = parseFloat(parts[2]);
+  if (!Number.isFinite(sec)) return h * 3600000 + m * 60000;
+  return Math.round(h * 3600000 + m * 60000 + sec * 1000);
+}
+
+function getAttr(el: Element, name: string): string | null {
+  return el.getAttribute(name) ?? el.getAttribute(name.toLowerCase());
+}
+
+/**
+ * Parse Apple Music–style TTML (word/syllable spans) into Lyric[].
+ * Uses DOMParser (browser). Empty or invalid input returns [].
+ */
+export function parseTTML(ttmlText: string, songDurationMs: number): Lyric[] {
+  if (!ttmlText?.trim() || typeof DOMParser === "undefined") return [];
+
+  let doc: Document;
+  try {
+    doc = new DOMParser().parseFromString(ttmlText, "application/xml");
+  } catch {
+    return [];
+  }
+
+  const parseError = doc.getElementsByTagName("parsererror");
+  if (parseError.length > 0) return [];
+
+  const paragraphs = Array.from(doc.getElementsByTagName("p"));
+  if (paragraphs.length === 0) return [];
+
+  const rawLines: Lyric[] = [];
+
+  for (const p of paragraphs) {
+    const lineBegin = getAttr(p, "begin");
+    const lineEnd = getAttr(p, "end");
+    if (!lineBegin) continue;
+
+    const startTimeMs = parseTtmlTime(lineBegin);
+    const endTimeMs = lineEnd ? parseTtmlTime(lineEnd) : startTimeMs;
+    const lineDurationMs = Math.max(0, endTimeMs - startTimeMs);
+
+    const parts: LyricPart[] = [];
+
+    // Walk paragraph children so inter-span whitespace stays attached to words.
+    const walkNodes = (parent: Element) => {
+      for (const node of Array.from(parent.childNodes)) {
+        if (node.nodeType === Node.TEXT_NODE) {
+          const ws = node.textContent ?? "";
+          if (ws && parts.length > 0) {
+            parts[parts.length - 1].words += ws;
+          }
+          continue;
+        }
+        if (node.nodeType !== Node.ELEMENT_NODE) continue;
+        const el = node as Element;
+        const tag = el.tagName.toLowerCase();
+        if (tag === "span" && getAttr(el, "begin")) {
+          const begin = getAttr(el, "begin")!;
+          const end = getAttr(el, "end");
+          const wordStart = parseTtmlTime(begin);
+          const wordEnd = end ? parseTtmlTime(end) : wordStart;
+          // Nested timed spans (syllables): flatten by walking; otherwise take text
+          const nestedTimed = Array.from(el.children).some(
+            (c) => c.tagName.toLowerCase() === "span" && getAttr(c, "begin"),
+          );
+          if (nestedTimed) {
+            walkNodes(el);
+          } else {
+            parts.push({
+              startTimeMs: wordStart,
+              words: el.textContent ?? "",
+              durationMs: Math.max(0, wordEnd - wordStart),
+            });
+          }
+        } else if (tag === "span" || tag === "br") {
+          walkNodes(el);
+        }
+      }
+    };
+    walkNodes(p);
+
+    if (parts.length > 0) {
+      const lineText =
+        parts
+          .map((part) => part.words)
+          .join("")
+          .replace(/\s+/g, " ")
+          .trim() || (p.textContent ?? "").replace(/\s+/g, " ").trim();
+
+      rawLines.push({
+        startTimeMs,
+        words: lineText,
+        durationMs: lineDurationMs,
+        parts,
+      });
+    } else {
+      const lineText = (p.textContent ?? "").replace(/\s+/g, " ").trim();
+      rawLines.push({
+        startTimeMs,
+        words: lineText,
+        durationMs: lineDurationMs,
+      });
+    }
+  }
+
+  rawLines.sort((a, b) => a.startTimeMs - b.startTimeMs);
+
+  // Fill duration from next line when end was missing / zero
+  for (let i = 0; i < rawLines.length; i++) {
+    const current = rawLines[i];
+    const next = rawLines[i + 1];
+    if (current.durationMs <= 0) {
+      current.durationMs =
+        next != null
+          ? Math.max(0, next.startTimeMs - current.startTimeMs)
+          : Math.max(0, songDurationMs - current.startTimeMs);
+    }
+  }
+
+  return insertInstrumentalGaps(rawLines);
+}
+
+/** Dispatch TTML vs LRC based on content shape. */
+export function parseSyncedLyrics(text: string, songDurationMs: number): Lyric[] {
+  if (!text?.trim()) return [];
+  if (isTtml(text)) return parseTTML(text, songDurationMs);
+  return parseLRC(text, songDurationMs);
+}

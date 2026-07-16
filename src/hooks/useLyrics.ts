@@ -5,6 +5,7 @@ import {
   Lyric,
   LyricsSearchRecord,
   parseLRC,
+  parseSyncedLyrics,
   sortLyricsSearchRecordsForTrack,
   stripVideoTitleFiller,
 } from "@/lib/lyrics";
@@ -27,6 +28,11 @@ interface LrclibResponse {
   syncedLyrics?: string | null;
 }
 
+interface BetterLyricsApiResponse {
+  source?: string;
+  ttml?: string | null;
+}
+
 export type LyricsState = "idle" | "loading" | "ready" | "error" | "not_found";
 
 interface UseLyricsOptions {
@@ -40,7 +46,7 @@ interface UseLyricsOptions {
 }
 
 export interface DiscoveredLyrics {
-  id: number;
+  id: number | null;
   trackName: string;
   artistName: string;
   albumName?: string;
@@ -88,10 +94,14 @@ function getCached(key: string): CachedLyrics | undefined {
   return lyricsCache.get(key);
 }
 
-async function fetchJson<T>(url: string, signal?: AbortSignal): Promise<T | null> {
+async function fetchJson<T>(
+  url: string,
+  signal?: AbortSignal,
+  headers?: HeadersInit,
+): Promise<T | null> {
   try {
     const res = await fetch(url, {
-      headers: { "Lrclib-Client": USER_AGENT },
+      headers,
       signal,
     });
     if (!res.ok) return null;
@@ -179,7 +189,34 @@ export function useLyrics({
           });
         };
 
-        // Fire both GET-cached and search in parallel
+        // 1) Better Lyrics (fast cache hits via our proxy)
+        const blParams = new URLSearchParams({
+          s: titleForLyrics,
+          a: a.trim(),
+          d: String(Math.round(d)),
+        });
+        const blData = await fetchJson<BetterLyricsApiResponse>(
+          `/api/lyrics?${blParams}`,
+          signal,
+        );
+        if (signal?.aborted) return;
+
+        const ttml = blData?.ttml?.trim();
+        if (ttml) {
+          const parsed = parseSyncedLyrics(ttml, d * 1000);
+          if (parsed.length > 0) {
+            const discovered: DiscoveredLyrics = {
+              id: null,
+              trackName: titleForLyrics,
+              artistName: a.trim(),
+              syncedLyrics: ttml,
+            };
+            commitLyrics(applyOffset(parsed, offsetMs), discovered);
+            return;
+          }
+        }
+
+        // 2) LRCLib fallback — GET-cached + search in parallel
         const getParams = new URLSearchParams({
           track_name: titleForLyrics,
           artist_name: a.trim(),
@@ -194,10 +231,12 @@ export function useLyrics({
 
         const getUrl = `${LRCLIB_BASE}/get-cached?${getParams}`;
         const searchUrl = `${LRCLIB_BASE}/search?${searchParams}`;
+        const lrclibHeaders = { "Lrclib-Client": USER_AGENT };
 
         const searchResultsPromise = fetchJson<LyricsSearchRecord[]>(
           searchUrl,
           signal,
+          lrclibHeaders,
         ).then((searchData) => {
           const records = Array.isArray(searchData) ? searchData : [];
           setSearchResults(records);
@@ -234,12 +273,11 @@ export function useLyrics({
         });
 
         // Try GET-cached first (fast, no external lookups)
-        const getData = await fetchJson<LrclibResponse>(getUrl, signal);
+        const getData = await fetchJson<LrclibResponse>(getUrl, signal, lrclibHeaders);
         if (signal?.aborted) return;
 
         if (getData?.syncedLyrics?.trim() && durationMatches(d, getData.duration ?? 0)) {
           const parsed = parseLRC(getData.syncedLyrics, (getData.duration ?? d) * 1000);
-          const finalLyrics = applyOffset(parsed, offsetMs);
           const discovered: DiscoveredLyrics | null =
             parsed.length > 0 && getData.id
               ? {
@@ -259,7 +297,11 @@ export function useLyrics({
 
         // GET-cached missed — try GET (may access external sources)
         const getUrlUncached = `${LRCLIB_BASE}/get?${getParams}`;
-        const getDataUncached = await fetchJson<LrclibResponse>(getUrlUncached, signal);
+        const getDataUncached = await fetchJson<LrclibResponse>(
+          getUrlUncached,
+          signal,
+          lrclibHeaders,
+        );
         if (signal?.aborted) return;
 
         if (
@@ -270,7 +312,6 @@ export function useLyrics({
             getDataUncached.syncedLyrics,
             (getDataUncached.duration ?? d) * 1000,
           );
-          const finalLyrics = applyOffset(parsed, offsetMs);
           const discovered: DiscoveredLyrics | null =
             parsed.length > 0 && getDataUncached.id
               ? {
@@ -328,7 +369,7 @@ export function useLyrics({
 
     // Already assigned to this track — parse locally, no network search
     if (selectedSyncedLyrics) {
-      const parsed = parseLRC(selectedSyncedLyrics, durationSeconds * 1000);
+      const parsed = parseSyncedLyrics(selectedSyncedLyrics, durationSeconds * 1000);
       const offsetApplied = applyOffset(parsed, offsetMs);
       apply(() => {
         setLyrics(offsetApplied);

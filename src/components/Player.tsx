@@ -555,7 +555,7 @@ export function Player({
   const applyLyricsSettings = useCallback(
     (
       d: {
-        id: number;
+        id: number | null;
         trackName: string;
         artistName: string;
         albumName?: string;
@@ -1761,8 +1761,9 @@ export function Player({
                   style={{
                     position: "relative",
                     width: lyricsOpen ? "min(400px, 35vw)" : 0,
+                    minWidth: 0,
                     height: "80vh",
-                    flexShrink: 0,
+                    flexShrink: 1,
                     display: "flex",
                     flexDirection: "column",
                     overflow: "hidden",
@@ -1779,9 +1780,10 @@ export function Player({
                     state={lyricsState}
                     error={lyricsError}
                     currentTimeSeconds={currentTime}
+                    isPlaying={isPlaying}
                     onSeek={seekFromUser}
                     visible={lyricsOpen}
-                    style={{ flex: 1, minHeight: 0 }}
+                    style={{ flex: 1, minHeight: 0, minWidth: 0, width: "100%" }}
                   />
                 </Box>
               )}
@@ -1815,8 +1817,9 @@ export function Player({
                   state={lyricsState}
                   error={lyricsError}
                   currentTimeSeconds={currentTime}
+                  isPlaying={isPlaying}
                   onSeek={seekFromUser}
-                  style={{ flex: 1, minHeight: 0 }}
+                  style={{ flex: 1, minHeight: 0, minWidth: 0, width: "100%" }}
                   isMobile
                   visible={lyricsClosedAmt < 0.5}
                 />
