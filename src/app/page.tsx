@@ -405,6 +405,7 @@ function SearchPanel({
             placeholder="Search YouTube or paste a URL..."
             size={isMobile ? "md" : "lg"}
             radius="md"
+            autoComplete="off"
             value={form.values.query}
             onChange={(event) => {
               const nextQuery = event.currentTarget.value;
@@ -424,6 +425,10 @@ function SearchPanel({
             onKeyDown={(event) => {
               if (event.key === "Escape") {
                 event.preventDefault();
+                if (hasQuery) {
+                  clearInput();
+                  return;
+                }
                 inputRef.current?.blur();
               }
             }}
