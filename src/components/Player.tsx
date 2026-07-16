@@ -636,6 +636,58 @@ export function Player({
     !isPlaying &&
     !isRepeat;
 
+  const lastSyncedFileRef = useRef<string | null>(null);
+
+  const applyPlaybackModeToEngine = useCallback(() => {
+    let targetRate: number;
+    let targetSemitones: number;
+    switch (playbackMode) {
+      case "slowed":
+        targetRate = slowedRate;
+        targetSemitones = getSemitonesFromRate(slowedRate);
+        break;
+      case "speedup":
+        targetRate = speedupRate;
+        targetSemitones = getSemitonesFromRate(speedupRate);
+        break;
+      case "custom":
+        targetRate = customRate;
+        targetSemitones = customSemitones;
+        break;
+      default:
+        targetRate = normalRate;
+        targetSemitones = 0;
+    }
+    setRate(targetRate);
+    setSemitones(targetSemitones);
+  }, [
+    playbackMode,
+    slowedRate,
+    normalRate,
+    speedupRate,
+    customRate,
+    customSemitones,
+    setRate,
+    setSemitones,
+  ]);
+
+  // Re-apply the selected mode after a new track finishes loading — the stretch
+  // pipeline reinitializes on fileUrl changes and can otherwise keep rate at 1.
+  useEffect(() => {
+    if (!media?.fileUrl) {
+      lastSyncedFileRef.current = null;
+      return;
+    }
+    if (!isReady) return;
+    if (lastSyncedFileRef.current === media.fileUrl) return;
+    lastSyncedFileRef.current = media.fileUrl;
+    applyPlaybackModeToEngine();
+  }, [media?.fileUrl, isReady, applyPlaybackModeToEngine]);
+
+  useEffect(() => {
+    lastSyncedFileRef.current = null;
+  }, [advancedStretch]);
+
   const handleAdvancedStretchChange = useCallback((enabled: boolean) => {
     setAdvancedStretch(enabled);
     savePlaybackPrefs({ advancedStretch: enabled });
@@ -1055,6 +1107,10 @@ export function Player({
   const handleRateChange = useCallback(
     (newRate: number) => {
       setRate(newRate);
+      if (playbackMode === "custom") {
+        setCustomRate(newRate);
+        return;
+      }
       // Save rate per current mode
       const mode = getModeFromRate(newRate, semitones);
       if (mode === "slowed") setSlowedRate(newRate);
@@ -1063,7 +1119,7 @@ export function Player({
       else setCustomRate(newRate);
       setPlaybackMode(mode);
     },
-    [setRate, semitones],
+    [setRate, semitones, playbackMode],
   );
 
   const handleSemitonesChange = useCallback(
