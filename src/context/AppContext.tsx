@@ -15,6 +15,7 @@ import { clearLastSession, loadLastSession, saveLastSession } from "@/lib/lastSe
 import { mediaFromLocalCache } from "@/lib/playFromCache";
 import { playerPathForMedia, softReplaceUrl } from "@/lib/playerNavigation";
 import { appTheme } from "@/lib/theme";
+import { clearMediaCache } from "@/utils/cache";
 
 const HISTORY_STORAGE_KEY = "moonlit-history";
 
@@ -42,6 +43,8 @@ export interface OpenPlayerOptions {
   autoPlay?: boolean;
   /** Resume playback head (seconds). Used by session restore. */
   resumePosition?: number;
+  /** When false, do not resume history writes (session restore). Default true. */
+  recordHistory?: boolean;
 }
 
 interface AppContextValue {
@@ -64,7 +67,8 @@ interface AppContextValue {
   // History state (persisted to localStorage)
   history: HistoryItem[];
   setHistory: React.Dispatch<React.SetStateAction<HistoryItem[]>>;
-  clearHistory: () => void;
+  clearHistory: () => Promise<void>;
+  isHistoryWriteAllowed: () => boolean;
 
   // Theme state
   theme: MantineThemeOverride;
@@ -88,6 +92,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const mediaRef = useRef(media);
   const playerUrlRef = useRef(playerUrl);
   const restoredRef = useRef(false);
+  const skipHistoryWritesRef = useRef(false);
 
   useEffect(() => {
     mediaRef.current = media;
@@ -136,15 +141,28 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     [],
   );
 
-  const clearHistory = useCallback(() => {
+  const clearHistory = useCallback(async () => {
+    skipHistoryWritesRef.current = true;
     setHistoryState([]);
+    try {
+      localStorage.removeItem(HISTORY_STORAGE_KEY);
+    } catch (e) {
+      console.error("Failed to clear history:", e);
+    }
+    clearLastSession();
+    await clearMediaCache();
   }, []);
+
+  const isHistoryWriteAllowed = useCallback(() => !skipHistoryWritesRef.current, []);
 
   const setMedia = useCallback((next: Media | null) => {
     setMediaState(next);
   }, []);
 
   const openPlayer = useCallback((options: OpenPlayerOptions = {}) => {
+    if (options.recordHistory !== false) {
+      skipHistoryWritesRef.current = false;
+    }
     const expand = options.expand !== false;
     setPlayerAutoPlay(options.autoPlay !== false);
     setPlayerResumeAt(
@@ -244,6 +262,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             autoPlay: false,
             syncUrl: true,
             resumePosition: session.positionSeconds ?? 0,
+            recordHistory: false,
           });
           return;
         }
@@ -254,6 +273,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           autoPlay: false,
           syncUrl: true,
           resumePosition: session.positionSeconds ?? 0,
+          recordHistory: false,
         });
       })();
     }, 0);
@@ -263,6 +283,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   // Persist last session while a remote track is active
   useEffect(() => {
     if (!isHydrated) return;
+    if (skipHistoryWritesRef.current) return;
     if (playerMode === "hidden") return;
     const sourceUrl = playerUrl || media?.sourceUrl;
     if (!sourceUrl) return;
@@ -296,6 +317,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         history,
         setHistory,
         clearHistory,
+        isHistoryWriteAllowed,
         theme,
         setTheme,
       }}

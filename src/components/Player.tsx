@@ -149,7 +149,13 @@ export function Player({
 }) {
   const theme = useMantineTheme();
   const isMobile = useMediaQuery("(max-width: 1024px)");
-  const { media: contextMedia, setMedia, setHistory, setTheme } = useAppContext();
+  const {
+    media: contextMedia,
+    setMedia,
+    setHistory,
+    setTheme,
+    isHistoryWriteAllowed,
+  } = useAppContext();
   const isMini = mode === "mini";
 
   // Phase management: extracting while URL is being resolved, then playing
@@ -350,6 +356,7 @@ export function Player({
 
   // Persist history once media is playable; refresh cover/title when extraction completes
   useEffect(() => {
+    if (!isHistoryWriteAllowed()) return;
     if (!media?.sourceUrl || !media.fileUrl) return;
     // Local uploads are session-only — never write them to history
     if (media.sourceUrl.startsWith("local:")) return;
@@ -390,7 +397,7 @@ export function Player({
       next[existingIdx] = nextItem;
       return next;
     });
-  }, [media, setHistory]);
+  }, [media, setHistory, isHistoryWriteAllowed]);
 
   // Use sourceUrl from media state
   const sourceUrl = media?.sourceUrl ?? url ?? "";
@@ -880,7 +887,7 @@ export function Player({
           advancedStretch,
           lyrics: lyricsSettings,
         });
-        if (!sourceUrl.startsWith("local:")) {
+        if (!sourceUrl.startsWith("local:") && isHistoryWriteAllowed()) {
           patchLastSession(sourceUrl, { positionSeconds: currentTime });
         }
       }
@@ -913,17 +920,19 @@ export function Player({
     customSemitones,
     lyricsSettings,
     currentTime,
+    isHistoryWriteAllowed,
   ]);
 
   // Throttled progress persistence while the track is active
   useEffect(() => {
+    if (!isHistoryWriteAllowed()) return;
     if (!sourceUrl || sourceUrl.startsWith("local:") || !stateLoaded) return;
     if (!Number.isFinite(currentTime) || currentTime < 0) return;
     const id = window.setTimeout(() => {
       patchLastSession(sourceUrl, { positionSeconds: currentTime });
     }, 1500);
     return () => window.clearTimeout(id);
-  }, [sourceUrl, currentTime, stateLoaded]);
+  }, [sourceUrl, currentTime, stateLoaded, isHistoryWriteAllowed]);
 
   // Modal controls
   const [modalOpened, { open: openModal, close: closeModal }] = useDisclosure(false);

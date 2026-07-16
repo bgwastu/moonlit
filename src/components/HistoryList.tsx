@@ -18,7 +18,6 @@ import { useAppContext } from "@/context/AppContext";
 import type { HistoryItem } from "@/interfaces";
 import { historyItemSourceUrl, resolveCachedMedia } from "@/lib/playFromCache";
 import { timeAgo } from "@/utils";
-import { clearMediaCache } from "@/utils/cache";
 
 interface HistoryListProps {
   onPlay?: () => void;
@@ -31,7 +30,7 @@ export default function HistoryList({
   maxHeight,
   showClear = true,
 }: HistoryListProps) {
-  const { history, setHistory, openPlayer } = useAppContext();
+  const { history, clearHistory, openPlayer } = useAppContext();
   const [confirmOpen, setConfirmOpen] = useState(false);
   const theme = useMantineTheme();
 
@@ -97,9 +96,7 @@ export default function HistoryList({
           <Button
             color="red"
             onClick={() => {
-              void clearMediaCache();
-              setHistory([]);
-              setConfirmOpen(false);
+              void clearHistory().finally(() => setConfirmOpen(false));
             }}
           >
             Clear all
