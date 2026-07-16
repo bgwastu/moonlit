@@ -208,6 +208,7 @@ export default function LyricsPanel({
       )}
       <Box
         ref={containerRef}
+        data-lyrics-scroll
         onScroll={handleScroll}
         style={{
           flex: 1,
@@ -217,6 +218,7 @@ export default function LyricsPanel({
           scrollBehavior: "smooth",
           scrollbarWidth: "none",
           msOverflowStyle: "none",
+          touchAction: "pan-y",
           WebkitMaskImage:
             "linear-gradient(to bottom, transparent 0%, transparent 12%, black 32%, black 68%, transparent 88%, transparent 100%)",
           maskImage:

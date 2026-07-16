@@ -8,6 +8,8 @@ export type LastSession = {
   sourceUrl: string;
   metadata: Media["metadata"];
   mode: "mini" | "expanded";
+  /** Playback position in seconds when the session was last saved. */
+  positionSeconds?: number;
 };
 
 function isRestorableUrl(sourceUrl: string) {
@@ -49,6 +51,27 @@ export function saveLastSession(session: LastSession) {
     localStorage.setItem(LAST_SESSION_KEY, JSON.stringify(session));
   } catch (e) {
     console.error("Failed to save last session:", e);
+  }
+}
+
+/** Merge fields into the existing last-session entry (no-op if none / URL mismatch). */
+export function patchLastSession(
+  sourceUrl: string,
+  partial: Partial<Omit<LastSession, "sourceUrl">>,
+): void {
+  if (typeof window === "undefined") return;
+  if (!isRestorableUrl(sourceUrl)) return;
+  try {
+    const existing = loadLastSession();
+    if (!existing || existing.sourceUrl !== sourceUrl) return;
+    saveLastSession({
+      ...existing,
+      ...partial,
+      sourceUrl,
+      savedAt: Date.now(),
+    });
+  } catch (e) {
+    console.error("Failed to patch last session:", e);
   }
 }
 

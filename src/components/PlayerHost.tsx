@@ -13,6 +13,7 @@ export function PlayerHost() {
     playerUrl,
     media,
     playerAutoPlay,
+    playerResumeAt,
     collapsePlayer,
     expandPlayer,
     closePlayer,
@@ -25,6 +26,7 @@ export function PlayerHost() {
       url={playerUrl ?? undefined}
       mode={playerMode === "hidden" ? "expanded" : playerMode}
       autoPlay={playerAutoPlay}
+      resumePosition={playerResumeAt}
       onRequestCollapse={collapsePlayer}
       onRequestExpand={expandPlayer}
       onRequestClose={closePlayer}

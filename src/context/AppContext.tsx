@@ -27,6 +27,8 @@ export interface OpenPlayerOptions {
   syncUrl?: boolean;
   /** Defaults to true — session restore sets false so the mini bar stays paused. */
   autoPlay?: boolean;
+  /** Resume playback head (seconds). Used by session restore. */
+  resumePosition?: number;
 }
 
 interface AppContextValue {
@@ -39,6 +41,8 @@ interface AppContextValue {
   playerUrl: string | null;
   /** Whether the current open should auto-start playback when ready. */
   playerAutoPlay: boolean;
+  /** Seconds to seek to when the current open becomes ready (session restore). */
+  playerResumeAt: number;
   openPlayer: (options?: OpenPlayerOptions) => void;
   collapsePlayer: () => void;
   expandPlayer: () => void;
@@ -84,6 +88,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [playerMode, setPlayerMode] = useState<PlayerMode>("hidden");
   const [playerUrl, setPlayerUrl] = useState<string | null>(null);
   const [playerAutoPlay, setPlayerAutoPlay] = useState(false);
+  const [playerResumeAt, setPlayerResumeAt] = useState(0);
   const [history, setHistoryState] = useState<HistoryItem[]>([]);
   const [theme, setTheme] = useState<MantineThemeOverride>(defaultTheme);
   const [isHydrated, setIsHydrated] = useState(false);
@@ -149,6 +154,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const openPlayer = useCallback((options: OpenPlayerOptions = {}) => {
     const expand = options.expand !== false;
     setPlayerAutoPlay(options.autoPlay !== false);
+    setPlayerResumeAt(
+      typeof options.resumePosition === "number" &&
+        Number.isFinite(options.resumePosition)
+        ? Math.max(0, options.resumePosition)
+        : 0,
+    );
     if (options.media !== undefined) {
       setMediaState(options.media);
     }
@@ -187,6 +198,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setPlayerMode("hidden");
     setPlayerUrl(null);
     setPlayerAutoPlay(false);
+    setPlayerResumeAt(0);
     setMediaState(null);
     clearLastSession();
     softReplaceUrl("/");
@@ -220,6 +232,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         expand: false,
         autoPlay: false,
         syncUrl: true,
+        resumePosition: session.positionSeconds ?? 0,
       });
     }, 0);
     return () => window.clearTimeout(timer);
@@ -234,12 +247,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     if (sourceUrl.startsWith("local:")) return;
     const metadata = media?.metadata;
     if (!metadata?.title) return;
+    const existing = loadLastSession();
     saveLastSession({
       savedAt: Date.now(),
       sourceUrl,
       metadata: { ...metadata },
-      // Always restore as mini; mode is kept for backwards-compatible session shape
       mode: "mini",
+      positionSeconds:
+        existing?.sourceUrl === sourceUrl ? (existing.positionSeconds ?? 0) : 0,
     });
   }, [isHydrated, playerMode, playerUrl, media]);
 
@@ -251,6 +266,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         playerMode,
         playerUrl,
         playerAutoPlay,
+        playerResumeAt,
         openPlayer,
         collapsePlayer,
         expandPlayer,

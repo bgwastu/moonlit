@@ -1,7 +1,10 @@
+"use client";
+
 import { useCallback, useEffect, useRef } from "react";
 
 const DOUBLE_TAP_MS = 300;
 const EDGE_FRACTION = 0.25; // 25% on each side for seek zones
+const TAP_SLOP_PX = 12;
 
 interface UsePlayerTapGesturesOptions {
   onBackward: () => void;
@@ -40,6 +43,8 @@ export function usePlayerTapGestures(
 ): void {
   const lastEdgeTapRef = useRef<{ time: number; zone: TapZone } | null>(null);
   const touchedRecentlyRef = useRef(false);
+  const touchStartRef = useRef<{ x: number; y: number } | null>(null);
+  const touchMovedRef = useRef(false);
 
   const getZone = useCallback(
     (clientX: number): TapZone => {
@@ -57,18 +62,14 @@ export function usePlayerTapGestures(
     [containerRef, edgeFraction],
   );
 
-  // Check if the event target is the container itself or a direct child (video wrapper)
   const isValidTarget = useCallback(
     (target: EventTarget | null): boolean => {
       const el = containerRef.current;
       if (!el || !target) return false;
       const targetEl = target as HTMLElement;
 
-      // Accept if target is the container itself
       if (targetEl === el) return true;
 
-      // Accept if target is a child within the video area (not lyrics panel)
-      // Check if the target has data-tap-target attribute or is a video/canvas element
       if (
         targetEl.tagName === "VIDEO" ||
         targetEl.tagName === "CANVAS" ||
@@ -77,14 +78,11 @@ export function usePlayerTapGestures(
         return true;
       }
 
-      // Check if the target is inside the container but not in a lyrics panel or interactive element
       if (el.contains(targetEl)) {
-        // Reject if it's inside an element with onClick or is inherently interactive
         const isInteractive =
           targetEl.closest("button, a, [role='button'], [data-no-tap]") !== null;
         if (isInteractive) return false;
 
-        // Accept if it's a direct descendant up to 3 levels deep (video container area)
         let parent = targetEl.parentElement;
         let depth = 0;
         while (parent && depth < 5) {
@@ -99,15 +97,40 @@ export function usePlayerTapGestures(
     [containerRef],
   );
 
+  const handleTouchStart = useCallback((e: TouchEvent) => {
+    const touch = e.touches?.[0];
+    if (!touch) return;
+    touchStartRef.current = { x: touch.clientX, y: touch.clientY };
+    touchMovedRef.current = false;
+  }, []);
+
+  const handleTouchMove = useCallback((e: TouchEvent) => {
+    const start = touchStartRef.current;
+    const touch = e.touches?.[0];
+    if (!start || !touch) return;
+    if (
+      Math.abs(touch.clientX - start.x) > TAP_SLOP_PX ||
+      Math.abs(touch.clientY - start.y) > TAP_SLOP_PX
+    ) {
+      touchMovedRef.current = true;
+    }
+  }, []);
+
   const handleTouchEnd = useCallback(
     (e: TouchEvent) => {
       if (!enabled || !containerRef.current) return;
       if (!isValidTarget(e.target)) return;
 
+      // Swipes are handled elsewhere — don't treat them as taps
+      if (touchMovedRef.current) {
+        touchStartRef.current = null;
+        touchMovedRef.current = false;
+        return;
+      }
+
       const touch = e.changedTouches?.[0];
       if (!touch) return;
 
-      // Mark that we just handled a touch (to ignore synthetic click)
       touchedRecentlyRef.current = true;
       setTimeout(() => {
         touchedRecentlyRef.current = false;
@@ -116,27 +139,22 @@ export function usePlayerTapGestures(
       const zone = getZone(touch.clientX);
       const now = Date.now();
 
-      // CENTER zone: single tap → toggle playback immediately
       if (zone === "center") {
         lastEdgeTapRef.current = null;
         onTogglePlayback();
         return;
       }
 
-      // EDGE zones: double-tap to seek
       const prev = lastEdgeTapRef.current;
       if (prev && prev.zone === zone && now - prev.time <= DOUBLE_TAP_MS) {
-        // Double tap on same edge
         lastEdgeTapRef.current = null;
         if (zone === "left") onBackward();
         else if (zone === "right") onForward();
         return;
       }
 
-      // First tap on edge - record it and wait for potential second tap
       lastEdgeTapRef.current = { time: now, zone };
 
-      // Clear the edge tap after the double-tap window expires
       setTimeout(() => {
         if (
           lastEdgeTapRef.current &&
@@ -161,11 +179,8 @@ export function usePlayerTapGestures(
   const handleClick = useCallback(
     (e: MouseEvent) => {
       if (!enabled || !containerRef.current) return;
-      // Ignore if this click follows a touch event (avoid double-firing)
       if (touchedRecentlyRef.current) return;
       if (!isValidTarget(e.target)) return;
-
-      // Desktop: single click toggles playback
       onTogglePlayback();
     },
     [enabled, containerRef, isValidTarget, onTogglePlayback],
@@ -175,12 +190,23 @@ export function usePlayerTapGestures(
     const el = containerRef.current;
     if (!el || !enabled) return;
 
+    el.addEventListener("touchstart", handleTouchStart, { passive: true });
+    el.addEventListener("touchmove", handleTouchMove, { passive: true });
     el.addEventListener("touchend", handleTouchEnd, { passive: true });
     el.addEventListener("click", handleClick);
 
     return () => {
+      el.removeEventListener("touchstart", handleTouchStart);
+      el.removeEventListener("touchmove", handleTouchMove);
       el.removeEventListener("touchend", handleTouchEnd);
       el.removeEventListener("click", handleClick);
     };
-  }, [containerRef, enabled, handleTouchEnd, handleClick]);
+  }, [
+    containerRef,
+    enabled,
+    handleTouchStart,
+    handleTouchMove,
+    handleTouchEnd,
+    handleClick,
+  ]);
 }

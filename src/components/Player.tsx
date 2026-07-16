@@ -52,10 +52,12 @@ import {
 import { type PlayerMode, useAppContext } from "@/context/AppContext";
 import { useDominantColor } from "@/hooks/useDominantColor";
 import { useLyrics } from "@/hooks/useLyrics";
+import { usePlayerSheetGestures } from "@/hooks/usePlayerSheetGestures";
 import { usePlayerTapGestures } from "@/hooks/usePlayerTapGestures";
 import { useStretchPlayer } from "@/hooks/useStretchPlayer";
 import { useSyncedVideo } from "@/hooks/useSyncedVideo";
 import { HistoryItem, LyricsSettings, Media } from "@/interfaces";
+import { patchLastSession } from "@/lib/lastSession";
 import { stripVideoTitleFiller } from "@/lib/lyrics";
 import {
   getPlaybackPrefs,
@@ -125,6 +127,7 @@ export function Player({
   repeating: _repeating,
   mode = "expanded",
   autoPlay = true,
+  resumePosition = 0,
   onRequestCollapse,
   onRequestExpand,
   onRequestClose,
@@ -136,6 +139,8 @@ export function Player({
   mode?: Exclude<PlayerMode, "hidden">;
   /** When false (session restore), load the track but stay paused. */
   autoPlay?: boolean;
+  /** Seek here once when the stream becomes ready (session restore). */
+  resumePosition?: number;
   onRequestCollapse?: () => void;
   onRequestExpand?: () => void;
   onRequestClose?: () => void;
@@ -384,7 +389,7 @@ export function Player({
   const savedState = useMemo(() => getVideoState(sourceUrl), [sourceUrl]);
 
   const [playbackMode, setPlaybackMode] = useState<PlaybackMode>(globalPrefs.mode);
-  const initialStartAt = 0;
+  const initialStartAt = resumePosition > 0 ? resumePosition : 0;
   const [stateLoaded, setStateLoaded] = useState(false);
   const [isRepeat, setIsRepeat] = useState(globalPrefs.isRepeat);
 
@@ -637,7 +642,7 @@ export function Player({
   /** User wants video and this track can show it. */
   const showingVideo = Boolean(showVideo && hasVideoStream);
 
-  const { videoRef, isVideoReady } = useSyncedVideo({
+  const { videoRef, isVideoReady, videoEl } = useSyncedVideo({
     src: hasVideoStream ? media?.videoUrl : undefined,
     active: showingVideo,
     isPlaying,
@@ -645,6 +650,37 @@ export function Player({
     rate,
   });
   const showVideoCover = !showingVideo || !isVideoReady;
+  const washCanvasRef = useRef<HTMLCanvasElement>(null);
+
+  // Paint a low-res moving wash from the on-screen video frames
+  useEffect(() => {
+    if (!showingVideo || isMini || !videoEl || !washCanvasRef.current) return;
+    const canvas = washCanvasRef.current;
+    const ctx = canvas.getContext("2d", { alpha: false });
+    if (!ctx) return;
+
+    let raf = 0;
+    const W = 48;
+    const draw = () => {
+      if (videoEl.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
+        const vw = videoEl.videoWidth || 16;
+        const vh = videoEl.videoHeight || 9;
+        const H = Math.max(1, Math.round((W * vh) / vw));
+        if (canvas.width !== W) canvas.width = W;
+        if (canvas.height !== H) canvas.height = H;
+        // cover-style fill
+        const scale = Math.max(W / vw, H / vh);
+        const dw = vw * scale;
+        const dh = vh * scale;
+        const dx = (W - dw) / 2;
+        const dy = (H - dh) / 2;
+        ctx.drawImage(videoEl, dx, dy, dw, dh);
+      }
+      raf = requestAnimationFrame(draw);
+    };
+    raf = requestAnimationFrame(draw);
+    return () => cancelAnimationFrame(raf);
+  }, [showingVideo, videoEl, isMini]);
 
   const handleReset = useCallback(() => {
     setRate(1);
@@ -837,6 +873,9 @@ export function Player({
           advancedStretch,
           lyrics: lyricsSettings,
         });
+        if (!sourceUrl.startsWith("local:")) {
+          patchLastSession(sourceUrl, { positionSeconds: currentTime });
+        }
       }
     };
     const handler = () => {
@@ -866,7 +905,18 @@ export function Player({
     customRate,
     customSemitones,
     lyricsSettings,
+    currentTime,
   ]);
+
+  // Throttled progress persistence while the track is active
+  useEffect(() => {
+    if (!sourceUrl || sourceUrl.startsWith("local:") || !stateLoaded) return;
+    if (!Number.isFinite(currentTime) || currentTime < 0) return;
+    const id = window.setTimeout(() => {
+      patchLastSession(sourceUrl, { positionSeconds: currentTime });
+    }, 1500);
+    return () => window.clearTimeout(id);
+  }, [sourceUrl, currentTime, stateLoaded]);
 
   // Modal controls
   const [modalOpened, { open: openModal, close: closeModal }] = useDisclosure(false);
@@ -1137,6 +1187,19 @@ export function Player({
     savePlaybackPrefs({ showLyrics: next });
   }, []);
 
+  const { dragY, lyricsDrag, isDragging, stageRef } = usePlayerSheetGestures({
+    enabled: Boolean(isMobile && !isMini),
+    lyricsOpen,
+    canToggleLyrics: lyricsState === "ready",
+    onCollapse: () => onRequestCollapse?.(),
+    onOpenLyrics: () => handleToggleShowLyrics(true),
+    onCloseLyrics: () => handleToggleShowLyrics(false),
+  });
+
+  // 0 = lyrics fully on-screen, 1 = fully off to the right
+  const lyricsClosedAmt = lyricsDrag !== null ? lyricsDrag : lyricsOpen ? 0 : 1;
+  const lyricsInteractive = lyricsDrag !== null || lyricsOpen;
+
   const handleChromeClick = useCallback(() => {
     if (isMini) onRequestExpand?.();
     else onRequestCollapse?.();
@@ -1245,20 +1308,53 @@ export function Player({
 
       {/* Sliding stage — moves as one paper sheet top→bottom; dock stays fixed */}
       <Box
+        ref={stageRef}
         style={{
           position: "fixed",
           inset: 0,
           zIndex: 200,
-          transform: isMini ? "translateY(100%)" : "translateY(0)",
-          transition: "transform 0.4s cubic-bezier(0.32, 0.72, 0, 1)",
+          transform: isMini ? "translateY(100%)" : `translateY(${dragY}px)`,
+          transition: isDragging
+            ? "none"
+            : "transform 0.4s cubic-bezier(0.32, 0.72, 0, 1)",
           willChange: "transform",
           pointerEvents: isMini ? "none" : "auto",
           backgroundColor: theme.colors.dark[7],
           overflow: "hidden",
+          touchAction: isMobile ? "none" : undefined,
         }}
       >
-        {/* Blurred cover wash */}
-        {coverUrl ? (
+        {/* Blurred wash — live video frames when showing video, else cover art */}
+        {showingVideo && media.videoUrl ? (
+          <>
+            <canvas
+              ref={washCanvasRef}
+              aria-hidden
+              style={{
+                position: "absolute",
+                inset: 0,
+                zIndex: 0,
+                width: "100%",
+                height: "100%",
+                objectFit: "cover",
+                filter: "blur(48px) saturate(1.45)",
+                opacity: isVideoReady ? 0.45 : 0,
+                transform: "scale(1.15)",
+                pointerEvents: "none",
+                transition: "opacity 0.35s ease-out",
+              }}
+            />
+            <Box
+              style={{
+                position: "absolute",
+                inset: 0,
+                zIndex: 0,
+                backgroundColor: "rgba(26, 27, 30, 0.4)",
+                pointerEvents: "none",
+              }}
+            />
+          </>
+        ) : coverUrl ? (
           <>
             <Box
               key={`wash-${sourceUrl || coverUrl}`}
@@ -1368,9 +1464,9 @@ export function Player({
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
-              // Keep art clear of top controls / expanded chrome without shifting optical center up
-              paddingTop: 56,
-              paddingBottom: isMini ? 12 : 48,
+              // Keep art clear of top controls / floating chrome without overshrinking video
+              paddingTop: isMobile ? 64 : 56,
+              paddingBottom: isMobile ? (isMini ? 8 : 44) : isMini ? 12 : 48,
               boxSizing: "border-box",
               overflow: "hidden",
               userSelect: "none",
@@ -1454,24 +1550,27 @@ export function Player({
                     width: (() => {
                       const lyricsBeside = !isMobile && lyricsOpen;
                       if (showingVideo) {
-                        if (isMobile) return "min(calc(100vw - 32px), 85vw)";
+                        if (isMobile) return "min(calc(100vw - 24px), 100vw)";
                         // Cap height via width = height * 16/9
                         return lyricsBeside
                           ? "min(56vw, calc(44vh * 16 / 9))"
                           : "min(86vw, calc(58vh * 16 / 9))";
                       }
-                      if (isMobile) return "min(calc(100vw - 32px), 50vh)";
+                      if (isMobile) return "min(calc(100vw - 24px), 52vh)";
                       return lyricsBeside ? "min(40vw, 58vh)" : "min(50vw, 60vh)";
                     })(),
                     aspectRatio: showingVideo ? "16 / 9" : "1 / 1",
                     height: "auto",
-                    margin: isMobile ? 16 : 0,
+                    margin: isMobile ? 12 : 0,
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "center",
-                    opacity: isMobile && lyricsOpen ? 0 : 1,
-                    pointerEvents: isMobile && lyricsOpen ? "none" : "auto",
-                    transition: "opacity 0.3s ease-out, width 0.25s ease-out",
+                    opacity: isMobile ? Math.max(0, lyricsClosedAmt) : 1,
+                    pointerEvents: isMobile && lyricsClosedAmt < 0.5 ? "none" : "auto",
+                    transition:
+                      lyricsDrag !== null
+                        ? "none"
+                        : "opacity 0.3s ease-out, width 0.25s ease-out",
                   }}
                 >
                   <audio
@@ -1688,154 +1787,168 @@ export function Player({
               )}
             </Flex>
 
-            {/* Mobile: Lyrics overlay */}
-            {isMobile && (
-              <Transition
-                mounted={lyricsOpen}
-                transition="slide-left"
-                duration={280}
-                exitDuration={220}
-                timingFunction="ease-out"
+            {/* Mobile: Lyrics overlay — finger-follow drag + snap */}
+            {isMobile && lyricsState === "ready" && (
+              <Box
+                style={{
+                  position: "absolute",
+                  inset: 0,
+                  zIndex: 2,
+                  background: "transparent",
+                  backdropFilter: `blur(${(1 - lyricsClosedAmt) * 6}px)`,
+                  WebkitBackdropFilter: `blur(${(1 - lyricsClosedAmt) * 6}px)`,
+                  display: "flex",
+                  flexDirection: "column",
+                  overflow: "hidden",
+                  transform: `translateX(${lyricsClosedAmt * 100}%)`,
+                  opacity: lyricsInteractive ? 1 : 0,
+                  transition:
+                    lyricsDrag !== null
+                      ? "none"
+                      : "transform 0.32s cubic-bezier(0.32, 0.72, 0, 1), opacity 0.2s ease-out",
+                  pointerEvents: lyricsClosedAmt < 0.98 ? "auto" : "none",
+                  willChange: "transform",
+                }}
               >
-                {(styles) => (
-                  <Box
-                    style={{
-                      ...styles,
-                      position: "absolute",
-                      inset: 0,
-                      zIndex: 2,
-                      background: "transparent",
-                      backdropFilter: "blur(6px)",
-                      WebkitBackdropFilter: "blur(6px)",
-                      display: "flex",
-                      flexDirection: "column",
-                      overflow: "hidden",
-                    }}
-                  >
-                    <LyricsPanel
-                      lyrics={lyricsState === "ready" ? lyrics : []}
-                      state={lyricsState}
-                      error={lyricsError}
-                      currentTimeSeconds={currentTime}
-                      onSeek={seekFromUser}
-                      style={{ flex: 1, minHeight: 0 }}
-                      isMobile
-                      visible={lyricsOpen}
-                    />
-                  </Box>
-                )}
-              </Transition>
+                <LyricsPanel
+                  lyrics={lyrics}
+                  state={lyricsState}
+                  error={lyricsError}
+                  currentTimeSeconds={currentTime}
+                  onSeek={seekFromUser}
+                  style={{ flex: 1, minHeight: 0 }}
+                  isMobile
+                  visible={lyricsClosedAmt < 0.5}
+                />
+              </Box>
             )}
           </Box>
-
-          {/* Expanded-only: lyrics/menu (mobile timer floats above the dock) */}
-          {!isMini && (
-            <Flex
-              align="center"
-              justify="flex-end"
-              style={{
-                position: "absolute",
-                left: 10,
-                right: 10,
-                bottom: Math.max(barHeight, 72) + 8,
-                zIndex: 2,
-              }}
-            >
-              <Flex gap="xs">
-                <Button
-                  variant="default"
-                  leftIcon={<IconMusic size={18} />}
-                  onClick={() => setLyricsModalOpened(true)}
-                  loading={lyricsState === "loading"}
-                >
-                  Lyrics
-                </Button>
-                <Menu shadow="md" width={200} position="top-end">
-                  <Menu.Target>
-                    <Button variant="default" leftIcon={<IconMenu2 size={18} />}>
-                      Menu
-                    </Button>
-                  </Menu.Target>
-                  <Menu.Dropdown>
-                    <Menu.Label>Navigation</Menu.Label>
-                    <Menu.Item
-                      icon={<IconHome size={14} />}
-                      onClick={() => onRequestCollapse?.()}
-                    >
-                      Home
-                    </Menu.Item>
-                    {originalPlatformUrl && (
-                      <Menu.Item
-                        icon={
-                          media.isAudioTrackVideo ? (
-                            <SiYoutubemusic size={14} />
-                          ) : (
-                            <SiYoutube size={14} />
-                          )
-                        }
-                        component="a"
-                        href={originalPlatformUrl}
-                        rightSection={<IconExternalLink size={12} />}
-                        target="_blank"
-                      >
-                        {media.isAudioTrackVideo ? "YouTube Music" : "YouTube"}
-                      </Menu.Item>
-                    )}
-                    <Menu.Divider />
-                    <Menu.Label>Actions</Menu.Label>
-                    {!media?.isAudioTrackVideo && (
-                      <Menu.Item
-                        icon={<IconVideo size={14} />}
-                        onClick={handleToggleShowVideo}
-                        disabled={!media?.videoUrl && !showVideo}
-                        rightSection={
-                          showVideo && media?.videoUrl ? (
-                            <Text size="xs" color="dimmed">
-                              On
-                            </Text>
-                          ) : undefined
-                        }
-                      >
-                        Show video
-                      </Menu.Item>
-                    )}
-                    <Menu.Item
-                      icon={<IconDownload size={14} />}
-                      onClick={openDownloadModal}
-                    >
-                      Download
-                    </Menu.Item>
-                  </Menu.Dropdown>
-                </Menu>
-              </Flex>
-            </Flex>
-          )}
         </Box>
       </Box>
 
-      {/* Mobile: duration floats above the dock in both mini and expanded */}
-      {isMobile && (
-        <Text
-          fz="sm"
-          px={10}
-          py={6}
+      {/* Floating chrome above dock: mobile timer + expanded Lyrics/Menu share one row */}
+      {(isMobile || !isMini) && (
+        <Flex
+          align="center"
+          justify="space-between"
+          gap="xs"
           style={{
             position: "fixed",
             left: 10,
+            right: 10,
+            // Keep the same bottom offset in mini + expanded so the timer does not jump
             bottom: barHeight + 8,
+            height: 36,
             zIndex: 202,
-            boxShadow: "0px 0px 0px 1px #383A3F",
-            backgroundColor: theme.colors.dark[6],
-            borderRadius: theme.radius.sm,
-            fontVariantNumeric: "tabular-nums",
-            userSelect: "none",
-            WebkitUserSelect: "none",
-            opacity: isMediaReady ? 1 : 0.45,
             pointerEvents: "none",
           }}
         >
-          {`${getFormattedTime(displayTime)} / ${getFormattedTime(displayDuration)}`}
-        </Text>
+          {isMobile && (
+            <Box
+              style={{
+                height: 36,
+                display: "inline-flex",
+                alignItems: "center",
+                paddingLeft: 14,
+                paddingRight: 14,
+                boxShadow: "0px 0px 0px 1px #383A3F",
+                backgroundColor: theme.colors.dark[6],
+                borderRadius: theme.radius.sm,
+                opacity: isMediaReady ? 1 : 0.45,
+                pointerEvents: "none",
+                flexShrink: 0,
+              }}
+            >
+              <Text
+                fz="sm"
+                style={{
+                  fontVariantNumeric: "tabular-nums",
+                  userSelect: "none",
+                  WebkitUserSelect: "none",
+                  lineHeight: 1,
+                }}
+              >
+                {`${getFormattedTime(displayTime)} / ${getFormattedTime(displayDuration)}`}
+              </Text>
+            </Box>
+          )}
+          {!isMini && (
+            <Flex gap="xs" style={{ pointerEvents: "auto", marginLeft: "auto" }}>
+              <Button
+                variant="default"
+                size="sm"
+                h={36}
+                leftIcon={<IconMusic size={18} />}
+                onClick={() => setLyricsModalOpened(true)}
+                loading={lyricsState === "loading"}
+              >
+                Lyrics
+              </Button>
+              <Menu shadow="md" width={200} position="top-end">
+                <Menu.Target>
+                  <Button
+                    variant="default"
+                    size="sm"
+                    h={36}
+                    leftIcon={<IconMenu2 size={18} />}
+                  >
+                    Menu
+                  </Button>
+                </Menu.Target>
+                <Menu.Dropdown>
+                  <Menu.Label>Navigation</Menu.Label>
+                  <Menu.Item
+                    icon={<IconHome size={14} />}
+                    onClick={() => onRequestCollapse?.()}
+                  >
+                    Home
+                  </Menu.Item>
+                  {originalPlatformUrl && (
+                    <Menu.Item
+                      icon={
+                        media.isAudioTrackVideo ? (
+                          <SiYoutubemusic size={14} />
+                        ) : (
+                          <SiYoutube size={14} />
+                        )
+                      }
+                      component="a"
+                      href={originalPlatformUrl}
+                      rightSection={<IconExternalLink size={12} />}
+                      target="_blank"
+                    >
+                      {media.isAudioTrackVideo ? "YouTube Music" : "YouTube"}
+                    </Menu.Item>
+                  )}
+                  <Menu.Divider />
+                  <Menu.Label>Actions</Menu.Label>
+                  {!media?.isAudioTrackVideo && (
+                    <Menu.Item
+                      icon={<IconVideo size={14} />}
+                      onClick={handleToggleShowVideo}
+                      disabled={!media?.videoUrl && !showVideo}
+                      rightSection={
+                        showVideo && media?.videoUrl ? (
+                          <Text size="xs" color="dimmed">
+                            On
+                          </Text>
+                        ) : undefined
+                      }
+                    >
+                      Show video
+                    </Menu.Item>
+                  )}
+                  <Menu.Item
+                    icon={<IconDownload size={14} />}
+                    onClick={openDownloadModal}
+                  >
+                    Download
+                  </Menu.Item>
+                </Menu.Dropdown>
+              </Menu>
+            </Flex>
+          )}
+        </Flex>
       )}
 
       {/* Fixed dock — seek + transport; does not slide away */}

@@ -20,6 +20,8 @@ export interface UseSyncedVideoResult {
   videoRef: (node: HTMLVideoElement | null) => void;
   /** True once we have a paintable frame near the audio clock. */
   isVideoReady: boolean;
+  /** Live video element when mounted (for backdrop canvas, etc.). */
+  videoEl: HTMLVideoElement | null;
 }
 
 /**
@@ -35,10 +37,12 @@ export function useSyncedVideo({
   rate,
 }: UseSyncedVideoOptions): UseSyncedVideoResult {
   const videoNodeRef = useRef<HTMLVideoElement | null>(null);
+  const [videoEl, setVideoEl] = useState<HTMLVideoElement | null>(null);
   const [nodeVersion, setNodeVersion] = useState(0);
 
   const videoRef = useCallback((node: HTMLVideoElement | null) => {
     videoNodeRef.current = node;
+    setVideoEl(node);
     setNodeVersion((v) => v + 1);
   }, []);
 
@@ -238,5 +242,6 @@ export function useSyncedVideo({
   return {
     videoRef,
     isVideoReady: Boolean(src && frameReady),
+    videoEl,
   };
 }
