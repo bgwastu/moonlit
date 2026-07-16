@@ -1,16 +1,15 @@
 # syntax=docker/dockerfile:1
 
-# Node 24 LTS (Alpine) — Next.js 16
-FROM node:24-alpine AS base
+FROM oven/bun:1-alpine AS base
 
 # Install dependencies only when needed
 FROM base AS deps
 RUN apk add --no-cache libc6-compat
 WORKDIR /app
 
-COPY package.json package-lock.json ./
-RUN --mount=type=cache,target=/root/.npm \
-    npm ci
+COPY package.json bun.lock ./
+RUN --mount=type=cache,target=/root/.bun/install/cache \
+    bun install --frozen-lockfile
 
 # Rebuild the source code only when needed
 FROM base AS builder
@@ -22,10 +21,10 @@ COPY . .
 RUN mkdir -p public
 
 RUN --mount=type=cache,target=/app/.next/cache \
-    npm run build
+    bun run build
 
 # Production image
-FROM base AS runner
+FROM node:24-alpine AS runner
 WORKDIR /app
 
 ENV NODE_ENV=production
