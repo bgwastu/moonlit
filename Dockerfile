@@ -1,3 +1,5 @@
+# syntax=docker/dockerfile:1
+
 # Node 24 LTS (Alpine) — Next.js 16
 FROM node:24-alpine AS base
 
@@ -7,7 +9,8 @@ RUN apk add --no-cache libc6-compat
 WORKDIR /app
 
 COPY package.json package-lock.json ./
-RUN npm ci
+RUN --mount=type=cache,target=/root/.npm \
+    npm ci
 
 # Rebuild the source code only when needed
 FROM base AS builder
@@ -18,7 +21,8 @@ COPY . .
 # Next.js expects ./public to exist; empty dirs often aren't in the image/context.
 RUN mkdir -p public
 
-RUN npx next build --webpack
+RUN --mount=type=cache,target=/app/.next/cache \
+    npx next build --webpack
 
 # Production image
 FROM base AS runner
