@@ -48,6 +48,7 @@ import MediaResultRow, { type MediaResultItem } from "@/components/MediaResultRo
 import ResetModal from "@/components/ResetModal";
 import { useAppContext } from "@/context/AppContext";
 import type { Media } from "@/interfaces";
+import { youtubeErrorTitle } from "@/lib/apiError";
 import { cookieRequestHeaders } from "@/lib/cookies";
 import { SEARCH_ACCENT_VAR } from "@/lib/theme";
 import { getYouTubeId, isDirectMediaURL, isYoutubeURL } from "@/utils";
@@ -239,12 +240,7 @@ function SearchPanel({
   const [resultsForQuery, setResultsForQuery] = useState("");
   const [loading, setLoading] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
-  const [suggestions, setSuggestions] = useState<string[]>([]);
-  const [suggestLoading, setSuggestLoading] = useState(false);
-  const [suggestionsOpen, setSuggestionsOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
-  const suggestTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const suggestAbortRef = useRef<AbortController | null>(null);
   const form = useForm({ initialValues: { query: "" } });
   const query = form.values.query.trim();
   const hasQuery = form.values.query.length > 0;
@@ -262,27 +258,12 @@ function SearchPanel({
   const showEmpty = !isLink && hasSearched && results.length === 0 && !loading;
   const showResultCards = !isLink && hasSearched && results.length > 0 && !loading;
   const showLinkHint = isLink && !loading && query.length > 0;
-  const showSuggestionsDropdown =
-    suggestionsOpen &&
-    !isLink &&
-    !loading &&
-    query.length > 0 &&
-    (suggestLoading || suggestions.length > 0);
-
-  function dismissSuggestions() {
-    setSuggestionsOpen(false);
-  }
 
   function resetSearchUi() {
-    if (suggestTimerRef.current) clearTimeout(suggestTimerRef.current);
-    suggestAbortRef.current?.abort();
     form.reset();
     setResults([]);
     setResultsForQuery("");
     setHasSearched(false);
-    setSuggestions([]);
-    setSuggestLoading(false);
-    setSuggestionsOpen(false);
     setSearchActive(false);
     setLoading(false);
     inputRef.current?.blur();
@@ -291,67 +272,18 @@ function SearchPanel({
   clearSearchRef.current = resetSearchUi;
 
   function clearInput() {
-    if (suggestTimerRef.current) clearTimeout(suggestTimerRef.current);
-    suggestAbortRef.current?.abort();
     form.setFieldValue("query", "");
     setResults([]);
     setResultsForQuery("");
     setHasSearched(false);
-    setSuggestions([]);
-    setSuggestLoading(false);
-    setSuggestionsOpen(false);
     setSearchActive(false);
     setLoading(false);
     inputRef.current?.focus();
   }
 
-  const fetchSuggestions = useCallback(async (value: string) => {
-    const clean = value.trim();
-    if (clean.length < 1 || isYoutubeURL(clean) || isDirectMediaURL(clean)) {
-      setSuggestions([]);
-      setSuggestLoading(false);
-      return;
-    }
-    suggestAbortRef.current?.abort();
-    const controller = new AbortController();
-    suggestAbortRef.current = controller;
-    setSuggestLoading(true);
-    try {
-      const response = await fetch(
-        `/api/youtube/suggest?q=${encodeURIComponent(clean)}&limit=10`,
-        { signal: controller.signal, headers: cookieRequestHeaders() },
-      );
-      const data = (await response.json()) as {
-        suggestions?: string[];
-        error?: string;
-      };
-      if (!response.ok) throw new Error(data.error || "Failed to load suggestions");
-      setSuggestions(data.suggestions ?? []);
-    } catch (error) {
-      if (error instanceof DOMException && error.name === "AbortError") return;
-      setSuggestions([]);
-    } finally {
-      if (suggestAbortRef.current === controller) {
-        setSuggestLoading(false);
-      }
-    }
-  }, []);
-
-  const scheduleSuggestions = useCallback(
-    (value: string) => {
-      if (suggestTimerRef.current) clearTimeout(suggestTimerRef.current);
-      suggestTimerRef.current = setTimeout(() => {
-        void fetchSuggestions(value);
-      }, 180);
-    },
-    [fetchSuggestions],
-  );
-
   const search = useCallback(
     async (value: string, signal?: AbortSignal, showErrors = true) => {
       setLoading(true);
-      setSuggestions([]);
-      setSuggestionsOpen(false);
       setSearchActive(true);
       try {
         const response = await fetch(
@@ -381,12 +313,19 @@ function SearchPanel({
             error instanceof Error && "code" in error
               ? (error as Error & { code?: string }).code
               : undefined;
-          const isUnavailable = code === "SEARCH_UNAVAILABLE";
+          const title =
+            youtubeErrorTitle(code) === "Request failed"
+              ? "Search failed"
+              : youtubeErrorTitle(code);
           notifications.show({
-            title: isUnavailable ? "Search unavailable" : "Search failed",
+            title,
             message: error instanceof Error ? error.message : "Unable to search YouTube",
             color: "red",
-            ...(isUnavailable ? { autoClose: 20000 } : {}),
+            ...(code === "YOUTUBE_UNAVAILABLE" ||
+            code === "RATE_LIMITED" ||
+            code === "YOUTUBE_BLOCKED"
+              ? { autoClose: 20000 }
+              : {}),
           });
         }
       } finally {
@@ -399,7 +338,6 @@ function SearchPanel({
   async function submit(value: string) {
     const clean = value.trim();
     if (!clean) return;
-    dismissSuggestions();
 
     if (isDirectMediaURL(clean)) {
       resetSearchUi();
@@ -445,20 +383,13 @@ function SearchPanel({
     openPlayer({ url: `https://www.youtube.com/watch?v=${id}`, expand: true });
   }
 
-  function applySuggestion(suggestion: string) {
-    form.setFieldValue("query", suggestion);
-    setSuggestions([]);
-    setSuggestionsOpen(false);
-    void search(suggestion);
-  }
-
   return (
     <Stack
       gap={0}
       w="100%"
       style={{ [SEARCH_ACCENT_VAR]: accent(theme, 5) } as CSSProperties}
     >
-      <Box pos="relative" w="100%" style={{ zIndex: showSuggestionsDropdown ? 30 : 0 }}>
+      <Box pos="relative" w="100%">
         <form
           onSubmit={(e) => {
             e.preventDefault();
@@ -480,46 +411,19 @@ function SearchPanel({
               form.setFieldValue("query", nextQuery);
               const trimmed = nextQuery.trim();
               if (!trimmed) {
-                if (suggestTimerRef.current) clearTimeout(suggestTimerRef.current);
-                suggestAbortRef.current?.abort();
                 setResults([]);
                 setResultsForQuery("");
                 setHasSearched(false);
-                setSuggestions([]);
-                setSuggestLoading(false);
-                setSuggestionsOpen(false);
                 setSearchActive(false);
                 return;
               }
               if (isYoutubeURL(nextQuery) || isDirectMediaURL(nextQuery)) {
-                setSuggestions([]);
-                setSuggestionsOpen(false);
-                setSuggestLoading(false);
                 return;
               }
-              setSuggestionsOpen(true);
-              scheduleSuggestions(nextQuery);
-            }}
-            onFocus={() => {
-              if (
-                form.values.query.trim().length > 0 &&
-                !isYoutubeURL(form.values.query) &&
-                !isDirectMediaURL(form.values.query)
-              ) {
-                setSuggestionsOpen(true);
-                scheduleSuggestions(form.values.query);
-              }
-            }}
-            onBlur={() => {
-              dismissSuggestions();
             }}
             onKeyDown={(event) => {
               if (event.key === "Escape") {
                 event.preventDefault();
-                if (suggestionsOpen) {
-                  dismissSuggestions();
-                  return;
-                }
                 inputRef.current?.blur();
               }
             }}
@@ -583,61 +487,6 @@ function SearchPanel({
               Press Enter to play
             </Text>
           </Group>
-        ) : null}
-
-        {showSuggestionsDropdown ? (
-          <Box
-            onMouseDown={(event) => event.preventDefault()}
-            pos="absolute"
-            left={0}
-            right={0}
-            style={{
-              top: `calc(100% + ${rem(6)})`,
-              zIndex: 50,
-              maxHeight: listMaxH,
-              overflowY: "auto",
-              borderRadius: theme.radius.md,
-              border: `${rem(1)} solid ${rgba(theme.colors.gray[6], 0.35)}`,
-              backgroundColor: rgba(theme.colors.dark[7], 0.97),
-              boxShadow: theme.shadows.lg,
-              padding: rem(6),
-            }}
-          >
-            <Stack gap={2}>
-              {suggestLoading && suggestions.length === 0
-                ? Array.from({ length: 4 }).map((_, index) => (
-                    <Skeleton key={index} height={36} radius="sm" />
-                  ))
-                : suggestions.map((suggestion) => (
-                    <Box
-                      key={suggestion}
-                      component="button"
-                      type="button"
-                      className="moonlit-suggest-item moonlit-focusable"
-                      onClick={() => applySuggestion(suggestion)}
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: rem(10),
-                        width: "100%",
-                        textAlign: "left",
-                        border: "none",
-                        borderRadius: theme.radius.sm,
-                        padding: `${rem(8)} ${rem(10)}`,
-                        background: "transparent",
-                        color: theme.white,
-                        cursor: "pointer",
-                        transition: "background-color 150ms ease",
-                      }}
-                    >
-                      <IconSearch size={16} stroke={1.75} color={theme.colors.gray[5]} />
-                      <Text size="sm" fw={500} lineClamp={1}>
-                        {suggestion}
-                      </Text>
-                    </Box>
-                  ))}
-            </Stack>
-          </Box>
         ) : null}
       </Box>
 

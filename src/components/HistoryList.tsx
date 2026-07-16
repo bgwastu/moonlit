@@ -16,7 +16,9 @@ import { IconHistory, IconTrash } from "@tabler/icons-react";
 import MediaResultRow from "@/components/MediaResultRow";
 import { useAppContext } from "@/context/AppContext";
 import type { HistoryItem } from "@/interfaces";
+import { historyItemSourceUrl, resolveCachedMedia } from "@/lib/playFromCache";
 import { timeAgo } from "@/utils";
+import { clearMediaCache } from "@/utils/cache";
 
 interface HistoryListProps {
   onPlay?: () => void;
@@ -33,20 +35,16 @@ export default function HistoryList({
   const [confirmOpen, setConfirmOpen] = useState(false);
   const theme = useMantineTheme();
 
-  const handlePlay = (item: HistoryItem) => {
+  const handlePlay = async (item: HistoryItem) => {
     onPlay?.();
-    if (item.sourceUrl.startsWith("local:")) {
-      openPlayer({ media: item, expand: true });
+
+    const cached = await resolveCachedMedia(item);
+    if (cached) {
+      openPlayer({ media: cached, expand: true });
       return;
     }
 
-    const youtubeId = item.metadata.id;
-    const url = item.sourceUrl.startsWith("http")
-      ? item.sourceUrl
-      : youtubeId
-        ? `https://www.youtube.com/watch?v=${youtubeId}`
-        : null;
-
+    const url = historyItemSourceUrl(item);
     if (!url) return;
     openPlayer({ url, expand: true });
   };
@@ -89,7 +87,8 @@ export default function HistoryList({
         radius="md"
       >
         <Text size="sm" c="dimmed" mb="md">
-          This removes all recent plays from this device. It cannot be undone.
+          This removes all recent plays and cached audio from this device. It cannot be
+          undone.
         </Text>
         <Group justify="flex-end" gap="sm">
           <Button variant="default" onClick={() => setConfirmOpen(false)}>
@@ -98,6 +97,7 @@ export default function HistoryList({
           <Button
             color="red"
             onClick={() => {
+              void clearMediaCache();
               setHistory([]);
               setConfirmOpen(false);
             }}
@@ -144,7 +144,7 @@ export default function HistoryList({
                     thumbnail: meta.coverUrl || "",
                     metaRight: timeAgo(item.playedAt),
                   }}
-                  onClick={() => handlePlay(item)}
+                  onClick={() => void handlePlay(item)}
                 />
               );
             })}

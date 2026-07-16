@@ -56,6 +56,8 @@ import { usePlayerTapGestures } from "@/hooks/usePlayerTapGestures";
 import { useStretchPlayer } from "@/hooks/useStretchPlayer";
 import { useSyncedVideo } from "@/hooks/useSyncedVideo";
 import { HistoryItem, LyricsSettings, Media } from "@/interfaces";
+import { youtubeErrorTitle } from "@/lib/apiError";
+import { MAX_HISTORY_ITEMS } from "@/lib/constants";
 import { patchLastSession } from "@/lib/lastSession";
 import { stripVideoTitleFiller } from "@/lib/lyrics";
 import {
@@ -72,7 +74,7 @@ import {
   getOriginalPlatformUrl,
   getSemitonesFromRate,
 } from "@/utils/player";
-import { StreamState, streamWithProgress } from "@/utils/streamer";
+import { StreamError, StreamState, streamWithProgress } from "@/utils/streamer";
 import CustomizePlaybackModal from "./CustomizePlaybackModal";
 import DownloadModal from "./DownloadModal";
 import { ErrorScreen } from "./ErrorScreen";
@@ -244,15 +246,26 @@ export function Player({
         setExtractedMedia(streamedMedia);
       })
       .catch((e) => {
-        if (e.name === "AbortError") return;
+        if (e instanceof DOMException && e.name === "AbortError") return;
         console.error("Stream error:", e);
-        const message = e.message || "Could not process the media.";
+        const code = e instanceof StreamError ? e.code : undefined;
+        const message = e instanceof Error ? e.message : "Could not process the media.";
         setStreamState({ status: "error", message });
+        const hint =
+          code === "RATE_LIMITED"
+            ? " Wait a moment and try again."
+            : code === "YOUTUBE_BLOCKED" || code === "STREAM_UNAVAILABLE"
+              ? " Try configuring cookies from a logged-in account in the app settings."
+              : " Try configuring cookies from a logged-in account in the app settings if the problem persists.";
         notifications.show({
-          title: "Stream failed",
-          message: `${message} Try configuring cookies from a logged-in account in the app settings if the problem persists.`,
+          title:
+            youtubeErrorTitle(code) === "Request failed"
+              ? "Stream failed"
+              : youtubeErrorTitle(code),
+          message: `${message}${hint}`,
           color: "red",
-          autoClose: 10000,
+          autoClose:
+            code === "RATE_LIMITED" || code === "YOUTUBE_UNAVAILABLE" ? 20000 : 10000,
         });
       });
     return () => abortController.abort();
@@ -370,7 +383,7 @@ export function Player({
       if (!existing || existing.fileUrl !== nextItem.fileUrl) {
         nextItem.playedAt = Date.now();
         const filtered = prev.filter((item) => item.sourceUrl !== snapshot.sourceUrl);
-        return [nextItem, ...filtered].slice(0, 50);
+        return [nextItem, ...filtered].slice(0, MAX_HISTORY_ITEMS);
       }
 
       const next = [...prev];
@@ -519,6 +532,7 @@ export function Player({
     seek,
   } = useStretchPlayer({
     fileUrl: media?.fileUrl || "",
+    sourceUrl,
     advancedStretch,
     initialRate: globalPrefs.rate,
     initialSemitones: globalPrefs.semitones,

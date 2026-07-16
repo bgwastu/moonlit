@@ -50,11 +50,6 @@ button *,
   display: none;
 }
 
-.moonlit-suggest-item:hover,
-.moonlit-suggest-item[data-active] {
-  background-color: color-mix(in srgb, var(--mantine-color-dark-5) 85%, transparent);
-}
-
 .moonlit-media-row:hover {
   border-color: color-mix(
     in srgb,

@@ -1,10 +1,22 @@
 import { Media } from "@/interfaces";
-import { getCookiesToUse } from "@/lib/cookies";
+import { parseApiErrorBody } from "@/lib/apiError";
+import { cookieRequestHeaders, getCookiesToUse } from "@/lib/cookies";
+import { mediaFromLocalCache } from "@/lib/playFromCache";
 import { getYouTubeId, isDirectMediaURL, isYoutubeURL } from "@/utils";
 
 export interface StreamState {
   status: "idle" | "extracting" | "ready" | "error";
   message?: string;
+}
+
+export class StreamError extends Error {
+  code?: string;
+
+  constructor(message: string, code?: string) {
+    super(message);
+    this.name = "StreamError";
+    this.code = code;
+  }
 }
 
 function buildMetadata(
@@ -40,20 +52,32 @@ export async function streamWithProgress(
 
   // ---- YouTube ----
   const isYouTube = isYoutubeURL(url);
+
+  if (isYouTube) {
+    const cached = await mediaFromLocalCache(url);
+    if (cached) {
+      onState({ status: "ready" });
+      return cached;
+    }
+  }
+
   onState({ status: "extracting", message: "Extracting stream..." });
 
   const { cookies } = getCookiesToUse();
 
   const res = await fetch("/api/stream/extract", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      ...cookieRequestHeaders(),
+    },
     body: JSON.stringify({ url, cookies }),
     signal: abortSignal,
   });
 
   if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw new Error(body.error || `Extract failed (${res.status})`);
+    const body = await parseApiErrorBody(res);
+    throw new StreamError(body.error || `Extract failed (${res.status})`, body.code);
   }
 
   const data = await res.json();

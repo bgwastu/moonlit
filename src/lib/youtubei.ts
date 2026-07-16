@@ -4,7 +4,9 @@ import { Innertube, UniversalCache, YTNodes } from "youtubei.js";
 import { getYouTubeId } from "@/utils";
 
 export const YOUTUBE_ANDROID_VR_UA =
-  "com.google.android.apps.youtube.vr.oculus/1.60.19 (Linux; U; Android 12L; Quest 3 Build/SQ3A.220605.009.A1) gzip";
+  "com.google.android.apps.youtube.vr.oculus/1.65.10 (Linux; U; Android 12L; eureka-user Build/SQ3A.220605.009.A1) gzip";
+
+export const YOUTUBE_TV_UA = "Mozilla/5.0 (ChromiumStylePlatform) Cobalt/Version";
 
 export interface YouTubeSearchResult {
   id: string;
@@ -358,52 +360,6 @@ export async function searchMusic(
   return results;
 }
 
-// ---- Search keyword suggestions (YouTube-style autocomplete) ----
-const suggestCache = new CacheStore<string[]>();
-
-export async function getSearchSuggestions(
-  query: string,
-  options: { limit?: number; cookies?: string } = {},
-): Promise<string[]> {
-  const cleanQuery = query.trim();
-  if (!cleanQuery) return [];
-
-  const limit = Math.min(Math.max(options.limit ?? 10, 1), 20);
-  const cacheKey = `suggest:q=${cleanQuery}|limit=${limit}|c=${simpleHash(options.cookies || "")}`;
-
-  const cached = suggestCache.get(cacheKey);
-  if (cached) {
-    const age = Date.now() - cached.cachedAt;
-    if (age < SEARCH_TTL_MS) return cached.value;
-  }
-
-  const yt = await getInnertube(options.cookies, "ANDROID_VR");
-  const sections = await yt.music.getSearchSuggestions(cleanQuery);
-  const suggestions: string[] = [];
-  const seen = new Set<string>();
-
-  for (const section of sections) {
-    if (!section.is(YTNodes.SearchSuggestionsSection)) continue;
-    for (const item of section.contents ?? []) {
-      if (suggestions.length >= limit) break;
-      if (!item.is(YTNodes.SearchSuggestion)) continue;
-      const text =
-        typeof item.suggestion === "string"
-          ? item.suggestion
-          : item.suggestion?.toString?.() || "";
-      const normalized = text.trim();
-      if (!normalized || seen.has(normalized.toLowerCase())) continue;
-      seen.add(normalized.toLowerCase());
-      suggestions.push(normalized);
-    }
-  }
-
-  if (suggestions.length > 0) {
-    suggestCache.set(cacheKey, suggestions);
-  }
-  return suggestions;
-}
-
 function parseViewCount(text: string): number {
   const cleaned = text.replace(/[^0-9,]/g, "");
   return parseInt(cleaned.replace(/,/g, ""), 10) || 0;
@@ -422,15 +378,36 @@ function pickThumbnail(
 
 // ---- Stream extraction ----
 
+type ExtractClient = "ANDROID_VR" | "TV";
+
+const EXTRACT_CLIENTS: ExtractClient[] = ["ANDROID_VR", "TV"];
+
+function userAgentForClient(client: ExtractClient): string {
+  return client === "TV" ? YOUTUBE_TV_UA : YOUTUBE_ANDROID_VR_UA;
+}
+
+function isExtractRetriable(message: string): boolean {
+  const lower = message.toLowerCase();
+  return (
+    lower.includes("no streaming data") ||
+    lower.includes("not a bot") ||
+    lower.includes("sign in to confirm") ||
+    lower.includes("could not obtain") ||
+    lower.includes("fetch failed") ||
+    lower.includes("network")
+  );
+}
+
 /**
  * Internal: perform the full YouTube extraction (Innertube + getBasicInfo + format pick).
  */
 async function doFullExtraction(
   id: string,
   sourceUrl: string,
-  options: { cookies?: string; signal?: AbortSignal },
+  options: { cookies?: string; signal?: AbortSignal; clientType?: ExtractClient },
 ): Promise<StreamInfo> {
-  const yt = await getInnertube(options.cookies, "ANDROID_VR");
+  const clientType = options.clientType ?? "ANDROID_VR";
+  const yt = await getInnertube(options.cookies, clientType);
 
   const info = await yt.getBasicInfo(id);
   const basic = info.basic_info;
@@ -480,35 +457,41 @@ async function doFullExtraction(
   let thumbnail = pickThumbnail(basic.thumbnail || []);
   let isAudioTrackVideo = false;
 
-  try {
-    const musicInfo = await yt.music.getInfo(id);
+  const likelyMusicTrack =
+    !videoFormat ||
+    (videoFormat.height != null && videoFormat.height <= 360) ||
+    basic.author?.includes(" - Topic");
 
-    const musicBasic = musicInfo.basic_info;
+  if (likelyMusicTrack) {
+    try {
+      const musicInfo = await yt.music.getInfo(id);
+      const musicBasic = musicInfo.basic_info;
 
-    if (musicBasic && musicBasic.author && musicBasic.author !== basic.author) {
-      artist = musicBasic.author;
+      if (musicBasic?.author && musicBasic.author !== basic.author) {
+        artist = musicBasic.author;
+      }
+
+      if (musicBasic && typeof (musicBasic as { album?: string }).album !== "undefined") {
+        album = (musicBasic as { album?: string }).album;
+      }
+
+      const musicThumb = pickThumbnail(
+        (musicBasic?.thumbnail as { url?: string; width?: number; height?: number }[]) ||
+          [],
+      );
+      if (musicThumb) thumbnail = musicThumb;
+
+      isAudioTrackVideo = isAudioTrackVideoType(readMusicVideoType(musicInfo));
+    } catch {
+      // Music metadata is optional — basic_info is enough to play.
     }
-
-    if (musicBasic && typeof (musicBasic as any).album !== "undefined") {
-      album = (musicBasic as any).album;
-    }
-
-    const musicThumb = pickThumbnail(
-      (musicBasic?.thumbnail as { url?: string; width?: number; height?: number }[]) ||
-        [],
-    );
-    if (musicThumb) {
-      thumbnail = musicThumb;
-    }
-
-    isAudioTrackVideo = isAudioTrackVideoType(readMusicVideoType(musicInfo));
-  } catch {}
+  }
 
   return {
     url: streamUrl,
     contentType,
     headers: {
-      "User-Agent": YOUTUBE_ANDROID_VR_UA,
+      "User-Agent": userAgentForClient(clientType),
     },
     duration: Math.floor(Number(basic.duration) || 0),
     title: basic.title || "Unknown",
@@ -535,5 +518,21 @@ export async function extractStreamUrl(
   const id = getYouTubeId(url);
   if (!id) throw new Error("Invalid YouTube URL");
 
-  return doFullExtraction(id, url, options);
+  let lastError: Error | null = null;
+  for (let i = 0; i < EXTRACT_CLIENTS.length; i++) {
+    const clientType = EXTRACT_CLIENTS[i];
+    try {
+      return await doFullExtraction(id, url, { ...options, clientType });
+    } catch (error) {
+      const err = error instanceof Error ? error : new Error(String(error));
+      lastError = err;
+      if (!isExtractRetriable(err.message)) throw err;
+      console.warn(`[Moonlit] Extract failed with ${clientType}:`, err.message);
+      if (i < EXTRACT_CLIENTS.length - 1) {
+        await new Promise((resolve) => setTimeout(resolve, 400 * (i + 1)));
+      }
+    }
+  }
+
+  throw lastError ?? new Error("Failed to extract stream.");
 }

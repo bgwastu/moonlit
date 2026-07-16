@@ -1,17 +1,31 @@
 import { NextResponse } from "next/server";
 import crypto from "crypto";
+import { youtubeErrorCode } from "@/lib/apiError";
+import { readRequestCookies } from "@/lib/cookies";
+import {
+  enforceYouTubeExtractLimit,
+  handleYoutubeGuardError,
+} from "@/lib/rateLimitYouTube";
 import { TOKEN_TTL_MS, getTokenStore, pruneExpired } from "@/lib/streamTokens";
+import { withYoutubeCircuit } from "@/lib/youtubeCircuit";
 import { extractStreamUrl } from "@/lib/youtubei";
 
 export async function POST(req: Request) {
+  const limited = enforceYouTubeExtractLimit(req);
+  if (limited) return limited;
+
   try {
-    const { url, cookies } = await req.json();
+    const body = await req.json();
+    const { url } = body;
+    const cookies = readRequestCookies(req) ?? body.cookies;
 
     if (!url || typeof url !== "string") {
       return NextResponse.json({ error: "Missing url" }, { status: 400 });
     }
 
-    const streamInfo = await extractStreamUrl(url, { cookies, signal: req.signal });
+    const streamInfo = await withYoutubeCircuit(() =>
+      extractStreamUrl(url, { cookies, signal: req.signal }),
+    );
 
     pruneExpired();
 
@@ -60,8 +74,16 @@ export async function POST(req: Request) {
     if (error instanceof DOMException && error.name === "AbortError") {
       return NextResponse.json({ error: "Request cancelled" }, { status: 499 });
     }
+
+    const circuit = handleYoutubeGuardError(error);
+    if (circuit) return circuit;
+
     const message = error instanceof Error ? error.message : "Unknown error";
     console.error("[Moonlit] Stream extract error:", message);
-    return NextResponse.json({ error: message }, { status: 500 });
+    const code = youtubeErrorCode(message);
+    return NextResponse.json(
+      { error: message, ...(code ? { code } : {}) },
+      { status: 500 },
+    );
   }
 }

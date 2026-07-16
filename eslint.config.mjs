@@ -2,7 +2,7 @@ import coreWebVitals from "eslint-config-next/core-web-vitals";
 import { globalIgnores } from "eslint/config";
 
 const config = [
-  globalIgnores([".next/**", "out/**", "coverage/**", "next-env.d.ts"]),
+  globalIgnores([".next/**", "out/**", "coverage/**", "next-env.d.ts", "public/vendor/**"]),
   ...coreWebVitals,
   {
     rules: {

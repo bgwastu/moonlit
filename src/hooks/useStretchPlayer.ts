@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { parseApiError } from "@/lib/apiError";
 import { loadSignalsmithStretch } from "@/lib/signalsmith";
 import { STREAM_CHUNK_BYTES } from "@/lib/streamConstants";
+import { setMediaCacheWithLimit } from "@/utils/cache";
 
 type StretchPlayerState = "loading" | "ready" | "error";
 
@@ -12,6 +13,8 @@ export type LoadProgress =
 
 interface UseStretchPlayerProps {
   fileUrl: string;
+  /** Original track URL — used to persist audio in local cache after download. */
+  sourceUrl?: string;
   advancedStretch?: boolean;
   initialRate?: number;
   initialSemitones?: number;
@@ -257,6 +260,7 @@ function generateImpulseResponse(context: AudioContext, dur = 2, decay = 2): Aud
 
 export function useStretchPlayer({
   fileUrl,
+  sourceUrl = "",
   advancedStretch = false,
   initialRate = 1,
   initialSemitones = 0,
@@ -473,6 +477,12 @@ export function useStretchPlayer({
           signal,
         );
         throwIfInactive();
+        if (sourceUrl.startsWith("http://") || sourceUrl.startsWith("https://")) {
+          void setMediaCacheWithLimit(
+            sourceUrl,
+            new Blob([arrayBuffer], { type: "audio/mp4" }),
+          );
+        }
         setProgress({ phase: "processing", percent: 70 });
         audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
         decodedAudioCache.set(fileUrl, audioBuffer);
@@ -542,7 +552,7 @@ export function useStretchPlayer({
       });
       setCurrentTime(resumePos);
     },
-    [fileUrl],
+    [fileUrl, sourceUrl],
   );
 
   const initFullMode = useCallback(

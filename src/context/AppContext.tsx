@@ -10,12 +10,13 @@ import {
 } from "react";
 import { MantineThemeOverride } from "@mantine/core";
 import { HistoryItem, Media } from "@/interfaces";
+import { MAX_HISTORY_ITEMS } from "@/lib/constants";
 import { clearLastSession, loadLastSession, saveLastSession } from "@/lib/lastSession";
+import { mediaFromLocalCache } from "@/lib/playFromCache";
 import { playerPathForMedia, softReplaceUrl } from "@/lib/playerNavigation";
 import { appTheme } from "@/lib/theme";
 
 const HISTORY_STORAGE_KEY = "moonlit-history";
-const MAX_HISTORY_ITEMS = 50;
 
 /** Captured once on the client before PlayerRouteBridge can replace to `/`. */
 let capturedEntryPath: string | null = null;
@@ -231,13 +232,30 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       // ignore
     }
     const timer = window.setTimeout(() => {
-      openPlayer({
-        url: session.sourceUrl,
-        expand: false,
-        autoPlay: false,
-        syncUrl: true,
-        resumePosition: session.positionSeconds ?? 0,
-      });
+      void (async () => {
+        const cached = await mediaFromLocalCache(session.sourceUrl);
+        if (cached) {
+          openPlayer({
+            media: {
+              ...cached,
+              metadata: { ...cached.metadata, ...session.metadata },
+            },
+            expand: false,
+            autoPlay: false,
+            syncUrl: true,
+            resumePosition: session.positionSeconds ?? 0,
+          });
+          return;
+        }
+
+        openPlayer({
+          url: session.sourceUrl,
+          expand: false,
+          autoPlay: false,
+          syncUrl: true,
+          resumePosition: session.positionSeconds ?? 0,
+        });
+      })();
     }, 0);
     return () => window.clearTimeout(timer);
   }, [isHydrated, openPlayer]);

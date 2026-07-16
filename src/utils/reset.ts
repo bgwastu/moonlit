@@ -1,6 +1,7 @@
 import localforage from "localforage";
 import { clearUserCookies } from "@/lib/cookies";
 import { clearPlaybackPrefs, clearShowVideoPref } from "@/lib/playerPrefs";
+import { clearMediaCache } from "@/utils/cache";
 
 export interface ResetOptions {
   settings: boolean;
@@ -14,11 +15,12 @@ export async function resetAllData(options: ResetOptions = { settings: true }) {
         storeName: "settings",
       });
       await settingsStore.clear();
+      await clearMediaCache();
 
       const keysToRemove: string[] = [];
       for (let i = 0; i < localStorage.length; i++) {
         const key = localStorage.key(i);
-        if (key && key.startsWith("moonlit:")) {
+        if (key && key.startsWith("moonlit")) {
           keysToRemove.push(key);
         }
       }
