@@ -84,6 +84,7 @@ export default function LyricsModal({
       title="Lyrics"
       size="md"
       centered
+      zIndex={400}
       styles={{ title: { fontWeight: 600 } }}
     >
       {view === "settings" ? (
@@ -218,7 +219,7 @@ function SettingsView({
           <Button
             variant="default"
             fullWidth
-            leftIcon={<IconSearch size={16} />}
+            leftSection={<IconSearch size={16} />}
             onClick={onSearch}
           >
             Search for Lyrics
@@ -231,7 +232,7 @@ function SettingsView({
           </Text>
           <Button
             variant="default"
-            leftIcon={<IconSearch size={16} />}
+            leftSection={<IconSearch size={16} />}
             onClick={onSearch}
           >
             Search for Lyrics
@@ -319,7 +320,7 @@ function SearchView({
         onClick={onBack}
         mb="sm"
         size="sm"
-        leftIcon={<IconArrowLeft size={16} />}
+        leftSection={<IconArrowLeft size={16} />}
       >
         Back to Settings
       </Button>
@@ -334,7 +335,7 @@ function SearchView({
         <Button
           onClick={() => doSearch(searchQuery.trim())}
           loading={state === "loading"}
-          leftIcon={<IconSearch size={16} />}
+          leftSection={<IconSearch size={16} />}
         >
           Search
         </Button>
@@ -403,7 +404,7 @@ function SearchView({
                         {record.albumName && ` · ${record.albumName}`}
                       </Text>
                     </Box>
-                    <Group spacing={4}>
+                    <Group gap={4}>
                       <Badge
                         size="sm"
                         color={isMatch ? theme.primaryColor : "gray"}

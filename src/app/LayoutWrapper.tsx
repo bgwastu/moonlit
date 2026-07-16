@@ -2,7 +2,9 @@
 
 import { useSyncExternalStore } from "react";
 import { MantineProvider } from "@mantine/core";
+import "@mantine/core/styles.css";
 import { Notifications } from "@mantine/notifications";
+import "@mantine/notifications/styles.css";
 import { PlayerHost } from "@/components/PlayerHost";
 import { AppProvider, useAppContext } from "@/context/AppContext";
 import { APP_BG } from "@/lib/theme";
@@ -40,7 +42,7 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <MantineProvider withGlobalStyles withNormalizeCSS theme={theme}>
+    <MantineProvider theme={theme} forceColorScheme="dark">
       <Notifications />
       {children}
       <PlayerHost />

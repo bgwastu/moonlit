@@ -373,7 +373,7 @@ export default function LyricsPanel({
             variant="default"
             size="md"
             radius="xl"
-            leftIcon={<IconRefresh size={18} />}
+            leftSection={<IconRefresh size={18} />}
             onClick={handleSyncClick}
             styles={{
               root: {
@@ -393,6 +393,7 @@ export default function LyricsPanel({
         ref={containerRef}
         data-lyrics-scroll
         onScroll={handleScroll}
+        className="moonlit-hide-scrollbar"
         style={{
           flex: 1,
           minWidth: 0,
@@ -411,7 +412,6 @@ export default function LyricsPanel({
           maskImage:
             "linear-gradient(to bottom, transparent 0%, transparent 12%, black 32%, black 68%, transparent 88%, transparent 100%)",
         }}
-        sx={{ "&::-webkit-scrollbar": { display: "none" } }}
       >
         {isLoading ? null : isEmpty ? (
           emptyMessage ? (

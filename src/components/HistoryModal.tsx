@@ -15,7 +15,7 @@ export default function HistoryModal({ opened, onClose }: HistoryModalProps) {
       opened={opened}
       onClose={onClose}
       title={
-        <Text size="lg" weight={700}>
+        <Text size="lg" fw={700}>
           History
         </Text>
       }
@@ -23,7 +23,7 @@ export default function HistoryModal({ opened, onClose }: HistoryModalProps) {
       radius="md"
       centered
     >
-      <Stack spacing="md">
+      <Stack gap="md">
         <HistoryList onPlay={onClose} maxHeight={400} showClear />
       </Stack>
     </Modal>

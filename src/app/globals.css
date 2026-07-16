@@ -1,0 +1,65 @@
+/* Global rules that cannot be expressed with Mantine style props alone. */
+
+/* Non-text chrome: no accidental selection while tapping/dragging */
+img,
+svg,
+video,
+canvas,
+button,
+[role="button"],
+[role="menuitem"],
+[role="option"],
+[role="tab"],
+[role="slider"],
+[role="switch"],
+input[type="range"],
+input[type="checkbox"],
+input[type="radio"] {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
+button *,
+[role="button"] *,
+[role="menuitem"] *,
+[role="tab"] * {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.moonlit-focusable:focus-visible {
+  outline: 2px solid var(--moonlit-accent, var(--mantine-color-violet-5));
+  outline-offset: 2px;
+}
+
+.moonlit-search-input::placeholder {
+  color: color-mix(in srgb, var(--mantine-color-gray-4) 75%, transparent);
+}
+
+.moonlit-search-input:focus,
+.moonlit-search-input:focus-within {
+  border-color: var(--moonlit-accent, var(--mantine-color-violet-5));
+}
+
+.moonlit-hide-scrollbar {
+  scrollbar-width: none;
+}
+
+.moonlit-hide-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+.moonlit-suggest-item:hover,
+.moonlit-suggest-item[data-active] {
+  background-color: color-mix(in srgb, var(--mantine-color-dark-5) 85%, transparent);
+}
+
+.moonlit-media-row:hover {
+  border-color: color-mix(
+    in srgb,
+    var(--moonlit-accent, var(--mantine-color-violet-5)) 45%,
+    transparent
+  );
+  background-color: color-mix(in srgb, var(--mantine-color-dark-8) 50%, transparent);
+}

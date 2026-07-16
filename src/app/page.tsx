@@ -3,7 +3,7 @@
 /* Hallmark · genre: atmospheric · macrostructure: Workbench-lite · design-system: mantine-dark ·
  * home: centered search + history · accent: dynamic (theme.primaryColor)
  */
-import { type MutableRefObject, useCallback, useRef, useState } from "react";
+import { type CSSProperties, type RefObject, useCallback, useRef, useState } from "react";
 import { SiGithub, SiYoutubemusic } from "@icons-pack/react-simple-icons";
 import {
   ActionIcon,
@@ -19,6 +19,7 @@ import {
   TextInput,
   UnstyledButton,
   rem,
+  rgba,
   useMantineTheme,
 } from "@mantine/core";
 import { Dropzone } from "@mantine/dropzone";
@@ -47,6 +48,7 @@ import MediaResultRow, { type MediaResultItem } from "@/components/MediaResultRo
 import ResetModal from "@/components/ResetModal";
 import { useAppContext } from "@/context/AppContext";
 import type { Media } from "@/interfaces";
+import { SEARCH_ACCENT_VAR } from "@/lib/theme";
 import { getYouTubeId, isDirectMediaURL, isYoutubeURL } from "@/utils";
 import { setMediaCache } from "@/utils/cache";
 
@@ -75,13 +77,6 @@ function formatViews(views?: number) {
 function accent(t: MantineTheme, shade: number) {
   const key = t.primaryColor;
   return (t.colors[key] ?? t.colors.violet)[shade];
-}
-
-function focusRing(t: MantineTheme) {
-  return {
-    outline: `${rem(2)} solid ${accent(t, 5)}`,
-    outlineOffset: rem(2),
-  };
 }
 
 function toMediaItem(result: YouTubeResult): MediaResultItem {
@@ -155,15 +150,15 @@ function LocalUpload() {
           maxFiles={1}
           onDrop={handleDrop}
         >
-          <Stack align="center" justify="center" spacing="lg" mih={260}>
+          <Stack align="center" justify="center" gap="lg" mih={260}>
             <IconUpload size="3.2rem" stroke={1.5} color={accent(theme, 4)} />
-            <Text size="xl" color="white" weight={600}>
+            <Text size="xl" c="white" fw={600}>
               Drop file anywhere
             </Text>
             <Text
-              color="dimmed"
+              c="dimmed"
+              style={{ cursor: "pointer" }}
               onClick={() => setFullScreenActive(false)}
-              sx={{ cursor: "pointer" }}
             >
               Cancel
             </Text>
@@ -177,25 +172,21 @@ function LocalUpload() {
         maxFiles={1}
         disabled={loading.status}
         onDrop={handleDrop}
-        sx={{ display: "none" }}
+        style={{ display: "none" }}
       >
         <div />
       </Dropzone>
 
-      <Group
-        spacing={isMobile ? "xs" : "sm"}
-        position="left"
-        sx={{ flexWrap: "wrap" }}
-        px={4}
-      >
+      <Group gap={isMobile ? "xs" : "sm"} justify="flex-start" wrap="wrap" px={4}>
         <Text
           component="button"
           type="button"
           size="sm"
-          weight={600}
-          color="dimmed"
+          fw={600}
+          c="dimmed"
+          className="moonlit-focusable"
           onClick={() => openRef.current?.()}
-          sx={(t) => ({
+          style={{
             background: "none",
             border: "none",
             padding: 0,
@@ -204,19 +195,23 @@ function LocalUpload() {
             alignItems: "center",
             gap: rem(6),
             transition: "color 150ms ease",
-            "&:hover": { color: t.colors.gray[2] },
-            "&:focus-visible": focusRing(t),
-          })}
+          }}
+          onMouseEnter={(event) => {
+            event.currentTarget.style.color = theme.colors.gray[2];
+          }}
+          onMouseLeave={(event) => {
+            event.currentTarget.style.color = "";
+          }}
         >
           <IconUpload size={16} stroke={1.75} />
           Upload a file
         </Text>
-        <Text size="sm" color="dimmed" opacity={0.55}>
+        <Text size="sm" c="dimmed" opacity={0.55}>
           MP3, WAV, MP4 ·{" "}
           <Text
             component="span"
-            underline
-            sx={{ cursor: "pointer" }}
+            td="underline"
+            style={{ cursor: "pointer" }}
             onClick={() => setFullScreenActive(true)}
           >
             drag anywhere
@@ -234,7 +229,7 @@ function SearchPanel({
 }: {
   searchActive: boolean;
   setSearchActive: (active: boolean) => void;
-  clearSearchRef: MutableRefObject<(() => void) | null>;
+  clearSearchRef: RefObject<(() => void) | null>;
 }) {
   const { openPlayer } = useAppContext();
   const theme = useMantineTheme();
@@ -457,14 +452,12 @@ function SearchPanel({
   }
 
   return (
-    <Stack spacing={0} w="100%">
-      <Box
-        sx={{
-          position: "relative",
-          width: "100%",
-          zIndex: showSuggestionsDropdown ? 30 : 0,
-        }}
-      >
+    <Stack
+      gap={0}
+      w="100%"
+      style={{ [SEARCH_ACCENT_VAR]: accent(theme, 5) } as CSSProperties}
+    >
+      <Box pos="relative" w="100%" style={{ zIndex: showSuggestionsDropdown ? 30 : 0 }}>
         <form
           onSubmit={(e) => {
             e.preventDefault();
@@ -473,7 +466,10 @@ function SearchPanel({
         >
           <TextInput
             ref={inputRef}
-            icon={<IconSearch size={isMobile ? 18 : 20} stroke={2.2} />}
+            leftSection={<IconSearch size={isMobile ? 18 : 20} stroke={2.2} />}
+            leftSectionWidth={isMobile ? rem(38) : rem(44)}
+            leftSectionPointerEvents="none"
+            classNames={{ input: "moonlit-search-input" }}
             placeholder="Search YouTube or paste a URL..."
             size={isMobile ? "md" : "lg"}
             radius="md"
@@ -528,7 +524,7 @@ function SearchPanel({
             }}
             rightSection={
               hasQuery || isLink ? (
-                <Group spacing={4} noWrap pr={isMobile ? 4 : 6}>
+                <Group gap={4} wrap="nowrap" pr={isMobile ? 4 : 6}>
                   {hasQuery ? (
                     <ActionIcon
                       type="button"
@@ -537,9 +533,9 @@ function SearchPanel({
                       variant="subtle"
                       color="gray"
                       aria-label="Clear search"
+                      className="moonlit-focusable"
                       onMouseDown={(event) => event.preventDefault()}
                       onClick={clearInput}
-                      sx={(t) => ({ "&:focus-visible": focusRing(t) })}
                     >
                       <IconX size={isMobile ? 16 : 18} stroke={2} />
                     </ActionIcon>
@@ -552,7 +548,7 @@ function SearchPanel({
                       loading={loading}
                       variant="filled"
                       color={theme.primaryColor}
-                      sx={(t) => ({ "&:focus-visible": focusRing(t) })}
+                      className="moonlit-focusable"
                     >
                       <IconArrowRight size={isMobile ? 18 : 22} />
                     </ActionIcon>
@@ -561,33 +557,28 @@ function SearchPanel({
               ) : null
             }
             rightSectionWidth={rightSectionWidth}
-            styles={(t) => ({
+            styles={{
               input: {
                 height: isMobile ? rem(46) : rem(50),
                 paddingLeft: isMobile ? rem(38) : rem(44),
                 paddingRight: rem(rightSectionWidth),
-                backgroundColor: t.fn.rgba(t.colors.dark[9], 0.58),
-                border: `${rem(1)} solid ${t.fn.rgba(t.colors.gray[6], 0.4)}`,
-                color: t.white,
+                backgroundColor: rgba(theme.colors.dark[9], 0.58),
+                border: `${rem(1)} solid ${rgba(theme.colors.gray[6], 0.4)}`,
+                color: theme.white,
                 fontWeight: 400,
                 fontSize: isMobile ? rem(15) : rem(16),
-                "&::placeholder": { color: t.fn.rgba(t.colors.gray[4], 0.75) },
-                "&:focus, &:focus-within": {
-                  borderColor: accent(t, 5),
-                },
               },
-              icon: {
-                color: query ? accent(t, 3) : t.colors.gray[6],
-                width: isMobile ? rem(38) : rem(44),
+              section: {
+                color: query ? accent(theme, 3) : theme.colors.gray[6],
               },
-            })}
+            }}
           />
         </form>
 
         {showLinkHint ? (
-          <Group spacing="sm" noWrap mt="xs" px="sm">
+          <Group gap="sm" wrap="nowrap" mt="xs" px="sm">
             <IconLink size={16} stroke={1.5} color={theme.colors.gray[5]} />
-            <Text size="sm" weight={600} color="dimmed">
+            <Text size="sm" fw={600} c="dimmed">
               Press Enter to play
             </Text>
           </Group>
@@ -596,22 +587,22 @@ function SearchPanel({
         {showSuggestionsDropdown ? (
           <Box
             onMouseDown={(event) => event.preventDefault()}
-            sx={(t) => ({
-              position: "absolute",
-              left: 0,
-              right: 0,
+            pos="absolute"
+            left={0}
+            right={0}
+            style={{
               top: `calc(100% + ${rem(6)})`,
               zIndex: 50,
               maxHeight: listMaxH,
               overflowY: "auto",
-              borderRadius: t.radius.md,
-              border: `${rem(1)} solid ${t.fn.rgba(t.colors.gray[6], 0.35)}`,
-              backgroundColor: t.fn.rgba(t.colors.dark[7], 0.97),
-              boxShadow: t.shadows.lg,
+              borderRadius: theme.radius.md,
+              border: `${rem(1)} solid ${rgba(theme.colors.gray[6], 0.35)}`,
+              backgroundColor: rgba(theme.colors.dark[7], 0.97),
+              boxShadow: theme.shadows.lg,
               padding: rem(6),
-            })}
+            }}
           >
-            <Stack spacing={2}>
+            <Stack gap={2}>
               {suggestLoading && suggestions.length === 0
                 ? Array.from({ length: 4 }).map((_, index) => (
                     <Skeleton key={index} height={36} radius="sm" />
@@ -621,28 +612,25 @@ function SearchPanel({
                       key={suggestion}
                       component="button"
                       type="button"
+                      className="moonlit-suggest-item moonlit-focusable"
                       onClick={() => applySuggestion(suggestion)}
-                      sx={(t) => ({
+                      style={{
                         display: "flex",
                         alignItems: "center",
                         gap: rem(10),
                         width: "100%",
                         textAlign: "left",
                         border: "none",
-                        borderRadius: t.radius.sm,
+                        borderRadius: theme.radius.sm,
                         padding: `${rem(8)} ${rem(10)}`,
                         background: "transparent",
-                        color: t.white,
+                        color: theme.white,
                         cursor: "pointer",
                         transition: "background-color 150ms ease",
-                        "&:hover": {
-                          backgroundColor: t.fn.rgba(t.colors.dark[5], 0.85),
-                        },
-                        "&:focus-visible": focusRing(t),
-                      })}
+                      }}
                     >
                       <IconSearch size={16} stroke={1.75} color={theme.colors.gray[5]} />
-                      <Text size="sm" weight={500} lineClamp={1}>
+                      <Text size="sm" fw={500} lineClamp={1}>
                         {suggestion}
                       </Text>
                     </Box>
@@ -654,38 +642,33 @@ function SearchPanel({
 
       {searchActive ? (
         <Box mt="md">
-          <Stack spacing="xs">
+          <Stack gap="xs">
             {(showSkeleton || showResultCards) && (
-              <Group position="apart" px={4}>
-                <Text size="sm" weight={600} color="dimmed">
+              <Group justify="space-between" px={4}>
+                <Text size="sm" fw={600} c="dimmed">
                   Results
                 </Text>
-                <Group spacing={4} c="dimmed" opacity={0.7}>
+                <Group gap={4} c="dimmed" opacity={0.7}>
                   <SiYoutubemusic size={14} />
-                  <Text weight={600} size="xs">
+                  <Text fw={600} size="xs">
                     YouTube Music
                   </Text>
                 </Group>
               </Group>
             )}
 
-            <Box
-              sx={{
-                maxHeight: listMaxH,
-                overflowY: "auto",
-              }}
-            >
-              <Stack spacing={4}>
+            <Box style={{ maxHeight: listMaxH, overflowY: "auto" }}>
+              <Stack gap={4}>
                 {showSkeleton ? (
                   Array.from({ length: 5 }).map((_, index) => (
                     <Skeleton key={index} height={isMobile ? 64 : 76} radius="sm" />
                   ))
                 ) : showEmpty ? (
                   <Box py="lg" px="sm">
-                    <Text size="sm" weight={600} color="white">
+                    <Text size="sm" fw={600} c="white">
                       No videos found
                     </Text>
-                    <Text size="xs" color="dimmed" mt={4}>
+                    <Text size="xs" c="dimmed" mt={4}>
                       Try a different keyword or paste a YouTube link directly.
                     </Text>
                   </Box>
@@ -723,12 +706,15 @@ function AppMenu({
         </ActionIcon>
       </Menu.Target>
       <Menu.Dropdown>
-        <Menu.Item icon={<IconCookie size={14} />} onClick={() => setCookiesOpened(true)}>
+        <Menu.Item
+          leftSection={<IconCookie size={14} />}
+          onClick={() => setCookiesOpened(true)}
+        >
           Cookie settings
         </Menu.Item>
         <Menu.Item
           color="red"
-          icon={<IconTrash size={14} />}
+          leftSection={<IconTrash size={14} />}
           onClick={() => setResetOpened(true)}
         >
           Reset data
@@ -738,7 +724,7 @@ function AppMenu({
           component="a"
           href="https://github.com/bgwastu/moonlit"
           target="_blank"
-          icon={<SiGithub size={14} />}
+          leftSection={<SiGithub size={14} />}
         >
           GitHub
         </Menu.Item>
@@ -746,14 +732,14 @@ function AppMenu({
           component="a"
           href="https://github.com/bgwastu/moonlit/issues"
           target="_blank"
-          icon={<IconAlertCircle size={14} />}
+          leftSection={<IconAlertCircle size={14} />}
         >
           Report bugs
         </Menu.Item>
         <Menu.Item
           component="a"
           href="mailto:bagas@wastu.net?subject=Moonlit%20Feedback&body=Hi%20Bagas%2C%0A%0AI%20have%20some%20feedback%20for%20Moonlit%3A%0A"
-          icon={<IconMessage size={14} />}
+          leftSection={<IconMessage size={14} />}
         >
           Feedback
         </Menu.Item>
@@ -777,17 +763,17 @@ export default function UploadPage() {
       <ResetModal opened={resetOpened} onClose={() => setResetOpened(false)} />
       <AppShell
         padding={0}
-        styles={(t) => ({
+        styles={{
           main: {
             minHeight: "100dvh",
-            backgroundColor: t.colors.dark[7],
+            backgroundColor: theme.colors.dark[7],
             paddingBottom: "var(--moonlit-player-inset, 0px)",
             transition: "padding-bottom 0.35s cubic-bezier(0.32, 0.72, 0, 1)",
           },
-        })}
+        }}
       >
         <Box
-          sx={{
+          style={{
             minHeight: "100dvh",
             display: "flex",
             flexDirection: "column",
@@ -795,16 +781,18 @@ export default function UploadPage() {
             paddingBottom: `calc(${rem(16)} + env(safe-area-inset-bottom, 0px))`,
             paddingLeft: rem(16),
             paddingRight: rem(16),
+            [SEARCH_ACCENT_VAR]: accent(theme, 5),
           }}
         >
           <Container size="md" w="100%" px={0}>
-            <Stack spacing={isMobileLayout ? "md" : "lg"}>
-              <Group position="apart" align="center" noWrap>
+            <Stack gap={isMobileLayout ? "md" : "lg"}>
+              <Group justify="space-between" align="center" wrap="nowrap">
                 <UnstyledButton
                   type="button"
                   aria-label="Moonlit — clear search"
+                  className="moonlit-focusable"
                   onClick={() => clearSearchRef.current?.()}
-                  sx={{
+                  style={{
                     display: "flex",
                     alignItems: "center",
                     gap: rem(10),
@@ -812,24 +800,20 @@ export default function UploadPage() {
                     WebkitUserSelect: "none",
                     cursor: "pointer",
                     borderRadius: rem(8),
-                    "&:focus-visible": focusRing(theme),
                   }}
                 >
                   <Icon size={18} />
                   <Text
                     span
                     fw={700}
-                    sx={(t) => ({
-                      color: t.white,
-                      fontSize: rem(22),
+                    c="white"
+                    style={{
+                      fontSize: isMobileLayout ? rem(20) : rem(22),
                       letterSpacing: rem(-0.3),
                       lineHeight: 1.2,
                       userSelect: "none",
                       WebkitUserSelect: "none",
-                      [t.fn.smallerThan("sm")]: {
-                        fontSize: rem(20),
-                      },
-                    })}
+                    }}
                   >
                     Moonlit
                   </Text>
@@ -840,7 +824,7 @@ export default function UploadPage() {
                 />
               </Group>
 
-              <Stack spacing="md" w="100%" maw={rem(640)}>
+              <Stack gap="md" w="100%" maw={rem(640)}>
                 <SearchPanel
                   searchActive={searchActive}
                   setSearchActive={setSearchActive}
@@ -848,7 +832,7 @@ export default function UploadPage() {
                 />
 
                 {!searchActive && (
-                  <Stack spacing="md">
+                  <Stack gap="md">
                     <HistoryList maxHeight={isMobileLayout ? rem(320) : rem(420)} />
                     <LocalUpload />
                   </Stack>

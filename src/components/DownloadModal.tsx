@@ -6,6 +6,7 @@ import { notifications } from "@mantine/notifications";
 import { IconDownload, IconInfoCircle } from "@tabler/icons-react";
 import { Media } from "@/interfaces";
 import { parseApiError } from "@/lib/apiError";
+import { loadSignalsmithStretch } from "@/lib/signalsmith";
 import { STREAM_CHUNK_BYTES } from "@/lib/streamConstants";
 
 interface DownloadModalProps {
@@ -143,7 +144,7 @@ export default function DownloadModal({
             value: 46,
             label: "Rendering remix (stretch + reverb)...",
           });
-          const SignalsmithStretch = (await import("signalsmith-stretch")).default;
+          const SignalsmithStretch = await loadSignalsmithStretch();
           const stretchNode = await SignalsmithStretch(offlineCtx);
 
           const channelBuffers: Float32Array[] = [];
@@ -265,12 +266,12 @@ export default function DownloadModal({
     parts.push(`${Math.round(currentReverbAmount * 100)}% reverb`);
 
   return (
-    <Modal opened={opened} onClose={onClose} title="Download" centered>
+    <Modal opened={opened} onClose={onClose} title="Download" centered zIndex={400}>
       <Stack>
         <Alert icon={<IconInfoCircle size={16} />} variant="light">
           Exporting remix as MP3
         </Alert>
-        <Text size="sm" color="dimmed">
+        <Text size="sm" c="dimmed">
           {parts.join(" — ")}
         </Text>
 
@@ -282,21 +283,21 @@ export default function DownloadModal({
 
         {isProcessing && (
           <Stack>
-            <Progress value={exportProgress.value} animate striped />
-            <Text size="xs" color="dimmed" align="center">
+            <Progress value={exportProgress.value} animated striped />
+            <Text size="xs" c="dimmed" ta="center">
               {exportProgress.label}
             </Text>
           </Stack>
         )}
 
-        <Group position="right" mt="md">
+        <Group justify="flex-end" mt="md">
           <Button variant="default" onClick={onClose} disabled={isProcessing}>
             Cancel
           </Button>
           <Button
             onClick={handleDownload}
             loading={isProcessing}
-            leftIcon={<IconDownload size={16} />}
+            leftSection={<IconDownload size={16} />}
           >
             Download MP3
           </Button>

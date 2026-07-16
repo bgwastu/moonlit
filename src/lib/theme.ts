@@ -1,27 +1,15 @@
-import type { MantineThemeOverride } from "@mantine/core";
+import { type MantineThemeOverride, createTheme } from "@mantine/core";
 
 /** Shared dark theme — used by app shell and standalone error boundaries. */
-export const appTheme: MantineThemeOverride = {
-  colorScheme: "dark",
+export const appTheme: MantineThemeOverride = createTheme({
   primaryColor: "violet",
   primaryShade: 5,
   white: "#f3f0ff",
-  // https://v6.mantine.dev/theming/theme-object/#focusring
-  focusRing: "never",
-  // https://v6.mantine.dev/styles/global-styles/
-  globalStyles: () => ({
-    // Non-text chrome: no accidental selection while tapping/dragging
-    "img, svg, video, canvas, button, [role='button'], [role='menuitem'], [role='option'], [role='tab'], [role='slider'], [role='switch'], input[type='range'], input[type='checkbox'], input[type='radio']":
-      {
-        WebkitUserSelect: "none",
-        userSelect: "none",
-        WebkitTouchCallout: "none",
-      },
-    "button *, [role='button'] *, [role='menuitem'] *, [role='tab'] *": {
-      WebkitUserSelect: "none",
-      userSelect: "none",
-    },
-  }),
-};
+  cursorType: "pointer",
+  focusClassName: "",
+});
 
 export const APP_BG = "#1A1B1E";
+
+/** CSS variable for search accent focus ring (set on the search shell). */
+export const SEARCH_ACCENT_VAR = "--moonlit-accent";

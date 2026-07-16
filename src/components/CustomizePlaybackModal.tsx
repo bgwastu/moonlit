@@ -48,9 +48,10 @@ export default function CustomizePlaybackModal({
     <Modal
       opened={opened}
       onClose={onClose}
-      overlayProps={{ opacity: 0.5 }}
+      overlayProps={{ backgroundOpacity: 0.5 }}
       title="Customize Playback"
       keepMounted
+      zIndex={400}
     >
       <Stack>
         <Switch

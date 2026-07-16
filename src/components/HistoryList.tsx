@@ -1,7 +1,17 @@
 "use client";
 
 import { useState } from "react";
-import { Box, Button, Group, Modal, Stack, Text, rem } from "@mantine/core";
+import {
+  Box,
+  Button,
+  Group,
+  Modal,
+  Stack,
+  Text,
+  rem,
+  rgba,
+  useMantineTheme,
+} from "@mantine/core";
 import { IconHistory, IconTrash } from "@tabler/icons-react";
 import MediaResultRow from "@/components/MediaResultRow";
 import { useAppContext } from "@/context/AppContext";
@@ -21,6 +31,7 @@ export default function HistoryList({
 }: HistoryListProps) {
   const { history, setHistory, openPlayer } = useAppContext();
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const theme = useMantineTheme();
 
   const handlePlay = (item: HistoryItem) => {
     onPlay?.();
@@ -47,19 +58,19 @@ export default function HistoryList({
       <Box
         py="xl"
         px="md"
-        sx={(t) => ({
-          borderRadius: t.radius.md,
-          border: `${rem(1)} dashed ${t.fn.rgba(t.colors.gray[6], 0.35)}`,
-          backgroundColor: t.fn.rgba(t.colors.dark[8], 0.28),
-        })}
+        style={{
+          borderRadius: theme.radius.md,
+          border: `${rem(1)} dashed ${rgba(theme.colors.gray[6], 0.35)}`,
+          backgroundColor: rgba(theme.colors.dark[8], 0.28),
+        }}
       >
-        <Stack spacing="sm" align="flex-start">
+        <Stack gap="sm" align="flex-start">
           <IconHistory size={28} stroke={1.5} opacity={0.55} />
           <Box>
-            <Text size="sm" weight={600} color="white">
+            <Text size="sm" fw={600} c="white">
               No recent plays
             </Text>
-            <Text size="sm" color="dimmed" mt={4} maw={360}>
+            <Text size="sm" c="dimmed" mt={4} maw={360}>
               Play a song to get started — then tweak speed, pitch, or reverb.
             </Text>
           </Box>
@@ -77,10 +88,10 @@ export default function HistoryList({
         centered
         radius="md"
       >
-        <Text size="sm" color="dimmed" mb="md">
+        <Text size="sm" c="dimmed" mb="md">
           This removes all recent plays from this device. It cannot be undone.
         </Text>
-        <Group position="right" spacing="sm">
+        <Group justify="flex-end" gap="sm">
           <Button variant="default" onClick={() => setConfirmOpen(false)}>
             Cancel
           </Button>
@@ -96,18 +107,17 @@ export default function HistoryList({
         </Group>
       </Modal>
 
-      <Stack spacing="xs">
-        <Group position="apart" px={4} sx={{ flexShrink: 0 }}>
-          <Text size="sm" weight={600} color="dimmed">
+      <Stack gap="xs">
+        <Group justify="space-between" px={4} style={{ flexShrink: 0 }}>
+          <Text size="sm" fw={600} c="dimmed">
             Recent
           </Text>
           {showClear && (
             <Button
               variant="subtle"
               color="red"
-              size="xs"
-              compact
-              leftIcon={<IconTrash size={12} />}
+              size="compact-xs"
+              leftSection={<IconTrash size={12} />}
               onClick={() => setConfirmOpen(true)}
             >
               Clear
@@ -115,12 +125,12 @@ export default function HistoryList({
           )}
         </Group>
         <Box
-          sx={{
+          style={{
             maxHeight: maxHeight ?? rem(420),
             overflowY: "auto",
           }}
         >
-          <Stack spacing={4}>
+          <Stack gap={4}>
             {sorted.map((item) => {
               const meta = item.metadata ?? ({} as HistoryItem["metadata"]);
               return (

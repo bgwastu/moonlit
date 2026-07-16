@@ -93,7 +93,7 @@ export default function AdminPage() {
       <Container size="xs" py="xl">
         <Stack>
           <Title order={2}>Admin Settings</Title>
-          <Text color="dimmed">Enter the admin password to access settings.</Text>
+          <Text c="dimmed">Enter the admin password to access settings.</Text>
 
           <PasswordInput
             label="Password"
@@ -116,7 +116,7 @@ export default function AdminPage() {
 
   return (
     <Container size="sm" py="xl">
-      <Stack spacing="lg">
+      <Stack gap="lg">
         <Title order={2}>Admin Settings</Title>
 
         {/* System Cookies */}
@@ -126,7 +126,7 @@ export default function AdminPage() {
               <IconCookie size={20} />
               <Title order={4}>System Cookies</Title>
             </Flex>
-            <Text size="sm" color="dimmed">
+            <Text size="sm" c="dimmed">
               Configure default cookies for all users. These are used when users
               haven&apos;t configured their own cookies.
             </Text>
@@ -165,7 +165,7 @@ export default function AdminPage() {
             )}
 
             <Button
-              leftIcon={<IconCookie size={16} />}
+              leftSection={<IconCookie size={16} />}
               onClick={saveCookies}
               loading={cookiesLoading}
             >

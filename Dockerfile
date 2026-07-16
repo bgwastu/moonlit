@@ -22,7 +22,7 @@ COPY . .
 RUN mkdir -p public
 
 RUN --mount=type=cache,target=/app/.next/cache \
-    npx next build --webpack
+    npm run build
 
 # Production image
 FROM base AS runner

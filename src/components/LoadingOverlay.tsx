@@ -13,14 +13,15 @@ export default function LoadingOverlay({ visible, message }: Props) {
   return (
     <MantineLoadingOverlay
       visible={visible}
-      overlayBlur={10}
-      overlayOpacity={0.9}
-      loader={
-        <Flex direction="column" gap="md" align="center" justify="center">
-          <Loader />
-          {message && <Text>{message}</Text>}
-        </Flex>
-      }
+      overlayProps={{ blur: 10, backgroundOpacity: 0.9 }}
+      loaderProps={{
+        children: (
+          <Flex direction="column" gap="md" align="center" justify="center">
+            <Loader />
+            {message && <Text>{message}</Text>}
+          </Flex>
+        ),
+      }}
     />
   );
 }

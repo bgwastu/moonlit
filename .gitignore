@@ -40,3 +40,7 @@ next-env.d.ts
 
 # docker
 data/
+# generated Signalsmith WASM/AudioWorklet ESM (copied from node_modules)
+/public/vendor/
+/public/stretch-smoke.wav
+/public/SignalsmithStretch.mjs

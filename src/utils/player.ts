@@ -1,5 +1,5 @@
 import { generateColors } from "@mantine/colors-generator";
-import { MantineThemeOverride } from "@mantine/core";
+import { type MantineThemeOverride, createTheme } from "@mantine/core";
 import { Media } from "@/interfaces";
 import { getPlatform } from "@/utils";
 
@@ -27,14 +27,14 @@ export function createDynamicTheme(
 ): MantineThemeOverride {
   if (!dominantColor) return baseTheme;
 
-  return {
+  return createTheme({
     ...baseTheme,
     primaryColor: "brand",
     colors: {
       ...baseTheme.colors,
-      brand: generateColors(dominantColor) as any,
+      brand: generateColors(dominantColor),
     },
-  };
+  });
 }
 
 /**

@@ -2,6 +2,7 @@
 
 import { useEffect } from "react";
 import { MantineProvider } from "@mantine/core";
+import "@mantine/core/styles.css";
 import { ErrorScreen } from "@/components/ErrorScreen";
 import { APP_BG, appTheme } from "@/lib/theme";
 
@@ -19,7 +20,7 @@ export default function GlobalError({
   return (
     <html lang="en" style={{ colorScheme: "dark", backgroundColor: APP_BG }}>
       <body style={{ margin: 0, backgroundColor: APP_BG, colorScheme: "dark" }}>
-        <MantineProvider withGlobalStyles withNormalizeCSS theme={appTheme}>
+        <MantineProvider theme={appTheme} forceColorScheme="dark">
           <ErrorScreen
             title="Something went wrong"
             message={error.message || "An unexpected error occurred."}

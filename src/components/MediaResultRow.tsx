@@ -1,5 +1,6 @@
 "use client";
 
+import type { CSSProperties } from "react";
 import {
   Badge,
   Box,
@@ -8,10 +9,11 @@ import {
   Image,
   Paper,
   Text,
-  rem,
+  rgba,
   useMantineTheme,
 } from "@mantine/core";
 import { IconMusic } from "@tabler/icons-react";
+import { SEARCH_ACCENT_VAR } from "@/lib/theme";
 
 export interface MediaResultItem {
   id: string;
@@ -66,42 +68,43 @@ export default function MediaResultRow({
       p={6}
       radius="sm"
       onClick={onClick}
-      sx={(th) => ({
-        display: "block",
-        width: "100%",
-        textAlign: "left",
-        textDecoration: "none",
-        color: "inherit",
-        cursor: "pointer",
-        backgroundColor: th.fn.rgba(th.colors.dark[9], 0.36),
-        border: `${rem(1)} solid transparent`,
-        transition: "border-color 150ms ease, background-color 150ms ease",
-        "&:hover": {
-          borderColor: th.fn.rgba(accent(th, 5), 0.45),
-          backgroundColor: th.fn.rgba(th.colors.dark[8], 0.5),
-        },
-        "&:focus-visible": {
-          outline: `${rem(2)} solid ${accent(th, 5)}`,
-          outlineOffset: rem(2),
-        },
-      })}
+      className="moonlit-media-row moonlit-focusable"
+      style={
+        {
+          display: "block",
+          width: "100%",
+          textAlign: "left",
+          textDecoration: "none",
+          color: "inherit",
+          cursor: "pointer",
+          backgroundColor: rgba(theme.colors.dark[9], 0.36),
+          border: "1px solid transparent",
+          transition: "border-color 150ms ease, background-color 150ms ease",
+          [SEARCH_ACCENT_VAR]: accent(theme, 5),
+        } as CSSProperties
+      }
     >
       <Flex gap="sm" align="center">
-        <Box pos="relative" sx={{ flexShrink: 0 }}>
-          <Image
-            src={item.thumbnail || undefined}
-            alt=""
-            width={thumbW}
-            height={thumbH}
-            radius="sm"
-            fit="cover"
-            withPlaceholder
-            placeholder={
-              <Center h="100%">
-                <IconMusic size={22} />
-              </Center>
-            }
-          />
+        <Box pos="relative" style={{ flexShrink: 0 }}>
+          {item.thumbnail ? (
+            <Image
+              src={item.thumbnail}
+              alt=""
+              w={thumbW}
+              h={thumbH}
+              radius="sm"
+              fit="cover"
+            />
+          ) : (
+            <Center
+              w={thumbW}
+              h={thumbH}
+              bg={rgba(theme.colors.dark[6], 0.6)}
+              style={{ borderRadius: theme.radius.sm }}
+            >
+              <IconMusic size={22} />
+            </Center>
+          )}
           {durationLabel ? (
             <Badge
               pos="absolute"
@@ -116,16 +119,16 @@ export default function MediaResultRow({
             </Badge>
           ) : null}
         </Box>
-        <Box sx={{ minWidth: 0, flex: 1 }}>
-          <Text color="white" weight={600} size={compact ? "sm" : "md"} lineClamp={2}>
+        <Box style={{ minWidth: 0, flex: 1 }}>
+          <Text c="white" fw={600} size={compact ? "sm" : "md"} lineClamp={2}>
             {item.title}
           </Text>
-          <Text color="dimmed" size="sm" mt={4} lineClamp={1}>
+          <Text c="dimmed" size="sm" mt={4} lineClamp={1}>
             {item.author}
           </Text>
         </Box>
         {item.metaRight ? (
-          <Text size="xs" color="dimmed" style={{ flexShrink: 0 }}>
+          <Text size="xs" c="dimmed" style={{ flexShrink: 0 }}>
             {item.metaRight}
           </Text>
         ) : null}

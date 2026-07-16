@@ -13,7 +13,6 @@ import {
   Image,
   Loader,
   MantineProvider,
-  MediaQuery,
   Menu,
   Progress,
   SegmentedControl,
@@ -65,6 +64,7 @@ import {
   savePlaybackPrefs,
   setShowVideo,
 } from "@/lib/playerPrefs";
+import { appTheme } from "@/lib/theme";
 import { getModeFromRate, getVideoState, saveVideoState } from "@/lib/videoState";
 import { getFormattedTime, getYouTubeId, isSupportedURL } from "@/utils";
 import {
@@ -436,14 +436,7 @@ export function Player({
   useEffect(() => {
     document.body.style.setProperty("--dominant-color", dominantColor || "transparent");
     // Stable base — do not depend on live Mantine theme (avoids setTheme loops)
-    setTheme(
-      createDynamicTheme(dominantColor, {
-        colorScheme: "dark",
-        primaryColor: "violet",
-        primaryShade: 5,
-        white: "#f3f0ff",
-      }),
-    );
+    setTheme(createDynamicTheme(dominantColor, appTheme));
   }, [dominantColor, setTheme]);
 
   // Inlined useToast
@@ -711,7 +704,7 @@ export function Player({
     return (
       <Flex align="center" gap="xs">
         {icon}
-        <Text weight={600}>{text}</Text>
+        <Text fw={600}>{text}</Text>
       </Flex>
     );
   }
@@ -1170,8 +1163,8 @@ export function Player({
   ]);
 
   const dynamicTheme = useMemo(
-    () => createDynamicTheme(dominantColor, theme),
-    [dominantColor, theme],
+    () => createDynamicTheme(dominantColor, appTheme),
+    [dominantColor],
   );
 
   const playerAreaRef = useRef<HTMLDivElement>(null);
@@ -1258,7 +1251,7 @@ export function Player({
   const originalPlatformUrl = getOriginalPlatformUrl(media, currentTime);
 
   return (
-    <MantineProvider theme={dynamicTheme} inherit>
+    <MantineProvider theme={dynamicTheme} forceColorScheme="dark">
       <CustomizePlaybackModal
         opened={modalOpened}
         onClose={closeModal}
@@ -1640,10 +1633,10 @@ export function Player({
                         }}
                       >
                         <IconMusic size={80} style={{ opacity: 0.5 }} />
-                        <Text size="xl" weight={600} align="center">
+                        <Text size="xl" fw={600} ta="center">
                           {media.metadata.title}
                         </Text>
-                        <Text size="md" color="dimmed" align="center">
+                        <Text size="md" c="dimmed" ta="center">
                           {media.metadata.artist ?? media.metadata.author}
                           {media.metadata.album && ` · ${media.metadata.album}`}
                         </Text>
@@ -1699,7 +1692,7 @@ export function Player({
                           <Progress
                             value={progress?.percent ?? 100}
                             striped
-                            animate
+                            animated
                             color="rgba(255, 255, 255, 0.7)"
                             bg="rgba(255, 255, 255, 0.1)"
                             size="sm"
@@ -1881,7 +1874,7 @@ export function Player({
                 variant="default"
                 size="sm"
                 h={36}
-                leftIcon={<IconMusic size={18} />}
+                leftSection={<IconMusic size={18} />}
                 onClick={() => setLyricsModalOpened(true)}
                 loading={lyricsState === "loading"}
               >
@@ -1893,7 +1886,7 @@ export function Player({
                     variant="default"
                     size="sm"
                     h={36}
-                    leftIcon={<IconMenu2 size={18} />}
+                    leftSection={<IconMenu2 size={18} />}
                   >
                     Menu
                   </Button>
@@ -1901,14 +1894,14 @@ export function Player({
                 <Menu.Dropdown>
                   <Menu.Label>Navigation</Menu.Label>
                   <Menu.Item
-                    icon={<IconHome size={14} />}
+                    leftSection={<IconHome size={14} />}
                     onClick={() => onRequestCollapse?.()}
                   >
                     Home
                   </Menu.Item>
                   {originalPlatformUrl && (
                     <Menu.Item
-                      icon={
+                      leftSection={
                         media.isAudioTrackVideo ? (
                           <SiYoutubemusic size={14} />
                         ) : (
@@ -1927,12 +1920,12 @@ export function Player({
                   <Menu.Label>Actions</Menu.Label>
                   {!media?.isAudioTrackVideo && (
                     <Menu.Item
-                      icon={<IconVideo size={14} />}
+                      leftSection={<IconVideo size={14} />}
                       onClick={handleToggleShowVideo}
                       disabled={!media?.videoUrl && !showVideo}
                       rightSection={
                         showVideo && media?.videoUrl ? (
-                          <Text size="xs" color="dimmed">
+                          <Text size="xs" c="dimmed">
                             On
                           </Text>
                         ) : undefined
@@ -1942,7 +1935,7 @@ export function Player({
                     </Menu.Item>
                   )}
                   <Menu.Item
-                    icon={<IconDownload size={14} />}
+                    leftSection={<IconDownload size={14} />}
                     onClick={openDownloadModal}
                   >
                     Download
@@ -2132,7 +2125,7 @@ export function Player({
               {!isMobile && (
                 <Text
                   size="xs"
-                  color="dimmed"
+                  c="dimmed"
                   ml={4}
                   style={{
                     fontVariantNumeric: "tabular-nums",
@@ -2158,37 +2151,30 @@ export function Player({
               align="center"
               gap={isMobile ? 6 : undefined}
             >
-              <MediaQuery smallerThan="xs" styles={{ display: "none" }}>
-                <Image
-                  key={sourceUrl || coverUrl || "cover"}
-                  src={coverUrl || undefined}
-                  radius="sm"
-                  height={38}
-                  width={38}
-                  withPlaceholder
-                  placeholder={
-                    <Center>
-                      <IconMusic />
-                    </Center>
-                  }
-                  alt="cover image"
-                  style={{
-                    userSelect: "none",
-                    WebkitUserSelect: "none",
-                    pointerEvents: "none",
-                    flexShrink: 0,
-                    opacity: isMediaReady ? 1 : 0.55,
-                  }}
-                />
-              </MediaQuery>
+              <Image
+                key={sourceUrl || coverUrl || "cover"}
+                src={coverUrl || undefined}
+                radius="sm"
+                h={38}
+                w={38}
+                visibleFrom="xs"
+                alt="cover image"
+                style={{
+                  userSelect: "none",
+                  WebkitUserSelect: "none",
+                  pointerEvents: "none",
+                  flexShrink: 0,
+                  opacity: isMediaReady ? 1 : 0.55,
+                }}
+              />
               <Box ml="sm" style={{ minWidth: 0, flex: 1 }}>
                 <Flex align="center" gap={6}>
-                  <Text size="sm" weight={600} lineClamp={1}>
+                  <Text size="sm" fw={600} lineClamp={1}>
                     {media.metadata.title || "\u00A0"}
                   </Text>
                 </Flex>
                 {(media.metadata.artist || media.metadata.author) && (
-                  <Text size="xs" color="dimmed" lineClamp={1}>
+                  <Text size="xs" c="dimmed" lineClamp={1}>
                     {media.metadata.artist ?? media.metadata.author}
                     {media.metadata.album && ` · ${media.metadata.album}`}
                   </Text>

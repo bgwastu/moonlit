@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { APP_BG } from "@/lib/theme";
 import LayoutWrapper from "./LayoutWrapper";
+import "./globals.css";
 
 export const viewport: Viewport = {
   width: "device-width",

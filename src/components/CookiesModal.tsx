@@ -49,19 +49,19 @@ export default function CookiesModal({ opened, onClose }: CookiesModalProps) {
 
   return (
     <Modal opened={opened} onClose={onClose} title="Cookies" size="md" centered>
-      <Stack spacing="md">
+      <Stack gap="md">
         <Switch
           labelPosition="left"
           label="Enable custom cookies"
           description={
-            <Text size="xs" c="dimmed">
+            <Text component="span" size="xs" c="dimmed">
               Cookies help bypass age restrictions and rate limits for YouTube. Export
               from your browser using{" "}
               <Text
                 component="a"
                 href="https://chromewebstore.google.com/detail/get-cookiestxt-locally/cclelndahbckbenkjhflpdbgdldlbecc"
                 target="_blank"
-                underline
+                td="underline"
                 inherit
               >
                 This extension

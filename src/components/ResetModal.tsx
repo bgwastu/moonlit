@@ -36,7 +36,7 @@ export default function ResetModal({ opened, onClose }: ResetModalProps) {
 
   return (
     <Modal opened={opened} onClose={onClose} title="Reset Data" centered>
-      <Stack spacing="md">
+      <Stack gap="md">
         <Text size="sm">
           This will delete all configurations, cookies, history, and saved settings. This
           action cannot be undone.

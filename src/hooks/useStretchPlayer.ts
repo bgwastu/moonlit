@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { parseApiError } from "@/lib/apiError";
+import { loadSignalsmithStretch } from "@/lib/signalsmith";
 import { STREAM_CHUNK_BYTES } from "@/lib/streamConstants";
 
 type StretchPlayerState = "loading" | "ready" | "error";
@@ -459,7 +460,7 @@ export function useStretchPlayer({
       const audioContext = new AudioContextClass();
       rt.audioContext = audioContext;
 
-      const signalsmithModulePromise = import("signalsmith-stretch");
+      const signalsmithModulePromise = loadSignalsmithStretch();
       let audioBuffer = decodedAudioCache.get(fileUrl);
       if (!audioBuffer) {
         setProgress({ phase: "downloading", percent: 0 });
@@ -492,7 +493,7 @@ export function useStretchPlayer({
       setIsWaiting(false);
 
       setProgress({ phase: "processing", percent: 80 });
-      const SignalsmithStretch = (await signalsmithModulePromise).default;
+      const SignalsmithStretch = await signalsmithModulePromise;
       throwIfInactive();
       const stretch = await SignalsmithStretch(audioContext);
       throwIfInactive();
