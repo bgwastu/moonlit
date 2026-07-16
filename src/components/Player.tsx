@@ -424,6 +424,7 @@ export function Player({
   const [isMuted, setIsMuted] = useState(false);
   const [isVolumeHovered, setIsVolumeHovered] = useState(false);
   const previousVolumeRef = useRef(globalPrefs.volume);
+  const volumeControlRef = useRef<HTMLDivElement>(null);
 
   const [advancedStretch, setAdvancedStretch] = useState(globalPrefs.advancedStretch);
 
@@ -1209,6 +1210,18 @@ export function Player({
     if (volume < 0.66) return <IconVolume2 size={24} />;
     return <IconVolume size={24} />;
   }, [isMuted, volume]);
+
+  useEffect(() => {
+    if (!isMobile || !isVolumeHovered) return;
+
+    const closeVolume = (e: PointerEvent) => {
+      if (volumeControlRef.current?.contains(e.target as Node)) return;
+      setIsVolumeHovered(false);
+    };
+
+    document.addEventListener("pointerdown", closeVolume);
+    return () => document.removeEventListener("pointerdown", closeVolume);
+  }, [isMobile, isVolumeHovered]);
 
   const showRateToast = useCallback(
     (newRate: number, icon: React.ReactNode) => {
@@ -2160,15 +2173,22 @@ export function Player({
                 )}
               </ActionIcon>
               <Flex
+                ref={volumeControlRef}
                 align="center"
-                onMouseEnter={() => setIsVolumeHovered(true)}
-                onMouseLeave={() => setIsVolumeHovered(false)}
+                onMouseEnter={() => !isMobile && setIsVolumeHovered(true)}
+                onMouseLeave={() => !isMobile && setIsVolumeHovered(false)}
                 style={{ position: "relative" }}
               >
                 <ActionIcon
                   size="lg"
                   disabled={isLoading}
-                  onClick={handleMuteToggle}
+                  onClick={() => {
+                    if (isMobile) {
+                      setIsVolumeHovered((open) => !open);
+                    } else {
+                      handleMuteToggle();
+                    }
+                  }}
                   title={isMuted || volume === 0 ? "Unmute" : "Mute"}
                   variant="transparent"
                   color="gray"
