@@ -133,9 +133,8 @@ export function useSyncedVideo({
       }
 
       pendingSeekRef.current = null;
-      if (drift > HARD_SEEK_S || video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
-        setFrameReady(false);
-      }
+      // Keep the last painted frame visible during seeks — clearing readiness
+      // flashes the cover art for a moment and looks jarring.
 
       clearSeekTimeout();
       seekTimeoutRef.current = setTimeout(() => {

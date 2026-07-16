@@ -318,7 +318,7 @@ export function useStretchPlayer({
     runtime.current.onEnded = onEnded;
   }, [isRepeat, onEnded]);
 
-  const cleanup = useCallback(() => {
+  const cleanup = useCallback((options?: { resetClock?: boolean }) => {
     nativeCleanupRef.current?.();
     nativeCleanupRef.current = null;
 
@@ -349,14 +349,20 @@ export function useStretchPlayer({
       rt.audioContext = null;
     }
     rt.buffer = null;
-    rt.duration = 0;
     rt.isPlaying = false;
     rt.pendingSeek = null;
     setIsPlaying(false);
     setIsWaiting(false);
     setBuffered([]);
-    setCurrentTime(0);
-    setDuration(0);
+
+    // Only clear the clock when leaving a track — preserve it across
+    // advanced-stretch on/off so lyrics don't reset and re-sync.
+    if (options?.resetClock) {
+      rt.duration = 0;
+      rt.currentPosition = 0;
+      setCurrentTime(0);
+      setDuration(0);
+    }
   }, []);
 
   const setupNative = useCallback((audio: HTMLAudioElement, pos: number) => {
@@ -578,8 +584,7 @@ export function useStretchPlayer({
       // Defer UI reset so we don't sync setState in the effect body
       queueMicrotask(() => {
         if (cancelled) return;
-        cleanup();
-        runtime.current.currentPosition = 0;
+        cleanup({ resetClock: true });
         prevFileUrlRef.current = null;
         setProgress(null);
         setState("loading");
@@ -609,7 +614,9 @@ export function useStretchPlayer({
     prevFileUrlRef.current = fileUrl;
 
     const init = async () => {
-      cleanup();
+      // Tear down the previous pipeline but keep the clock on same-track mode switches
+      // so lyrics/UI don't flash back to 0 and re-sync.
+      cleanup({ resetClock: fileChanged });
       setState("loading");
       setProgress(null);
 
@@ -618,7 +625,10 @@ export function useStretchPlayer({
         : posBeforeSwitch.current > 0
           ? posBeforeSwitch.current
           : initialPosition;
-      setCurrentTime(resumePos);
+      runtime.current.currentPosition = resumePos;
+      if (fileChanged) {
+        setCurrentTime(resumePos);
+      }
 
       try {
         if (advancedStretch) {
@@ -705,7 +715,7 @@ export function useStretchPlayer({
         }
       } catch (error) {
         if (isCurrent()) {
-          cleanup();
+          cleanup({ resetClock: false });
           setProgress(null);
           console.error("StretchPlayer initialization failed:", error);
           setState("error");
@@ -718,7 +728,8 @@ export function useStretchPlayer({
     return () => {
       aborted = true;
       controller.abort();
-      cleanup();
+      // Preserve clock on advanced-stretch toggles; track changes reset via resetClock.
+      cleanup({ resetClock: false });
     };
   }, [
     fileUrl,

@@ -7,6 +7,8 @@ import type { LyricsState } from "@/hooks/useLyrics";
 import { Lyric } from "@/lib/lyrics";
 
 const SYNC_THRESHOLD_PX = 80;
+/** Desktop panel width/transform transition is ~350ms — wait before first sync. */
+const OPEN_LAYOUT_MS = 400;
 
 interface LyricsPanelProps {
   lyrics: Lyric[];
@@ -39,6 +41,8 @@ export default function LyricsPanel({
   const followPausedRef = useRef(false);
   const scrollTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const wasVisibleRef = useRef(visible);
+  const layoutReadyRef = useRef(false);
+  const activeIndexRef = useRef(-1);
   const [isOutOfSync, setIsOutOfSync] = useState(false);
   const currentTimeMs = currentTimeSeconds * 1000;
 
@@ -50,16 +54,33 @@ export default function LyricsPanel({
     return 0;
   }, [lyrics, currentTimeMs]);
 
-  const scrollToActive = useCallback(
-    (behavior: ScrollBehavior = "smooth") => {
-      if (activeIndex < 0) return;
+  useEffect(() => {
+    activeIndexRef.current = activeIndex;
+  });
+
+  /**
+   * Scroll the lyrics scroller itself via scrollTop.
+   * Avoid scrollIntoView — it misbehaves with transformed ancestors (desktop slide-in)
+   * and often jumps to the end of the list.
+   */
+  const scrollToIndex = useCallback(
+    (index: number, behavior: ScrollBehavior = "smooth") => {
+      if (index < 0) return;
+      const container = containerRef.current;
+      const line = lineRefs.current[index];
+      if (!container || !line) return;
+
       followPausedRef.current = false;
       ignoreScrollRef.current = true;
       if (scrollTimeoutRef.current) clearTimeout(scrollTimeoutRef.current);
-      lineRefs.current[activeIndex]?.scrollIntoView({
-        behavior,
-        block: "center",
-      });
+
+      const containerRect = container.getBoundingClientRect();
+      const lineRect = line.getBoundingClientRect();
+      const lineCenterInContent =
+        lineRect.top - containerRect.top + container.scrollTop + lineRect.height / 2;
+      const target = Math.max(0, lineCenterInContent - container.clientHeight / 2);
+      container.scrollTo({ top: target, behavior });
+
       scrollTimeoutRef.current = setTimeout(
         () => {
           ignoreScrollRef.current = false;
@@ -67,30 +88,53 @@ export default function LyricsPanel({
         behavior === "smooth" ? 1200 : 200,
       );
     },
-    [activeIndex],
+    [],
   );
 
-  // Jump to the current line when the panel becomes visible.
+  const scrollToActive = useCallback(
+    (behavior: ScrollBehavior = "smooth") => {
+      scrollToIndex(activeIndexRef.current, behavior);
+    },
+    [scrollToIndex],
+  );
+
+  // Jump to the current line once the panel is visible and laid out.
   useEffect(() => {
     const becameVisible = visible && !wasVisibleRef.current;
     wasVisibleRef.current = visible;
-    if (!becameVisible || activeIndex < 0) return;
+
+    if (!visible) {
+      layoutReadyRef.current = false;
+      return;
+    }
+
+    if (!becameVisible) return;
 
     followPausedRef.current = false;
-    const syncId = requestAnimationFrame(() => setIsOutOfSync(false));
-    const t = window.setTimeout(() => scrollToActive("auto"), 100);
-    return () => {
-      cancelAnimationFrame(syncId);
-      window.clearTimeout(t);
-    };
-  }, [visible, activeIndex, scrollToActive]);
+    layoutReadyRef.current = false;
+    queueMicrotask(() => setIsOutOfSync(false));
+
+    const delay = isMobile ? 80 : OPEN_LAYOUT_MS;
+    const t = window.setTimeout(() => {
+      layoutReadyRef.current = true;
+      scrollToActive("auto");
+    }, delay);
+    return () => window.clearTimeout(t);
+  }, [visible, isMobile, scrollToActive]);
 
   // When lyrics finish loading while the panel is already open, snap to the active line.
   useEffect(() => {
     if (!visible || lyrics.length === 0) return;
     followPausedRef.current = false;
     queueMicrotask(() => setIsOutOfSync(false));
-    const t = window.setTimeout(() => scrollToActive("auto"), 80);
+    const t = window.setTimeout(
+      () => {
+        if (!visible) return;
+        layoutReadyRef.current = true;
+        scrollToActive("auto");
+      },
+      isMobile ? 80 : OPEN_LAYOUT_MS,
+    );
     return () => window.clearTimeout(t);
     // Only re-run when the lyric set itself changes, not on every active line tick
     // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional: lyrics identity/length
@@ -100,34 +144,22 @@ export default function LyricsPanel({
   useEffect(() => {
     if (!visible) return;
     const onVisibility = () => {
-      if (document.hidden || activeIndex < 0) return;
+      if (document.hidden || activeIndexRef.current < 0) return;
       followPausedRef.current = false;
       setIsOutOfSync(false);
       scrollToActive("auto");
     };
     document.addEventListener("visibilitychange", onVisibility);
     return () => document.removeEventListener("visibilitychange", onVisibility);
-  }, [visible, activeIndex, scrollToActive]);
+  }, [visible, scrollToActive]);
 
+  // Follow the active lyric during playback (once layout is ready)
   useEffect(() => {
-    if (!visible || activeIndex < 0 || followPausedRef.current) return;
-    const syncId = requestAnimationFrame(() => {
-      setIsOutOfSync(false);
-    });
-    ignoreScrollRef.current = true;
-    if (scrollTimeoutRef.current) clearTimeout(scrollTimeoutRef.current);
-    lineRefs.current[activeIndex]?.scrollIntoView({
-      behavior: "smooth",
-      block: "center",
-    });
-    scrollTimeoutRef.current = setTimeout(() => {
-      ignoreScrollRef.current = false;
-    }, 1200);
-    return () => {
-      cancelAnimationFrame(syncId);
-      if (scrollTimeoutRef.current) clearTimeout(scrollTimeoutRef.current);
-    };
-  }, [activeIndex, visible]);
+    if (!visible || activeIndex < 0) return;
+    if (!layoutReadyRef.current || followPausedRef.current) return;
+    queueMicrotask(() => setIsOutOfSync(false));
+    scrollToIndex(activeIndex, "smooth");
+  }, [activeIndex, visible, scrollToIndex]);
 
   useEffect(() => {
     followPausedRef.current = false;
@@ -135,11 +167,11 @@ export default function LyricsPanel({
   }, [lyrics]);
 
   const handleScroll = useCallback(() => {
-    if (ignoreScrollRef.current) return;
-    if (activeIndex < 0 || !containerRef.current || !lineRefs.current[activeIndex])
-      return;
+    if (ignoreScrollRef.current || !layoutReadyRef.current) return;
+    const index = activeIndexRef.current;
+    if (index < 0 || !containerRef.current || !lineRefs.current[index]) return;
     const container = containerRef.current.getBoundingClientRect();
-    const line = lineRefs.current[activeIndex]!.getBoundingClientRect();
+    const line = lineRefs.current[index]!.getBoundingClientRect();
     const containerCenter = container.top + container.height / 2;
     const lineCenter = line.top + line.height / 2;
     const distance = Math.abs(containerCenter - lineCenter);
@@ -147,10 +179,11 @@ export default function LyricsPanel({
     if (outOfSync) followPausedRef.current = true;
     else followPausedRef.current = false;
     setIsOutOfSync(outOfSync);
-  }, [activeIndex]);
+  }, []);
 
   const handleSyncClick = useCallback(() => {
     setIsOutOfSync(false);
+    layoutReadyRef.current = true;
     scrollToActive("smooth");
   }, [scrollToActive]);
 
