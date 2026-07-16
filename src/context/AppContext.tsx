@@ -190,6 +190,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const expandPlayer = useCallback(() => {
+    // Session restore opens mini + paused (autoPlay false). Expanding is an
+    // intentional listen action — start playback once the player is ready.
+    setPlayerAutoPlay(true);
     setPlayerMode((prev) => (prev === "hidden" ? prev : "expanded"));
     softReplaceUrl(playerPathForMedia(playerUrlRef.current, mediaRef.current));
   }, []);
