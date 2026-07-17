@@ -364,6 +364,9 @@ export default function YouTubeStatusChip() {
       withArrow
       multiline
       maw={320}
+      openDelay={100}
+      closeDelay={150}
+      events={{ hover: true, focus: true, touch: true }}
       label={
         <Stack gap={4}>
           <StatusRow
@@ -387,7 +390,9 @@ export default function YouTubeStatusChip() {
         size="sm"
         variant="light"
         color={color}
-        style={{ flexShrink: 0, cursor: "default" }}
+        component="button"
+        type="button"
+        style={{ flexShrink: 0, cursor: "pointer", border: "none" }}
         aria-label={aria}
         leftSection={badgeLoading ? <Loader size={10} color="gray" /> : undefined}
       >
