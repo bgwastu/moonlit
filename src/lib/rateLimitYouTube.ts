@@ -5,14 +5,15 @@ const MINUTE_MS = 60_000;
 
 export function enforceYouTubeSearchLimit(request: Request): Response | null {
   const ip = getClientIp(request);
-  const result = checkRateLimit(`youtube:search:${ip}`, 10, MINUTE_MS);
+  const result = checkRateLimit(`youtube:search:${ip}`, 40, MINUTE_MS);
   if (result.ok === false) return rateLimitResponse(result.retryAfterSec);
   return null;
 }
 
 export function enforceYouTubeExtractLimit(request: Request): Response | null {
   const ip = getClientIp(request);
-  const result = checkRateLimit(`youtube:extract:${ip}`, 5, MINUTE_MS);
+  // Generous enough for a retry + a few track switches; still blocks extract storms.
+  const result = checkRateLimit(`youtube:extract:${ip}`, 30, MINUTE_MS);
   if (result.ok === false) return rateLimitResponse(result.retryAfterSec);
   return null;
 }

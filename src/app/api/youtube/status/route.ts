@@ -13,12 +13,7 @@ import {
   assertYoutubeCircuitClosed,
   withYoutubeCircuit,
 } from "@/lib/youtubeCircuit";
-import {
-  extractStreamUrl,
-  getYoutubeCookieSource,
-  searchMusic,
-  searchYouTube,
-} from "@/lib/youtubei";
+import { getYoutubeCookieSource, searchMusic, searchYouTube } from "@/lib/youtubei";
 
 const DATA_DIR = path.join(process.cwd(), "data");
 const STATUS_PATH = path.join(DATA_DIR, "status.json");
@@ -129,15 +124,14 @@ async function probeSearch(cookies?: string): Promise<string | null> {
   return videos[0]?.url ?? null;
 }
 
-async function runProbe(
-  cookies: string | undefined,
-  signal?: AbortSignal,
-): Promise<{
+async function runProbe(cookies: string | undefined): Promise<{
   searchOk: boolean;
   extractOk: boolean;
   errorMessage?: string;
   code?: string;
 }> {
+  // Search-only health check. A full extract here races real plays, burns the
+  // shared YouTube circuit, and is redundant with /api/stream/extract.
   const songUrl = await probeSearch(cookies);
   const searchOk = Boolean(songUrl);
 
@@ -150,20 +144,7 @@ async function runProbe(
     };
   }
 
-  const stream = await withYoutubeCircuit(() =>
-    extractStreamUrl(songUrl, { cookies, signal }),
-  );
-  const extractOk = Boolean(stream.url);
-  if (!extractOk) {
-    return {
-      searchOk,
-      extractOk,
-      errorMessage: "Stream extract returned no URL.",
-      code: "STREAM_UNAVAILABLE",
-    };
-  }
-
-  return { searchOk, extractOk };
+  return { searchOk, extractOk: searchOk };
 }
 
 async function revalidateMoonlitStatus(): Promise<void> {
@@ -286,7 +267,7 @@ export async function GET(request: Request) {
       assertYoutubeCircuitClosed();
       // Static validation already required LOGIN_INFO / __Secure-*PSID.
       // account.getInfo() is too flaky with cookies and caused false "invalid".
-      const result = await runProbe(userCookies, request.signal);
+      const result = await runProbe(userCookies);
       const online = result.searchOk && result.extractOk;
       return respondUser({
         online,
@@ -400,7 +381,7 @@ export async function GET(request: Request) {
   const cookieSource = await getYoutubeCookieSource(undefined);
   try {
     assertYoutubeCircuitClosed();
-    const result = await runProbe(undefined, request.signal);
+    const result = await runProbe(undefined);
     const online = result.searchOk && result.extractOk;
     const payload: StatusPayload = {
       online,

@@ -3,6 +3,10 @@ type Window = { count: number; resetAt: number };
 const store = new Map<string, Window>();
 
 export function getClientIp(request: Request): string {
+  // Prefer CF-Connecting-IP when behind Cloudflare — X-Forwarded-For can be
+  // spoofed or collapse many clients onto one hop if misconfigured.
+  const cf = request.headers.get("cf-connecting-ip")?.trim();
+  if (cf) return cf;
   const forwarded = request.headers.get("x-forwarded-for");
   if (forwarded) return forwarded.split(",")[0]?.trim() || "unknown";
   return request.headers.get("x-real-ip") ?? "unknown";

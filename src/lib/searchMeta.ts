@@ -63,8 +63,12 @@ export function consumeSearchMeta(id: string): Partial<Media["metadata"]> | unde
 
 const PLACEHOLDER = new Set(["", "Unknown"]);
 
-function isKnown(value: string | undefined | null): value is string {
+export function isKnownMetaValue(value: string | undefined | null): value is string {
   return !!value && !PLACEHOLDER.has(value);
+}
+
+function isKnown(value: string | undefined | null): value is string {
+  return isKnownMetaValue(value);
 }
 
 /** Prefer real titles/authors from earlier sources over cache/extract placeholders. */

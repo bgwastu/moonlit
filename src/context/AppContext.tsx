@@ -14,7 +14,7 @@ import { MAX_HISTORY_ITEMS } from "@/lib/constants";
 import { clearLastSession, loadLastSession, saveLastSession } from "@/lib/lastSession";
 import { mediaFromLocalCache } from "@/lib/playFromCache";
 import { playerPathForMedia, softReplaceUrl } from "@/lib/playerNavigation";
-import { mergeTrackMetadata, stashSearchMeta } from "@/lib/searchMeta";
+import { isKnownMetaValue, mergeTrackMetadata, stashSearchMeta } from "@/lib/searchMeta";
 import { appTheme } from "@/lib/theme";
 import { clearMediaCache } from "@/utils/cache";
 
@@ -236,17 +236,22 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
     const session = loadLastSession();
     if (!session) return;
-    if (session.metadata?.id) {
-      stashSearchMeta(session.metadata.id, session.metadata);
+
+    const historyMatch = history.find((item) => item.sourceUrl === session.sourceUrl);
+    const seedMeta = mergeTrackMetadata(session.metadata, historyMatch?.metadata);
+    if (seedMeta.id) {
+      stashSearchMeta(String(seedMeta.id), seedMeta);
     }
+
     const timer = window.setTimeout(() => {
       void (async () => {
-        const cached = await mediaFromLocalCache(session.sourceUrl, session.metadata);
+        const cached = await mediaFromLocalCache(session.sourceUrl, seedMeta);
         if (cached) {
           openPlayer({
+            url: session.sourceUrl,
             media: {
               ...cached,
-              metadata: mergeTrackMetadata(cached.metadata, session.metadata),
+              metadata: mergeTrackMetadata(cached.metadata, seedMeta),
             },
             expand: false,
             autoPlay: false,
@@ -257,8 +262,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           return;
         }
 
+        // Keep metadata shell while re-extracting so titles survive long idle restores.
         openPlayer({
           url: session.sourceUrl,
+          media: {
+            fileUrl: "",
+            sourceUrl: session.sourceUrl,
+            metadata: seedMeta,
+          },
           expand: false,
           autoPlay: false,
           syncUrl: true,
@@ -268,7 +279,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       })();
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [isHydrated, openPlayer]);
+  }, [isHydrated, openPlayer, history]);
 
   // Persist last session while a remote track is active
   useEffect(() => {
@@ -278,19 +289,19 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     const sourceUrl = playerUrl || media?.sourceUrl;
     if (!sourceUrl) return;
     if (sourceUrl.startsWith("local:")) return;
-    const metadata = media?.metadata;
-    if (!metadata?.title || metadata.title === "Unknown") {
-      const existing = loadLastSession();
-      if (existing?.sourceUrl === sourceUrl && existing.metadata?.title) {
-        return;
-      }
-      if (!metadata?.title) return;
-    }
+
     const existing = loadLastSession();
+    const mergedMeta = mergeTrackMetadata(
+      media?.metadata,
+      existing?.sourceUrl === sourceUrl ? existing.metadata : undefined,
+    );
+    // Never persist placeholder titles — that is how "Unknown" sticks after idle restore.
+    if (!isKnownMetaValue(mergedMeta.title)) return;
+
     saveLastSession({
       savedAt: Date.now(),
       sourceUrl,
-      metadata: { ...metadata },
+      metadata: mergedMeta,
       mode: "mini",
       positionSeconds:
         existing?.sourceUrl === sourceUrl ? (existing.positionSeconds ?? 0) : 0,
