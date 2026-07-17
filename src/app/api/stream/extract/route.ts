@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import crypto from "crypto";
 import { youtubeErrorCode } from "@/lib/apiError";
-import { readRequestCookies } from "@/lib/cookies";
+import { readRequestCookies, sanitizeUserCookies } from "@/lib/cookies";
 import {
   enforceYouTubeExtractLimit,
   handleYoutubeGuardError,
@@ -17,7 +17,7 @@ export async function POST(req: Request) {
   try {
     const body = await req.json();
     const { url } = body;
-    const cookies = readRequestCookies(req) ?? body.cookies;
+    const cookies = readRequestCookies(req) ?? sanitizeUserCookies(body.cookies);
 
     if (!url || typeof url !== "string") {
       return NextResponse.json({ error: "Missing url" }, { status: 400 });

@@ -46,6 +46,7 @@ import Icon from "@/components/Icon";
 import LoadingOverlay from "@/components/LoadingOverlay";
 import MediaResultRow, { type MediaResultItem } from "@/components/MediaResultRow";
 import ResetModal from "@/components/ResetModal";
+import YouTubeStatusChip from "@/components/YouTubeStatusChip";
 import { useAppContext } from "@/context/AppContext";
 import type { Media } from "@/interfaces";
 import { youtubeErrorTitle } from "@/lib/apiError";
@@ -635,37 +636,40 @@ export default function UploadPage() {
           <Container size="md" w="100%" px={0}>
             <Stack gap={isMobileLayout ? "md" : "lg"}>
               <Group justify="space-between" align="center" wrap="nowrap">
-                <UnstyledButton
-                  type="button"
-                  aria-label="Moonlit — clear search"
-                  className="moonlit-focusable"
-                  onClick={() => clearSearchRef.current?.()}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: rem(10),
-                    userSelect: "none",
-                    WebkitUserSelect: "none",
-                    cursor: "pointer",
-                    borderRadius: rem(8),
-                  }}
-                >
-                  <Icon size={18} />
-                  <Text
-                    span
-                    fw={700}
-                    c="white"
+                <Group gap="sm" align="center" wrap="nowrap" style={{ minWidth: 0 }}>
+                  <UnstyledButton
+                    type="button"
+                    aria-label="Moonlit — clear search"
+                    className="moonlit-focusable"
+                    onClick={() => clearSearchRef.current?.()}
                     style={{
-                      fontSize: isMobileLayout ? rem(20) : rem(22),
-                      letterSpacing: rem(-0.3),
-                      lineHeight: 1.2,
+                      display: "flex",
+                      alignItems: "center",
+                      gap: rem(10),
                       userSelect: "none",
                       WebkitUserSelect: "none",
+                      cursor: "pointer",
+                      borderRadius: rem(8),
                     }}
                   >
-                    Moonlit
-                  </Text>
-                </UnstyledButton>
+                    <Icon size={18} />
+                    <Text
+                      span
+                      fw={700}
+                      c="white"
+                      style={{
+                        fontSize: isMobileLayout ? rem(20) : rem(22),
+                        letterSpacing: rem(-0.3),
+                        lineHeight: 1.2,
+                        userSelect: "none",
+                        WebkitUserSelect: "none",
+                      }}
+                    >
+                      Moonlit
+                    </Text>
+                  </UnstyledButton>
+                  <YouTubeStatusChip />
+                </Group>
                 <AppMenu
                   setCookiesOpened={setCookiesOpened}
                   setResetOpened={setResetOpened}

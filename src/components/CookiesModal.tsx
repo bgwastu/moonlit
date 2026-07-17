@@ -5,6 +5,7 @@ import { Button, Flex, Modal, Stack, Switch, Text, Textarea } from "@mantine/cor
 import {
   getUserCookies,
   isCustomCookiesEnabled,
+  notifyCookiesChanged,
   setCustomCookiesEnabled,
   setUserCookies,
   validateCookies,
@@ -44,6 +45,7 @@ export default function CookiesModal({ opened, onClose }: CookiesModalProps) {
       }
       setUserCookies(cookies);
       setCustomCookiesEnabled(customEnabled);
+      notifyCookiesChanged();
       onClose();
     } catch {
       setValidationError("Failed to save cookies. Please try again.");
@@ -60,8 +62,9 @@ export default function CookiesModal({ opened, onClose }: CookiesModalProps) {
           label="Enable custom cookies"
           description={
             <Text component="span" size="xs" c="dimmed">
-              Cookies help bypass age restrictions and rate limits for YouTube. Export
-              from your browser using{" "}
+              Cookies help bypass age restrictions and rate limits for YouTube. Export a
+              Netscape cookies.txt while signed into YouTube (needs LOGIN_INFO or
+              __Secure-1PSID). Extra non-YouTube domains are ignored. Use{" "}
               <Text
                 component="a"
                 href="https://chromewebstore.google.com/detail/get-cookiestxt-locally/cclelndahbckbenkjhflpdbgdldlbecc"
@@ -69,9 +72,9 @@ export default function CookiesModal({ opened, onClose }: CookiesModalProps) {
                 td="underline"
                 inherit
               >
-                This extension
+                this extension
               </Text>
-              .
+              . Unrelated domains are rejected.
             </Text>
           }
           checked={customEnabled}

@@ -183,8 +183,9 @@ function netscapeToCookieString(netscape: string): string {
     if (parts.length < 7) continue;
     const name = parts[5]?.trim();
     const value = parts[6]?.trim();
-    if (name && value) {
-      pairs.push(`${encodeURIComponent(name)}=${encodeURIComponent(value)}`);
+    // Cookie header values must stay raw — URI-encoding breaks LOGIN_INFO / PSID auth.
+    if (name && value && !/[;\n\r]/.test(name) && !/[;\n\r]/.test(value)) {
+      pairs.push(`${name}=${value}`);
     }
   }
   return pairs.join("; ");
@@ -198,6 +199,17 @@ async function resolveCookieString(userCookies?: string): Promise<string | undef
     return userCookies;
   }
   return (await getSystemCookieString()) ?? undefined;
+}
+
+export type YoutubeCookieSource = "user" | "system" | "none";
+
+/** Which cookie layer would be used for YouTube requests (user header → system file → none). */
+export async function getYoutubeCookieSource(
+  userCookies?: string,
+): Promise<YoutubeCookieSource> {
+  if (userCookies?.trim()) return "user";
+  const system = await getSystemCookieString();
+  return system ? "system" : "none";
 }
 
 function simpleHash(s: string): string {
