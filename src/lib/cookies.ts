@@ -1,7 +1,7 @@
 const COOKIES_KEY = "moonlit-yt-cookies";
 const CUSTOM_COOKIES_ENABLED_KEY = "moonlit-custom-cookies-enabled";
 
-export const MOONLIT_COOKIES_HEADER = "X-Moonlit-Cookies";
+const MOONLIT_COOKIES_HEADER = "X-Moonlit-Cookies";
 export const COOKIES_CHANGED_EVENT = "moonlit:cookies-changed";
 const COOKIE_HEADER_PREFIX = "b64:";
 
@@ -143,7 +143,7 @@ function looksLikeAuthCookieValue(name: string, value: string): boolean {
  * Keep only YouTube/Google rows and ensure a real session cookie is present.
  * Extra domains from browser exports are ignored (not a hard error).
  */
-export function filterYoutubeCookies(
+function filterYoutubeCookies(
   content: string,
 ): { ok: true; cookies: string } | { ok: false; error: string } {
   if (!content.trim()) {

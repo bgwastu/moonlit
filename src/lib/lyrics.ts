@@ -109,7 +109,7 @@ function instrumentalLine(startTimeMs: number, durationMs: number): Lyric {
  * Insert ♪ placeholders for long intros, explicit empty LRC rows, clear
  * mid-song breaks, and outros — without cutting short still-sung lines.
  */
-export function insertInstrumentalGaps(lyrics: Lyric[]): Lyric[] {
+function insertInstrumentalGaps(lyrics: Lyric[]): Lyric[] {
   if (lyrics.length === 0) return lyrics;
 
   const result: Lyric[] = [];
@@ -338,7 +338,7 @@ export function parseLRC(lrcText: string, songDurationMs: number): Lyric[] {
 }
 
 /** True when text looks like Apple / Better Lyrics TTML rather than LRC. */
-export function isTtml(text: string): boolean {
+function isTtml(text: string): boolean {
   const trimmed = text.trim();
   if (!trimmed.startsWith("<")) return false;
   return (
@@ -379,7 +379,7 @@ function getAttr(el: Element, name: string): string | null {
  * Parse Apple Music–style TTML (word/syllable spans) into Lyric[].
  * Uses DOMParser (browser). Empty or invalid input returns [].
  */
-export function parseTTML(ttmlText: string, songDurationMs: number): Lyric[] {
+function parseTTML(ttmlText: string, songDurationMs: number): Lyric[] {
   if (!ttmlText?.trim() || typeof DOMParser === "undefined") return [];
 
   let doc: Document;

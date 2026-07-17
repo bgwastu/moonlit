@@ -76,6 +76,7 @@ import {
   createDynamicTheme,
   getOriginalPlatformUrl,
   getSemitonesFromRate,
+  isSameMediaSource,
 } from "@/utils/player";
 import { StreamError, StreamState, streamWithProgress } from "@/utils/streamer";
 import CustomizePlaybackModal from "./CustomizePlaybackModal";
@@ -119,9 +120,6 @@ function getPrepopulatedMetadata(
 
 export function Player({
   url,
-  duration: propDuration,
-  media: propMedia,
-  repeating: _repeating,
   mode = "expanded",
   autoPlay = true,
   resumePosition = 0,
@@ -130,9 +128,6 @@ export function Player({
   onRequestClose,
 }: {
   url?: string;
-  duration?: number;
-  media?: Media;
-  repeating?: boolean;
   mode?: Exclude<PlayerMode, "hidden">;
   /** When false (session restore), load the track but stay paused. */
   autoPlay?: boolean;
@@ -162,7 +157,10 @@ export function Player({
    * streams (extract OK, play fail) re-extract forever and burn the rate limit. */
   const audioErrorCount = useRef(0);
   const extractAbortRef = useRef<AbortController | null>(null);
+  const audioErrorRetryRef = useRef<number | null>(null);
+  const urlRef = useRef(url);
   const autoPlayedRef = useRef(false);
+  const autoPlayGenRef = useRef(0);
   const bottomBarRef = useRef<HTMLDivElement>(null);
   const [barHeight, setBarHeight] = useState(148);
 
@@ -223,18 +221,22 @@ export function Player({
   const media = useMemo(() => {
     // Ignore stale media from a previous track while a new URL loads
     const sameSource = (m: Media | null | undefined) =>
-      m && (!url || m.sourceUrl === url) ? m : null;
+      m && (!url || isSameMediaSource(m.sourceUrl, url)) ? m : null;
     const extracted = sameSource(extractedMedia);
     const context = sameSource(contextMedia);
-    const prop = sameSource(propMedia);
 
     // Prefer a playable fileUrl; keep context/provisional as metadata shell.
-    // Prefer context over provisional so history-seeded titles/covers win the merge primary.
+    // When history reseeds the same source with a new blob, prefer context over
+    // stale extractedMedia (URL-reset never cleared it because the URL matched).
+    const fresherContext =
+      context?.fileUrl && extracted?.fileUrl && context.fileUrl !== extracted.fileUrl
+        ? context
+        : null;
     const playable =
-      (prop?.fileUrl ? prop : null) ||
+      fresherContext ||
       (extracted?.fileUrl ? extracted : null) ||
       (context?.fileUrl ? context : null);
-    const shell = playable || prop || extracted || context || provisionalMedia;
+    const shell = playable || extracted || context || provisionalMedia;
     if (!shell) return null;
 
     const ytId = getYouTubeId(shell.sourceUrl || url || "");
@@ -249,7 +251,7 @@ export function Player({
         ytId ? peekSearchMeta(ytId) : undefined,
       ),
     };
-  }, [propMedia, extractedMedia, provisionalMedia, url, contextMedia]);
+  }, [extractedMedia, provisionalMedia, url, contextMedia]);
   // Show extracting UI only when resolving URL and not in error state
   const isExtracting = !media && !!url && streamState.status !== "error";
   const isMediaReady = Boolean(media?.fileUrl);
@@ -331,6 +333,10 @@ export function Player({
     });
   }, [startStream]);
 
+  useEffect(() => {
+    urlRef.current = url;
+  }, [url]);
+
   // Reset extraction when the source URL changes (new track while shell stays mounted)
   const prevUrlRef = useRef(url);
   useEffect(() => {
@@ -338,9 +344,14 @@ export function Player({
     prevUrlRef.current = url;
     extractAbortRef.current?.abort();
     extractAbortRef.current = null;
+    if (audioErrorRetryRef.current !== null) {
+      window.clearTimeout(audioErrorRetryRef.current);
+      audioErrorRetryRef.current = null;
+    }
     streamStarted.current = false;
     audioErrorCount.current = 0;
     autoPlayedRef.current = false;
+    autoPlayGenRef.current += 1;
     setExtractedMedia(null);
     setPlaybackError(null);
     setStreamState({ status: "idle" });
@@ -348,10 +359,10 @@ export function Player({
     if (url) {
       setMedia((prev) => {
         if (!prev) return null;
-        if (prev.sourceUrl === url) return prev;
+        if (isSameMediaSource(prev.sourceUrl, url)) return prev;
         const prevId = getYouTubeId(prev.sourceUrl) ?? prev.metadata.id;
         const nextId = getYouTubeId(url);
-        if (prevId && nextId && prevId === nextId) return prev;
+        if (prevId && nextId && String(prevId) === String(nextId)) return prev;
         return null;
       });
     }
@@ -360,44 +371,36 @@ export function Player({
   // Reset autoplay gate whenever the playable file changes
   useEffect(() => {
     autoPlayedRef.current = false;
+    autoPlayGenRef.current += 1;
   }, [media?.fileUrl]);
 
-  // Same-URL history replay (e.g. session-restored track) keeps prevUrl equal, so the
-  // URL reset effect never clears extractedMedia — adopt a freshly seeded blob here.
+  // Ensure extracted media for URL mode: adopt a history/cache seed, or start extract.
+  // Same-URL replay keeps prevUrl equal so the URL-reset effect never clears
+  // extractedMedia — adopt a fresher context blob when fileUrl differs.
+  // Key context by fileUrl/sourceUrl so metadata-only setMedia does not abort extract.
   useEffect(() => {
-    if (!url || !contextMedia?.fileUrl) return;
-    const same =
-      contextMedia.sourceUrl === url ||
-      (!!getYouTubeId(contextMedia.sourceUrl) &&
-        getYouTubeId(contextMedia.sourceUrl) === getYouTubeId(url));
-    if (!same) return;
-    if (extractedMedia?.fileUrl === contextMedia.fileUrl) return;
-    const seeded = contextMedia;
-    const timer = window.setTimeout(() => {
-      autoPlayedRef.current = false;
-      streamStarted.current = true;
-      setExtractedMedia(seeded);
-    }, 0);
-    return () => window.clearTimeout(timer);
-  }, [url, contextMedia, extractedMedia?.fileUrl]);
-
-  // Auto-start stream for URL mode — check extractedMedia, not media (which includes provisionalMedia)
-  useEffect(() => {
-    if (extractedMedia || streamStarted.current) return;
     if (!url) return;
-    streamStarted.current = true;
 
-    // History/cache open already seeded a playable blob — reuse it instead of
-    // re-resolving the cache with id-only metadata (which becomes Unknown).
     const seeded =
-      contextMedia?.fileUrl &&
-      (contextMedia.sourceUrl === url ||
-        (getYouTubeId(contextMedia.sourceUrl) &&
-          getYouTubeId(contextMedia.sourceUrl) === getYouTubeId(url)))
+      contextMedia?.fileUrl && isSameMediaSource(contextMedia.sourceUrl, url)
         ? contextMedia
         : null;
 
-    // Defer so we don't sync-setState inside the effect body (React Compiler lint).
+    if (seeded && extractedMedia?.fileUrl !== seeded.fileUrl) {
+      extractAbortRef.current?.abort();
+      extractAbortRef.current = null;
+      const adopt = seeded;
+      const timer = window.setTimeout(() => {
+        autoPlayedRef.current = false;
+        streamStarted.current = true;
+        setExtractedMedia(adopt);
+      }, 0);
+      return () => window.clearTimeout(timer);
+    }
+
+    if (extractedMedia || streamStarted.current) return;
+    streamStarted.current = true;
+
     const timer = window.setTimeout(() => {
       if (seeded) {
         setExtractedMedia(seeded);
@@ -411,7 +414,10 @@ export function Player({
       extractAbortRef.current = null;
       streamStarted.current = false;
     };
-  }, [url, extractedMedia, startStream, contextMedia]);
+    // Seed payload reads full contextMedia; deps key identity only so metadata
+    // updates do not abort an in-flight extract.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- see above
+  }, [url, extractedMedia, contextMedia?.fileUrl, contextMedia?.sourceUrl, startStream]);
 
   // Measure bottom chrome for mini-player clip height
   useEffect(() => {
@@ -606,7 +612,7 @@ export function Player({
       }
       audioErrorCount.current++;
       // Drop expired fileUrl but keep titles/cover so the shell doesn't flash Unknown.
-      if (contextMedia && (!url || contextMedia.sourceUrl === url)) {
+      if (contextMedia && (!url || isSameMediaSource(contextMedia.sourceUrl, url))) {
         setMedia({
           fileUrl: "",
           sourceUrl: contextMedia.sourceUrl,
@@ -617,7 +623,13 @@ export function Player({
       streamStarted.current = true;
       setStreamState({ status: "idle" });
       setPlaybackError(null);
-      window.setTimeout(() => {
+      if (audioErrorRetryRef.current !== null) {
+        window.clearTimeout(audioErrorRetryRef.current);
+      }
+      const retryUrl = url;
+      audioErrorRetryRef.current = window.setTimeout(() => {
+        audioErrorRetryRef.current = null;
+        if (urlRef.current !== retryUrl) return;
         startStream();
       }, 500);
     },
@@ -658,15 +670,14 @@ export function Player({
     initialVolume: globalPrefs.volume,
     initialPosition: stateLoaded ? initialStartAt : 0,
     isRepeat,
-    autoPlay: false,
     onError: handleAudioError,
   });
 
-  // Allow another autoplay attempt when the engine reloads (history seeds fileUrl
-  // early; a ready→loading→ready flicker used to leave autoPlayed stuck true).
+  // Engine reload (ready→loading→ready) with the same fileUrl must retry autoplay.
   useEffect(() => {
     if (stretchState === "loading") {
       autoPlayedRef.current = false;
+      autoPlayGenRef.current += 1;
     }
   }, [stretchState]);
 
@@ -675,24 +686,31 @@ export function Player({
   useEffect(() => {
     if (autoPlay && !prevAutoPlayRef.current) {
       autoPlayedRef.current = false;
+      autoPlayGenRef.current += 1;
     }
     prevAutoPlayRef.current = autoPlay;
   }, [autoPlay]);
 
-  // Try autoplay when playable media is ready (key off fileUrl so provisional media can't steal the flag)
+  // Try autoplay when playable media is ready (key off fileUrl so provisional media can't steal the flag).
+  // Generation + optimistic latch prevent overlapping play() while still clearing on cleanup/failure.
   useEffect(() => {
     if (!autoPlay) return;
     if (!media?.fileUrl || stretchState !== "ready" || autoPlayedRef.current) return;
-    let cancelled = false;
+    const gen = ++autoPlayGenRef.current;
+    autoPlayedRef.current = true;
     const id = setTimeout(() => {
       void (async () => {
         const ok = await play();
-        if (!cancelled) autoPlayedRef.current = ok;
+        if (autoPlayGenRef.current !== gen) return;
+        autoPlayedRef.current = ok;
       })();
     }, 100);
     return () => {
-      cancelled = true;
       clearTimeout(id);
+      if (autoPlayGenRef.current === gen) {
+        autoPlayedRef.current = false;
+        autoPlayGenRef.current += 1;
+      }
     };
   }, [autoPlay, media?.fileUrl, stretchState, play]);
 

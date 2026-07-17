@@ -6,7 +6,7 @@ import { getYouTubeId } from "@/utils";
 export const YOUTUBE_ANDROID_VR_UA =
   "com.google.android.apps.youtube.vr.oculus/1.65.10 (Linux; U; Android 12L; eureka-user Build/SQ3A.220605.009.A1) gzip";
 
-export const YOUTUBE_TV_UA = "Mozilla/5.0 (ChromiumStylePlatform) Cobalt/Version";
+const YOUTUBE_TV_UA = "Mozilla/5.0 (ChromiumStylePlatform) Cobalt/Version";
 
 export interface YouTubeSearchResult {
   id: string;

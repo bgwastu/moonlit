@@ -2,7 +2,7 @@ import { ProxyAgent, setGlobalDispatcher } from "undici";
 
 let initialized = false;
 
-export function initProxy(): void {
+function initProxy(): void {
   if (initialized) return;
   initialized = true;
 

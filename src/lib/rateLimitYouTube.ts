@@ -33,7 +33,7 @@ export function enforceYouTubeStatusLimit(
   return null;
 }
 
-export function youtubeCircuitResponse(retryAfterSec: number): Response {
+function youtubeCircuitResponse(retryAfterSec: number): Response {
   return Response.json(
     {
       error: "YouTube is temporarily unavailable. Please try again shortly.",

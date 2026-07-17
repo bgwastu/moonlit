@@ -48,12 +48,10 @@ export default function HistoryList({
     const cached = await resolveCachedMedia(item);
     if (cached) {
       // Pass url for YouTube so embed id resolves; IDB stays audio-only.
-      // Normalize sourceUrl to playUrl so Player same-source checks keep the shell.
+      // Normalize sourceUrl to playUrl so shell identity stays aligned with the open URL.
       openPlayer({
         media: { ...cached, sourceUrl: playUrl },
         url: playUrl,
-        expand: true,
-        autoPlay: true,
       });
       return;
     }
@@ -67,8 +65,6 @@ export default function HistoryList({
         metadata: { ...item.metadata },
         ...(item.isAudioTrackVideo ? { isAudioTrackVideo: true } : {}),
       },
-      expand: true,
-      autoPlay: true,
     });
   };
 

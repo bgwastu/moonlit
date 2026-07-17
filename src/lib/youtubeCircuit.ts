@@ -31,7 +31,7 @@ export function assertYoutubeCircuitClosed(): void {
   }
 }
 
-export function recordYoutubeOutcome(ok: boolean): void {
+function recordYoutubeOutcome(ok: boolean): void {
   const now = Date.now();
   samples.push({ at: now, ok });
   prune(now);

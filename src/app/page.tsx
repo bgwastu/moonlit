@@ -243,6 +243,7 @@ function SearchPanel({
   const [loading, setLoading] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const searchAbortRef = useRef<AbortController | null>(null);
   const form = useForm({ initialValues: { query: "" } });
   const query = form.values.query.trim();
   const hasQuery = form.values.query.length > 0;
@@ -262,6 +263,8 @@ function SearchPanel({
   const showLinkHint = isLink && !loading && query.length > 0;
 
   function resetSearchUi() {
+    searchAbortRef.current?.abort();
+    searchAbortRef.current = null;
     form.reset();
     setResults([]);
     setResultsForQuery("");
@@ -274,6 +277,8 @@ function SearchPanel({
   clearSearchRef.current = resetSearchUi;
 
   function clearInput() {
+    searchAbortRef.current?.abort();
+    searchAbortRef.current = null;
     form.setFieldValue("query", "");
     setResults([]);
     setResultsForQuery("");
@@ -284,13 +289,17 @@ function SearchPanel({
   }
 
   const search = useCallback(
-    async (value: string, signal?: AbortSignal, showErrors = true) => {
+    async (value: string, showErrors = true) => {
+      searchAbortRef.current?.abort();
+      const controller = new AbortController();
+      searchAbortRef.current = controller;
+
       setLoading(true);
       setSearchActive(true);
       try {
         const response = await fetch(
           `/api/youtube/search?q=${encodeURIComponent(value)}&limit=${SEARCH_LIMIT}`,
-          { signal, headers: cookieRequestHeaders() },
+          { signal: controller.signal, headers: cookieRequestHeaders() },
         );
         const data = (await response.json()) as {
           results?: YouTubeResult[];
@@ -302,11 +311,13 @@ function SearchPanel({
           if (data.code) Object.assign(err, { code: data.code });
           throw err;
         }
+        if (searchAbortRef.current !== controller) return;
         setResults(data.results ?? []);
         setResultsForQuery(value.trim());
         setHasSearched(true);
       } catch (error) {
         if (error instanceof DOMException && error.name === "AbortError") return;
+        if (searchAbortRef.current !== controller) return;
         setResults([]);
         setResultsForQuery("");
         setHasSearched(true);
@@ -331,7 +342,10 @@ function SearchPanel({
           });
         }
       } finally {
-        setLoading(false);
+        if (searchAbortRef.current === controller) {
+          setLoading(false);
+          searchAbortRef.current = null;
+        }
       }
     },
     [setSearchActive],
@@ -363,7 +377,7 @@ function SearchPanel({
       return;
     }
 
-    await search(clean, undefined, true);
+    await search(clean, true);
   }
 
   function playResult(result: YouTubeResult) {

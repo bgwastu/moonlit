@@ -67,11 +67,6 @@ export function youtubeErrorCode(
   return undefined;
 }
 
-/** @deprecated Use youtubeErrorCode */
-export function searchErrorCode(message: string): string | undefined {
-  return youtubeErrorCode(message);
-}
-
 export function youtubeErrorTitle(code?: string): string {
   switch (code) {
     case "RATE_LIMITED":

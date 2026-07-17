@@ -2,7 +2,7 @@ import type { Media } from "@/interfaces";
 
 const STORAGE_PREFIX = "moonlit-search-meta:";
 
-/** Survives sessionStorage consumption (Strict Mode remounts, cache hits after restore). */
+/** In-memory mirror so Strict Mode remounts / restore still see stashed titles. */
 const memoryCache = new Map<string, Partial<Media["metadata"]>>();
 
 function storageKey(id: string) {
@@ -43,24 +43,6 @@ export function peekSearchMeta(id: string): Partial<Media["metadata"]> | undefin
   return memoryCache.get(id);
 }
 
-/**
- * Read metadata and move it into the in-memory cache (one-time sessionStorage consume).
- * Used when the player shell first mounts for a URL.
- */
-export function consumeSearchMeta(id: string): Partial<Media["metadata"]> | undefined {
-  const meta = peekSearchMeta(id);
-  if (!meta) return undefined;
-  memoryCache.set(id, { ...memoryCache.get(id), ...meta });
-  if (typeof window !== "undefined") {
-    try {
-      sessionStorage.removeItem(storageKey(id));
-    } catch {
-      // ignore
-    }
-  }
-  return meta;
-}
-
 const PLACEHOLDER = new Set(["", "Unknown"]);
 
 export function isKnownMetaValue(value: string | undefined | null): value is string {
@@ -72,7 +54,7 @@ function isKnown(value: string | undefined | null): value is string {
 }
 
 /** YouTube page thumbs (hqdefault etc.) — prefer music/search covers over these. */
-export function isWeakCoverUrl(url: string | undefined | null): boolean {
+function isWeakCoverUrl(url: string | undefined | null): boolean {
   if (!url) return true;
   let decoded = url;
   try {

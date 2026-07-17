@@ -21,7 +21,6 @@ interface UseStretchPlayerProps {
   initialPosition?: number;
   initialReverbAmount?: number;
   initialVolume?: number;
-  autoPlay?: boolean;
   isRepeat?: boolean;
   onEnded?: () => void;
   onError?: (e: unknown) => void;
@@ -267,7 +266,6 @@ export function useStretchPlayer({
   initialPosition = 0,
   initialReverbAmount = 0,
   initialVolume = 1,
-  autoPlay = true,
   isRepeat = false,
   onEnded,
   onError: onPlayerError,
@@ -651,7 +649,9 @@ export function useStretchPlayer({
 
           setState("ready");
           setProgress(null);
-          if (autoPlay || wasPlayingBeforeSwitch.current) {
+          // Resume only when toggling stretch on a track that was already playing.
+          // Fresh starts / session restore are owned by Player's autoplay effect.
+          if (wasPlayingBeforeSwitch.current) {
             setTimeout(async () => {
               if (aborted) return;
               const rt2 = runtime.current;
@@ -710,7 +710,7 @@ export function useStretchPlayer({
             if (resumePos > 0) audio.currentTime = resumePos;
             runtime.current.currentPosition = resumePos;
             setCurrentTime(resumePos);
-            if (autoPlay || wasPlayingBeforeSwitch.current) {
+            if (wasPlayingBeforeSwitch.current) {
               audio.play().then(
                 () => {
                   runtime.current.isPlaying = true;
@@ -746,7 +746,6 @@ export function useStretchPlayer({
     fileUrl,
     advancedStretch,
     initialPosition,
-    autoPlay,
     onPlayerError,
     cleanup,
     initFullMode,
@@ -759,7 +758,10 @@ export function useStretchPlayer({
     const a = audioRef.current;
     if (!a) return false;
     const rt = runtime.current;
-    if ("mediaSession" in navigator) navigator.mediaSession.playbackState = "playing";
+    const playGeneration = initializationId.current;
+
+    const stillCurrent = () =>
+      initializationId.current === playGeneration && audioRef.current === a;
 
     if (!advancedStretchRef.current) {
       // Native mode
@@ -769,10 +771,15 @@ export function useStretchPlayer({
           rt.currentPosition = startTime;
         }
         await a.play();
+        if (!stillCurrent()) return false;
         rt.isPlaying = true;
         setIsPlaying(true);
+        if ("mediaSession" in navigator) {
+          navigator.mediaSession.playbackState = "playing";
+        }
         return true;
       } catch {
+        if (!stillCurrent()) return false;
         rt.isPlaying = false;
         setIsPlaying(false);
         return false;
@@ -785,10 +792,12 @@ export function useStretchPlayer({
       try {
         await rt.audioContext.resume();
       } catch {
+        if (!stillCurrent()) return false;
         setIsPlaying(false);
         return false;
       }
     }
+    if (!stillCurrent() || !rt.audioContext || !rt.stretch) return false;
     const t =
       startTime !== undefined && Number.isFinite(startTime)
         ? Math.max(0, Math.min(startTime, rt.duration))
@@ -806,6 +815,9 @@ export function useStretchPlayer({
     a.play().catch(() => {});
     if (rt.rafId === null) {
       startStretchTick(rt, setCurrentTime, setIsPlaying, true);
+    }
+    if ("mediaSession" in navigator) {
+      navigator.mediaSession.playbackState = "playing";
     }
     return true;
   }, []);

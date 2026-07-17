@@ -1,7 +1,22 @@
 import { generateColors } from "@mantine/colors-generator";
 import { type MantineThemeOverride, createTheme } from "@mantine/core";
 import { Media } from "@/interfaces";
-import { getPlatform } from "@/utils";
+import { getPlatform, getYouTubeId } from "@/utils";
+
+/**
+ * True when both URLs refer to the same track (exact match or same YouTube id).
+ * Handles youtu.be vs watch?v= without requiring callers to normalize first.
+ */
+export function isSameMediaSource(
+  a: string | null | undefined,
+  b: string | null | undefined,
+): boolean {
+  if (!a || !b) return false;
+  if (a === b) return true;
+  const aId = getYouTubeId(a);
+  const bId = getYouTubeId(b);
+  return Boolean(aId && bId && aId === bId);
+}
 
 /**
  * Get the original platform URL for the current video.

@@ -103,10 +103,12 @@ export default function DownloadModal({
     setIsProcessing(true);
     setExportError(null);
     const exportStartedAt = performance.now();
-    const mark = (stage: string) =>
+    const mark = (stage: string) => {
+      if (process.env.NODE_ENV !== "development") return;
       console.log(
         `[Moonlit][download] ${stage} (${Math.round(performance.now() - exportStartedAt)}ms)`,
       );
+    };
 
     try {
       mark("started");

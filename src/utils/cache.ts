@@ -1,8 +1,6 @@
 import localforage from "localforage";
 import { MAX_CACHED_TRACKS } from "@/lib/constants";
 
-export { MAX_CACHED_TRACKS };
-
 const META_KEY = "__moonlit-cache-meta__";
 
 const mediaStore = localforage.createInstance({
@@ -63,7 +61,7 @@ export async function setMediaCacheWithLimit(key: string, blob: Blob): Promise<v
   }
 }
 
-export async function touchMediaCache(key: string): Promise<void> {
+async function touchMediaCache(key: string): Promise<void> {
   try {
     const exists = await mediaStore.getItem(key);
     if (!exists) return;
@@ -80,17 +78,6 @@ export async function getCachedMediaUrl(sourceUrl: string): Promise<string | nul
   if (!blob) return null;
   await touchMediaCache(sourceUrl);
   return URL.createObjectURL(blob);
-}
-
-export async function removeMediaCache(key: string): Promise<void> {
-  try {
-    await mediaStore.removeItem(key);
-    const meta = await getMeta();
-    meta.order = meta.order.filter((entry) => entry !== key);
-    await saveMeta(meta);
-  } catch (e) {
-    console.error("Failed to remove media from cache:", e);
-  }
 }
 
 export async function clearMediaCache(): Promise<void> {

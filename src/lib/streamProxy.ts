@@ -24,7 +24,7 @@ function parseRangeHeader(header: string | null): ByteRange | null {
   return { start, end };
 }
 
-export function boundByteRange(rangeHeader: string | null, fileSize?: number): ByteRange {
+function boundByteRange(rangeHeader: string | null, fileSize?: number): ByteRange {
   const parsed = parseRangeHeader(rangeHeader);
   let start = parsed?.start ?? 0;
   let end = parsed?.end ?? start + STREAM_CHUNK_BYTES - 1;
