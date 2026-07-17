@@ -2,6 +2,8 @@ import { Media } from "@/interfaces";
 import { parseApiErrorBody } from "@/lib/apiError";
 import { cookieRequestHeaders, getCookiesToUse } from "@/lib/cookies";
 import { mediaFromLocalCache } from "@/lib/playFromCache";
+import { mergeTrackMetadata } from "@/lib/searchMeta";
+import { isMarkedAudioTrackVideo, markAudioTrackVideo } from "@/lib/trackFlags";
 import { getYouTubeId, isDirectMediaURL, isYoutubeURL } from "@/utils";
 
 export interface StreamState {
@@ -33,39 +35,23 @@ function buildMetadata(
   };
 }
 
-/**
- * Extract a playable media from a URL. Handles:
- *   - Direct media files (local, same-origin, or remote .mp3/.m4a/etc.)
- *   - YouTube URLs (via the /api/stream/extract endpoint)
- *
- * Calls onState() with progress updates. Resolves with the Media object.
- */
-export async function streamWithProgress(
+type ExtractPayload = {
+  token: string;
+  isAudioTrackVideo?: boolean;
+  metadata?: {
+    title?: string;
+    author?: string;
+    artist?: string;
+    album?: string;
+    coverUrl?: string;
+  };
+};
+
+async function extractYouTube(
   url: string,
-  onState: (state: StreamState) => void,
   abortSignal?: AbortSignal,
-): Promise<Media> {
-  // ---- Direct media files ----
-  if (isDirectMediaURL(url)) {
-    return handleDirectMedia(url, onState, abortSignal);
-  }
-
-  // ---- YouTube ----
-  const isYouTube = isYoutubeURL(url);
-
-  if (isYouTube) {
-    const id = getYouTubeId(url);
-    const cached = await mediaFromLocalCache(url, id ? { id } : undefined);
-    if (cached) {
-      onState({ status: "ready" });
-      return cached;
-    }
-  }
-
-  onState({ status: "extracting", message: "Extracting stream..." });
-
+): Promise<ExtractPayload> {
   const { cookies } = getCookiesToUse();
-
   const res = await fetch("/api/stream/extract", {
     method: "POST",
     headers: {
@@ -81,29 +67,78 @@ export async function streamWithProgress(
     throw new StreamError(body.error || `Extract failed (${res.status})`, body.code);
   }
 
-  const data = await res.json();
+  return (await res.json()) as ExtractPayload;
+}
 
-  const streamUrl = `/api/stream/${data.token}`;
+function mediaFromExtract(
+  url: string,
+  data: ExtractPayload,
+  fileUrlOverride?: string,
+  priorMeta?: Media["metadata"],
+): Media {
+  const id = getYouTubeId(url);
+  const resolvedMetadata = mergeTrackMetadata(
+    buildMetadata(id || "unknown", {
+      title: data.metadata?.title || "",
+      author: data.metadata?.author || "",
+      artist: data.metadata?.artist,
+      album: data.metadata?.album,
+      coverUrl: data.metadata?.coverUrl || "",
+    }),
+    priorMeta,
+  );
 
-  const id = isYouTube ? getYouTubeId(url) : null;
-
-  const resolvedMetadata = buildMetadata(id || "unknown", {
-    title: data.metadata?.title || "",
-    author: data.metadata?.author || "",
-    artist: data.metadata?.artist,
-    album: data.metadata?.album,
-    coverUrl: data.metadata?.coverUrl || "",
-  });
-
-  onState({ status: "ready" });
+  markAudioTrackVideo(id, Boolean(data.isAudioTrackVideo));
 
   return {
-    fileUrl: streamUrl,
+    fileUrl: fileUrlOverride || `/api/stream/${data.token}`,
     sourceUrl: url,
-    ...(data.videoToken && { videoUrl: `/api/stream/${data.videoToken}` }),
     ...(data.isAudioTrackVideo && { isAudioTrackVideo: true }),
     metadata: resolvedMetadata,
   };
+}
+
+/**
+ * Extract a playable media from a URL. Handles:
+ *   - Direct media files (local, same-origin, or remote .mp3/.m4a/etc.)
+ *   - YouTube URLs (via the /api/stream/extract endpoint)
+ *
+ * YouTube video visuals use a client-side embed — we only extract audio.
+ */
+export async function streamWithProgress(
+  url: string,
+  onState: (state: StreamState) => void,
+  abortSignal?: AbortSignal,
+): Promise<Media> {
+  // ---- Direct media files ----
+  if (isDirectMediaURL(url)) {
+    return handleDirectMedia(url, onState, abortSignal);
+  }
+
+  // ---- YouTube ----
+  const isYouTube = isYoutubeURL(url);
+  if (!isYouTube) {
+    throw new StreamError("Unsupported URL");
+  }
+
+  const id = getYouTubeId(url);
+  const cached = await mediaFromLocalCache(url, id ? { id } : undefined);
+
+  // Audio cache hit: skip extract. Show video uses YouTube embed by video id.
+  if (cached) {
+    onState({ status: "ready" });
+    const atv = Boolean(cached.isAudioTrackVideo) || isMarkedAudioTrackVideo(id);
+    return {
+      ...cached,
+      ...(atv ? { isAudioTrackVideo: true } : {}),
+    };
+  }
+
+  onState({ status: "extracting", message: "Extracting stream..." });
+
+  const data = await extractYouTube(url, abortSignal);
+  onState({ status: "ready" });
+  return mediaFromExtract(url, data);
 }
 
 // ---- Direct media handler (inlined from previous implementation) ----

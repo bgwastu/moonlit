@@ -41,21 +41,9 @@ export async function POST(req: Request) {
       expiresAt,
     });
 
-    let videoToken: string | undefined;
-    if (streamInfo.videoUrl) {
-      videoToken = crypto.randomUUID();
-      store.set(videoToken, {
-        url: streamInfo.videoUrl,
-        contentType: streamInfo.videoContentType || "video/mp4",
-        headers: streamInfo.headers,
-        sourceUrl: streamInfo.sourceUrl,
-        expiresAt,
-      });
-    }
-
+    // Video is shown via YouTube embed on the client — no video proxy token.
     return NextResponse.json({
       token,
-      ...(videoToken && { videoToken }),
       url: streamInfo.url,
       metadata: {
         title: streamInfo.title,

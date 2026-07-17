@@ -37,13 +37,18 @@ export default function HistoryList({
   const handlePlay = async (item: HistoryItem) => {
     onPlay?.();
 
+    const url = historyItemSourceUrl(item);
     const cached = await resolveCachedMedia(item);
     if (cached) {
-      openPlayer({ media: cached, expand: true });
+      // Pass url for YouTube so embed id resolves; IDB stays audio-only.
+      openPlayer({
+        media: cached,
+        url: url ?? item.sourceUrl,
+        expand: true,
+      });
       return;
     }
 
-    const url = historyItemSourceUrl(item);
     if (!url) return;
     openPlayer({ url, expand: true });
   };

@@ -55,6 +55,7 @@ import { usePlayerSheetGestures } from "@/hooks/usePlayerSheetGestures";
 import { usePlayerTapGestures } from "@/hooks/usePlayerTapGestures";
 import { useStretchPlayer } from "@/hooks/useStretchPlayer";
 import { useSyncedVideo } from "@/hooks/useSyncedVideo";
+import { useSyncedYouTubeEmbed } from "@/hooks/useSyncedYouTubeEmbed";
 import { HistoryItem, LyricsSettings, Media } from "@/interfaces";
 import { youtubeErrorTitle } from "@/lib/apiError";
 import { MAX_HISTORY_ITEMS } from "@/lib/constants";
@@ -68,8 +69,9 @@ import {
 } from "@/lib/playerPrefs";
 import { mergeTrackMetadata, peekSearchMeta } from "@/lib/searchMeta";
 import { appTheme } from "@/lib/theme";
+import { isMarkedAudioTrackVideo } from "@/lib/trackFlags";
 import { getModeFromRate, getVideoState, saveVideoState } from "@/lib/videoState";
-import { getFormattedTime, getYouTubeId, isSupportedURL } from "@/utils";
+import { getFormattedTime, getYouTubeId, isSupportedURL, isYoutubeURL } from "@/utils";
 import {
   createDynamicTheme,
   getOriginalPlatformUrl,
@@ -765,34 +767,69 @@ export function Player({
     savePlaybackPrefs({ advancedStretch: enabled });
   }, []);
 
+  const youtubeVideoId = (() => {
+    if (!media?.sourceUrl || !isYoutubeURL(media.sourceUrl)) return undefined;
+    if (media.isAudioTrackVideo) return undefined;
+    const id = getYouTubeId(media.sourceUrl);
+    if (!id || isMarkedAudioTrackVideo(id)) return undefined;
+    return id;
+  })();
+
+  /** Local file video (blob / same-origin) — not a proxied YouTube stream. */
+  const localVideoUrl =
+    media?.videoUrl && !media.videoUrl.startsWith("/api/stream/")
+      ? media.videoUrl
+      : undefined;
+
   const handleToggleShowVideo = useCallback(() => {
-    if (!media?.videoUrl || media.isAudioTrackVideo) {
+    const canShow = Boolean(youtubeVideoId || localVideoUrl);
+    if (!canShow) {
       showToast("Video not available for this track");
       return;
     }
     const next = !showVideo;
     setShowVideoState(next);
     setShowVideo(next);
-  }, [media, showVideo, showToast]);
+  }, [youtubeVideoId, localVideoUrl, showVideo, showToast]);
 
-  /** Real motion video available (not YouTube Music ATV static art). */
-  const hasVideoStream = Boolean(media?.videoUrl && !media?.isAudioTrackVideo);
+  /** YouTube embed or local file video (not ATV / not proxied YT stream). */
+  const hasVideoStream = Boolean(youtubeVideoId || localVideoUrl);
   /** User wants video and this track can show it. */
   const showingVideo = Boolean(showVideo && hasVideoStream);
+  const showingYouTubeEmbed = Boolean(showingVideo && youtubeVideoId);
+  const showingLocalVideo = Boolean(showingVideo && localVideoUrl && !youtubeVideoId);
 
-  const { videoRef, isVideoReady, videoEl } = useSyncedVideo({
-    src: hasVideoStream ? media?.videoUrl : undefined,
-    active: showingVideo,
+  const {
+    videoRef,
+    isVideoReady: localVideoReady,
+    videoEl,
+  } = useSyncedVideo({
+    src: localVideoUrl,
+    active: showingLocalVideo,
     isPlaying,
     currentTime,
     rate,
   });
+  const { containerRef: embedContainerRef, isVideoReady: embedReady } =
+    useSyncedYouTubeEmbed({
+      // Only load the iframe when Show video is on — saves YT CDN bandwidth.
+      videoId: showingYouTubeEmbed ? youtubeVideoId : undefined,
+      active: showingYouTubeEmbed,
+      isPlaying,
+      currentTime,
+      rate,
+    });
+  const isVideoReady = showingYouTubeEmbed
+    ? embedReady
+    : showingLocalVideo
+      ? localVideoReady
+      : false;
   const showVideoCover = !showingVideo || !isVideoReady;
   const washCanvasRef = useRef<HTMLCanvasElement>(null);
 
-  // Paint a low-res moving wash from the on-screen video frames
+  // Paint a low-res moving wash from local <video> frames (iframe pixels aren't readable).
   useEffect(() => {
-    if (!showingVideo || isMini || !videoEl || !washCanvasRef.current) return;
+    if (!showingLocalVideo || isMini || !videoEl || !washCanvasRef.current) return;
     const canvas = washCanvasRef.current;
     const ctx = canvas.getContext("2d", { alpha: false });
     if (!ctx) return;
@@ -818,7 +855,7 @@ export function Player({
     };
     raf = requestAnimationFrame(draw);
     return () => cancelAnimationFrame(raf);
-  }, [showingVideo, videoEl, isMini]);
+  }, [showingLocalVideo, videoEl, isMini]);
 
   const handleReset = useCallback(() => {
     setRate(1);
@@ -1482,8 +1519,8 @@ export function Player({
           touchAction: isMobile ? "none" : undefined,
         }}
       >
-        {/* Blurred wash — live video frames when showing video, else cover art */}
-        {showingVideo && media.videoUrl ? (
+        {/* Blurred wash — local video frames when available; YouTube embed uses cover */}
+        {showingLocalVideo ? (
           <>
             <canvas
               ref={washCanvasRef}
@@ -1737,15 +1774,36 @@ export function Player({
                     style={{ display: "none" }}
                     preload="metadata"
                   />
-                  {/* Keep video mounted whenever a stream exists — hide instead of unmount. */}
-                  {hasVideoStream && media.videoUrl ? (
+                  {/* YouTube: muted embed (no video proxy). Local files: <video>. */}
+                  {showingYouTubeEmbed && youtubeVideoId ? (
+                    <div
+                      ref={embedContainerRef}
+                      key={youtubeVideoId}
+                      // overflow + pointer-events help crop YT hover chrome (title/share/logo)
+                      style={{
+                        position: "absolute",
+                        inset: 0,
+                        width: "100%",
+                        height: "100%",
+                        borderRadius: theme.radius.md,
+                        overflow: "hidden",
+                        pointerEvents: "none",
+                        background: "rgba(0,0,0,0.35)",
+                        opacity: isVideoReady ? 1 : 0,
+                        filter: stretchState === "loading" ? "blur(8px)" : "none",
+                        transition: "opacity 0.2s ease-out, filter 0.3s ease-out",
+                        isolation: "isolate",
+                      }}
+                    />
+                  ) : null}
+                  {localVideoUrl ? (
                     <video
                       ref={videoRef}
-                      key={media.videoUrl}
-                      src={media.videoUrl}
+                      key={localVideoUrl}
+                      src={localVideoUrl}
                       muted
                       playsInline
-                      preload={showingVideo ? "auto" : "metadata"}
+                      preload={showingLocalVideo ? "auto" : "metadata"}
                       poster={coverUrl || undefined}
                       style={{
                         position: "absolute",
@@ -1757,7 +1815,7 @@ export function Player({
                         userSelect: "none",
                         pointerEvents: "none",
                         background: "rgba(0,0,0,0.35)",
-                        opacity: showingVideo && isVideoReady ? 1 : 0,
+                        opacity: showingLocalVideo && isVideoReady ? 1 : 0,
                         filter: stretchState === "loading" ? "blur(8px)" : "none",
                         transition: "opacity 0.2s ease-out, filter 0.3s ease-out",
                       }}
@@ -2083,13 +2141,13 @@ export function Player({
                   )}
                   <Menu.Divider />
                   <Menu.Label>Actions</Menu.Label>
-                  {!media?.isAudioTrackVideo && (
+                  {hasVideoStream && (
                     <Menu.Item
                       leftSection={<IconVideo size={14} />}
                       onClick={handleToggleShowVideo}
-                      disabled={!media?.videoUrl && !showVideo}
+                      disabled={!hasVideoStream && !showVideo}
                       rightSection={
-                        showVideo && media?.videoUrl ? (
+                        showVideo && hasVideoStream ? (
                           <Text size="xs" c="dimmed">
                             On
                           </Text>

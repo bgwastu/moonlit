@@ -42,12 +42,9 @@ export interface StreamInfo {
   album?: string;
   thumbnail: string;
   sourceUrl: string;
-  /** Optional muted video stream (separate adaptive track or muxed). */
-  videoUrl?: string;
-  videoContentType?: string;
   /**
    * YouTube Music audio-track video (ATV / static art).
-   * Hide Show video — there is no real motion video.
+   * Hide Show video — use cover art; embed would not be a real MV.
    */
   isAudioTrackVideo?: boolean;
 }
@@ -102,30 +99,7 @@ type YTFormat = {
   has_video?: boolean;
   bitrate?: number;
   mime_type?: string;
-  height?: number;
-  quality_label?: string;
 };
-
-/** Prefer browser-friendly MP4 ≤720p video; fall back to best available. */
-function pickVideoFormat(formats: YTFormat[]): YTFormat | undefined {
-  const withUrl = formats.filter((f) => f.has_video && f.url);
-  if (!withUrl.length) return undefined;
-
-  const mp4Under720 = withUrl
-    .filter((f) => f.mime_type?.includes("mp4") && (f.height == null || f.height <= 720))
-    .sort((a, b) => (b.height || 0) - (a.height || 0));
-  if (mp4Under720.length) {
-    // Prefer video-only (cheaper) over muxed when both exist at same height.
-    return mp4Under720.find((f) => !f.has_audio) || mp4Under720[0];
-  }
-
-  const anyMp4 = withUrl
-    .filter((f) => f.mime_type?.includes("mp4"))
-    .sort((a, b) => (a.height || 0) - (b.height || 0));
-  if (anyMp4.length) return anyMp4[0];
-
-  return withUrl.sort((a, b) => (a.height || 0) - (b.height || 0))[0];
-}
 
 const DATA_DIR = path.join(process.cwd(), "data");
 const SYSTEM_COOKIES_PATH = path.join(DATA_DIR, "cookies.txt");
@@ -460,42 +434,36 @@ async function doFullExtraction(
   }
 
   const contentType = format.mime_type?.split(";")[0]?.trim() || "audio/mp4";
-  const videoFormat = pickVideoFormat(allFormats);
-  const videoUrl = videoFormat?.url;
-  const videoContentType = videoFormat?.mime_type?.split(";")[0]?.trim() || undefined;
 
   let artist: string | undefined;
   let album: string | undefined;
   let thumbnail = pickThumbnail(basic.thumbnail || []);
   let isAudioTrackVideo = false;
 
-  const likelyMusicTrack =
-    !videoFormat ||
-    (videoFormat.height != null && videoFormat.height <= 360) ||
-    basic.author?.includes(" - Topic");
+  // Probe YTM for ATV vs real MV — video itself is shown via client embed, not proxied.
+  try {
+    const musicInfo = await yt.music.getInfo(id);
+    const musicBasic = musicInfo.basic_info;
 
-  if (likelyMusicTrack) {
-    try {
-      const musicInfo = await yt.music.getInfo(id);
-      const musicBasic = musicInfo.basic_info;
+    if (musicBasic?.author && musicBasic.author !== basic.author) {
+      artist = musicBasic.author;
+    }
 
-      if (musicBasic?.author && musicBasic.author !== basic.author) {
-        artist = musicBasic.author;
-      }
+    if (musicBasic && typeof (musicBasic as { album?: string }).album !== "undefined") {
+      album = (musicBasic as { album?: string }).album;
+    }
 
-      if (musicBasic && typeof (musicBasic as { album?: string }).album !== "undefined") {
-        album = (musicBasic as { album?: string }).album;
-      }
+    const musicThumb = pickThumbnail(
+      (musicBasic?.thumbnail as { url?: string; width?: number; height?: number }[]) ||
+        [],
+    );
+    if (musicThumb) thumbnail = musicThumb;
 
-      const musicThumb = pickThumbnail(
-        (musicBasic?.thumbnail as { url?: string; width?: number; height?: number }[]) ||
-          [],
-      );
-      if (musicThumb) thumbnail = musicThumb;
-
-      isAudioTrackVideo = isAudioTrackVideoType(readMusicVideoType(musicInfo));
-    } catch {
-      // Music metadata is optional — basic_info is enough to play.
+    isAudioTrackVideo = isAudioTrackVideoType(readMusicVideoType(musicInfo));
+  } catch {
+    // Music metadata is optional — basic_info is enough to play.
+    if (basic.author?.includes(" - Topic")) {
+      isAudioTrackVideo = true;
     }
   }
 
@@ -513,7 +481,6 @@ async function doFullExtraction(
     album,
     sourceUrl,
     isAudioTrackVideo,
-    ...(videoUrl && !isAudioTrackVideo && { videoUrl, videoContentType }),
   };
 }
 
