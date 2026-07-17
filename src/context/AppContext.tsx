@@ -11,14 +11,17 @@ import {
 import { MantineThemeOverride } from "@mantine/core";
 import { HistoryItem, Media } from "@/interfaces";
 import { MAX_HISTORY_ITEMS } from "@/lib/constants";
+import {
+  clearHistoryStorage,
+  loadHistoryFromStorage,
+  saveHistoryToStorage,
+} from "@/lib/historyStorage";
 import { clearLastSession, loadLastSession, saveLastSession } from "@/lib/lastSession";
 import { resolvePlayableMedia } from "@/lib/playFromCache";
 import { playerPathForMedia, softReplaceUrl } from "@/lib/playerNavigation";
 import { isKnownMetaValue, mergeTrackMetadata, stashSearchMeta } from "@/lib/searchMeta";
 import { appTheme } from "@/lib/theme";
 import { clearMediaCache } from "@/utils/cache";
-
-const HISTORY_STORAGE_KEY = "moonlit-history";
 
 /** Captured once on the client before PlayerRouteBridge can replace to `/`. */
 let capturedEntryPath: string | null = null;
@@ -94,6 +97,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const playerUrlRef = useRef(playerUrl);
   const restoredRef = useRef(false);
   const skipHistoryWritesRef = useRef(false);
+  /** Bumped by user opens so an in-flight session restore cannot overwrite them. */
+  const sessionRestoreGenRef = useRef(0);
+  const openingFromSessionRestoreRef = useRef(false);
 
   useEffect(() => {
     mediaRef.current = media;
@@ -103,20 +109,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   // Load history from localStorage on mount
   useEffect(() => {
     const id = requestAnimationFrame(() => {
-      try {
-        const stored = localStorage.getItem(HISTORY_STORAGE_KEY);
-        if (stored) {
-          const parsed = JSON.parse(stored) as HistoryItem[];
-          // Drop local uploads — they were never meant to persist
-          setHistoryState(
-            Array.isArray(parsed)
-              ? parsed.filter((item) => !item?.sourceUrl?.startsWith("local:"))
-              : [],
-          );
-        }
-      } catch (e) {
-        console.error("Failed to load history:", e);
-      }
+      setHistoryState(loadHistoryFromStorage());
       setIsHydrated(true);
     });
     return () => cancelAnimationFrame(id);
@@ -125,11 +118,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   // Save history to localStorage when it changes
   useEffect(() => {
     if (!isHydrated) return;
-    try {
-      localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(history));
-    } catch (e) {
-      console.error("Failed to save history:", e);
-    }
+    saveHistoryToStorage(history);
   }, [history, isHydrated]);
 
   const setHistory: React.Dispatch<React.SetStateAction<HistoryItem[]>> = useCallback(
@@ -145,11 +134,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const clearHistory = useCallback(async () => {
     skipHistoryWritesRef.current = true;
     setHistoryState([]);
-    try {
-      localStorage.removeItem(HISTORY_STORAGE_KEY);
-    } catch (e) {
-      console.error("Failed to clear history:", e);
-    }
+    clearHistoryStorage();
     clearLastSession();
     await clearMediaCache();
   }, []);
@@ -164,6 +149,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   );
 
   const openPlayer = useCallback((options: OpenPlayerOptions = {}) => {
+    if (!openingFromSessionRestoreRef.current) {
+      sessionRestoreGenRef.current += 1;
+    }
+    openingFromSessionRestoreRef.current = false;
+
     if (options.recordHistory === false) {
       skipHistoryWritesRef.current = true;
     } else {
@@ -215,6 +205,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const closePlayer = useCallback(() => {
+    sessionRestoreGenRef.current += 1;
     setPlayerMode("hidden");
     setPlayerUrl(null);
     setPlayerAutoPlay(false);
@@ -246,12 +237,17 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       stashSearchMeta(String(seedMeta.id), seedMeta);
     }
 
+    const restoreGen = ++sessionRestoreGenRef.current;
     const timer = window.setTimeout(() => {
       void (async () => {
         const cached = await resolvePlayableMedia({
           sourceUrl: session.sourceUrl,
           metadata: seedMeta,
         });
+        if (restoreGen !== sessionRestoreGenRef.current) return;
+        if (playerUrlRef.current || mediaRef.current) return;
+
+        openingFromSessionRestoreRef.current = true;
         if (cached) {
           openPlayer({
             url: session.sourceUrl,

@@ -8,14 +8,12 @@ import {
   ActionIcon,
   Box,
   Button,
-  Center,
   Flex,
   Image,
   Loader,
   MantineProvider,
   Menu,
   Progress,
-  SegmentedControl,
   Slider,
   Text,
   Transition,
@@ -42,11 +40,11 @@ import {
   IconRewindBackward5,
   IconRewindForward5,
   IconVideo,
-  IconVolume,
-  IconVolume2,
   IconVolume3,
   IconVolumeOff,
 } from "@tabler/icons-react";
+import { type PlaybackMode, PlayerModeSelector } from "@/components/PlayerModeSelector";
+import { PlayerTransportControls } from "@/components/PlayerTransportControls";
 import { type PlayerMode, useAppContext } from "@/context/AppContext";
 import { useDominantColor } from "@/hooks/useDominantColor";
 import { useLyrics } from "@/hooks/useLyrics";
@@ -82,8 +80,6 @@ import { ErrorScreen } from "./ErrorScreen";
 import LoadingOverlay from "./LoadingOverlay";
 import LyricsModal from "./LyricsModal";
 import LyricsPanel from "./LyricsPanel";
-
-type PlaybackMode = "slowed" | "normal" | "speedup" | "custom";
 
 const PLAYBACK_MODE_LABELS: Record<PlaybackMode, string> = {
   slowed: "Slowed",
@@ -255,9 +251,7 @@ export function Player({
 
   // Volume UI state (actual volume is managed by useStretchPlayer)
   const [isMuted, setIsMuted] = useState(false);
-  const [isVolumeHovered, setIsVolumeHovered] = useState(false);
   const previousVolumeRef = useRef(globalPrefs.volume);
-  const volumeControlRef = useRef<HTMLDivElement>(null);
 
   const [advancedStretch, setAdvancedStretch] = useState(globalPrefs.advancedStretch);
 
@@ -1068,24 +1062,6 @@ export function Player({
     [setVolume],
   );
 
-  const getVolumeIcon = useCallback(() => {
-    if (isMuted || volume === 0) return <IconVolumeOff size={24} />;
-    if (volume < 0.66) return <IconVolume2 size={24} />;
-    return <IconVolume size={24} />;
-  }, [isMuted, volume]);
-
-  useEffect(() => {
-    if (!isMobile || !isVolumeHovered) return;
-
-    const closeVolume = (e: PointerEvent) => {
-      if (volumeControlRef.current?.contains(e.target as Node)) return;
-      setIsVolumeHovered(false);
-    };
-
-    document.addEventListener("pointerdown", closeVolume);
-    return () => document.removeEventListener("pointerdown", closeVolume);
-  }, [isMobile, isVolumeHovered]);
-
   const showRateToast = useCallback(
     (newRate: number, icon: React.ReactNode) => {
       showToast(toastContent(icon, `${newRate.toFixed(2)}x`));
@@ -1350,57 +1326,12 @@ export function Player({
             zIndex: 1,
           }}
         >
-          {/* Top Controls */}
-          <Flex
-            style={{
-              position: "absolute",
-              top: 28,
-              left: 0,
-              right: 0,
-              zIndex: 2,
-            }}
-            gap="sm"
-            wrap="wrap"
-            px="lg"
-          >
-            <Flex
-              style={{ flex: 1 }}
-              justify="center"
-              align="center"
-              direction="column"
-              gap="sm"
-            >
-              <SegmentedControl
-                disabled={isLoading}
-                tabIndex={-1}
-                bg={theme.colors.dark[6]}
-                color="brand"
-                style={{ boxShadow: "0px 0px 0px 1px #383A3F" }}
-                size="sm"
-                onChange={(value) => handlePlaybackModeChange(value as PlaybackMode)}
-                value={playbackMode}
-                data={[
-                  { label: "Slowed", value: "slowed" },
-                  { label: "Normal", value: "normal" },
-                  { label: "Speed Up", value: "speedup" },
-                  {
-                    label: (
-                      <Center>
-                        <IconAdjustments size={18} />
-                        <Box ml={10}>Custom</Box>
-                      </Center>
-                    ),
-                    value: "custom",
-                  },
-                ]}
-              />
-              {playbackMode === "custom" && (
-                <Button variant="default" onClick={openModal}>
-                  Customize Playback
-                </Button>
-              )}
-            </Flex>
-          </Flex>
+          <PlayerModeSelector
+            playbackMode={playbackMode}
+            disabled={isLoading}
+            onModeChange={handlePlaybackModeChange}
+            onOpenCustomize={openModal}
+          />
 
           {/* Main content: video + lyrics panel — center in stage above dock */}
           <Box
@@ -2042,91 +1973,19 @@ export function Player({
 
         <Box style={{ backgroundColor: theme.colors.dark[7], paddingTop: 4 }}>
           <Flex gap={isMobile ? 4 : "sm"} px="xs" py="xs" align="center">
-            {/* Transport controls — clicks must not collapse */}
-            <Flex align="center" gap={isMobile ? 2 : 4}>
-              <ActionIcon
-                size="xl"
-                onClick={handleTogglePlayer}
-                title={isPlaying ? "Pause" : "Play"}
-                variant="transparent"
-                color="gray"
-                disabled={isLoading || !isMediaReady}
-              >
-                {isPlaying ? (
-                  <IconPlayerPauseFilled size={30} />
-                ) : (
-                  <IconPlayerPlayFilled size={30} />
-                )}
-              </ActionIcon>
-              <Flex
-                ref={volumeControlRef}
-                align="center"
-                onMouseEnter={() => !isMobile && setIsVolumeHovered(true)}
-                onMouseLeave={() => !isMobile && setIsVolumeHovered(false)}
-                style={{ position: "relative" }}
-              >
-                <ActionIcon
-                  size="lg"
-                  disabled={isLoading}
-                  onClick={() => {
-                    if (isMobile) {
-                      setIsVolumeHovered((open) => !open);
-                    } else {
-                      handleMuteToggle();
-                    }
-                  }}
-                  title={isMuted || volume === 0 ? "Unmute" : "Mute"}
-                  variant="transparent"
-                  color="gray"
-                >
-                  {getVolumeIcon()}
-                </ActionIcon>
-                <Box
-                  style={{
-                    width: isVolumeHovered ? 80 : 0,
-                    overflow: "hidden",
-                    transition: "width 0.2s ease",
-                  }}
-                >
-                  <Slider
-                    disabled={isLoading}
-                    value={isMuted ? 0 : volume}
-                    onChange={handleVolumeChange}
-                    min={0}
-                    max={1}
-                    step={0.01}
-                    size="sm"
-                    w={70}
-                    ml={4}
-                    styles={{
-                      thumb: {
-                        borderWidth: 0,
-                        borderRadius: "50%",
-                      },
-                    }}
-                  />
-                </Box>
-              </Flex>
-              {!isMobile && (
-                <Text
-                  size="xs"
-                  c="dimmed"
-                  ml={4}
-                  style={{
-                    fontVariantNumeric: "tabular-nums",
-                    width: "13ch",
-                    flexShrink: 0,
-                    whiteSpace: "nowrap",
-                    overflow: "hidden",
-                    userSelect: "none",
-                    WebkitUserSelect: "none",
-                    opacity: isMediaReady ? 1 : 0.45,
-                  }}
-                >
-                  {`${getFormattedTime(displayTime)} / ${getFormattedTime(displayDuration)}`}
-                </Text>
-              )}
-            </Flex>
+            <PlayerTransportControls
+              isMobile={Boolean(isMobile)}
+              isLoading={isLoading}
+              isMediaReady={isMediaReady}
+              isPlaying={isPlaying}
+              volume={volume}
+              isMuted={isMuted}
+              displayTime={displayTime}
+              displayDuration={displayDuration}
+              onTogglePlay={handleTogglePlayer}
+              onMuteToggle={handleMuteToggle}
+              onVolumeChange={handleVolumeChange}
+            />
 
             {/* Title / cover — only this area (plus chevron) toggles mini */}
             <Flex
