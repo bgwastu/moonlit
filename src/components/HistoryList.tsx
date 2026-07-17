@@ -17,7 +17,8 @@ import MediaResultRow from "@/components/MediaResultRow";
 import { useAppContext } from "@/context/AppContext";
 import type { HistoryItem } from "@/interfaces";
 import { historyItemSourceUrl, resolveCachedMedia } from "@/lib/playFromCache";
-import { timeAgo } from "@/utils";
+import { stashSearchMeta } from "@/lib/searchMeta";
+import { getYouTubeId, timeAgo } from "@/utils";
 
 interface HistoryListProps {
   onPlay?: () => void;
@@ -38,6 +39,9 @@ export default function HistoryList({
     onPlay?.();
 
     const url = historyItemSourceUrl(item);
+    const ytId = getYouTubeId(url ?? item.sourceUrl) ?? item.metadata?.id;
+    if (ytId) stashSearchMeta(String(ytId), item.metadata);
+
     const cached = await resolveCachedMedia(item);
     if (cached) {
       // Pass url for YouTube so embed id resolves; IDB stays audio-only.
@@ -50,7 +54,17 @@ export default function HistoryList({
     }
 
     if (!url) return;
-    openPlayer({ url, expand: true });
+    // Seed titles/cover so extract/cache cannot flash Unknown + YT hqdefault.
+    openPlayer({
+      url,
+      media: {
+        fileUrl: "",
+        sourceUrl: url,
+        metadata: { ...item.metadata },
+        ...(item.isAudioTrackVideo ? { isAudioTrackVideo: true } : {}),
+      },
+      expand: true,
+    });
   };
 
   const sorted = [...history].sort((a, b) => b.playedAt - a.playedAt);

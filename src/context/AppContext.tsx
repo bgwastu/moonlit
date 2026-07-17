@@ -51,7 +51,7 @@ export interface OpenPlayerOptions {
 interface AppContextValue {
   // Media state
   media: Media | null;
-  setMedia: (media: Media | null) => void;
+  setMedia: React.Dispatch<React.SetStateAction<Media | null>>;
 
   // Persistent player shell
   playerMode: PlayerMode;
@@ -156,9 +156,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const isHistoryWriteAllowed = useCallback(() => !skipHistoryWritesRef.current, []);
 
-  const setMedia = useCallback((next: Media | null) => {
-    setMediaState(next);
-  }, []);
+  const setMedia: React.Dispatch<React.SetStateAction<Media | null>> = useCallback(
+    (action) => {
+      setMediaState(action);
+    },
+    [],
+  );
 
   const openPlayer = useCallback((options: OpenPlayerOptions = {}) => {
     if (options.recordHistory === false) {

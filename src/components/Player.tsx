@@ -229,13 +229,12 @@ export function Player({
     const prop = sameSource(propMedia);
 
     // Prefer a playable fileUrl; keep context/provisional as metadata shell.
-    // Previously `url` made us drop contextMedia, so re-extract after a long idle
-    // showed "Unknown" even when last-session/context still had real titles.
+    // Prefer context over provisional so history-seeded titles/covers win the merge primary.
     const playable =
       (prop?.fileUrl ? prop : null) ||
       (extracted?.fileUrl ? extracted : null) ||
       (context?.fileUrl ? context : null);
-    const shell = playable || prop || extracted || provisionalMedia || context;
+    const shell = playable || prop || extracted || context || provisionalMedia;
     if (!shell) return null;
 
     const ytId = getYouTubeId(shell.sourceUrl || url || "");
@@ -345,8 +344,17 @@ export function Player({
     setExtractedMedia(null);
     setPlaybackError(null);
     setStreamState({ status: "idle" });
-    // Drop stale context media so old cover/progress cannot linger
-    if (url) setMedia(null);
+    // Keep media already seeded for this URL (history replay). Only drop unrelated tracks.
+    if (url) {
+      setMedia((prev) => {
+        if (!prev) return null;
+        if (prev.sourceUrl === url) return prev;
+        const prevId = getYouTubeId(prev.sourceUrl) ?? prev.metadata.id;
+        const nextId = getYouTubeId(url);
+        if (prevId && nextId && prevId === nextId) return prev;
+        return null;
+      });
+    }
   }, [url, setMedia]);
 
   // Reset autoplay gate whenever the playable file changes
@@ -359,15 +367,32 @@ export function Player({
     if (extractedMedia || streamStarted.current) return;
     if (!url) return;
     streamStarted.current = true;
+
+    // History/cache open already seeded a playable blob — reuse it instead of
+    // re-resolving the cache with id-only metadata (which becomes Unknown).
+    const seeded =
+      contextMedia?.fileUrl &&
+      (contextMedia.sourceUrl === url ||
+        (getYouTubeId(contextMedia.sourceUrl) &&
+          getYouTubeId(contextMedia.sourceUrl) === getYouTubeId(url)))
+        ? contextMedia
+        : null;
+
     // Defer so we don't sync-setState inside the effect body (React Compiler lint).
-    const timer = window.setTimeout(() => startStream(), 0);
+    const timer = window.setTimeout(() => {
+      if (seeded) {
+        setExtractedMedia(seeded);
+        return;
+      }
+      startStream();
+    }, 0);
     return () => {
       window.clearTimeout(timer);
       extractAbortRef.current?.abort();
       extractAbortRef.current = null;
       streamStarted.current = false;
     };
-  }, [url, extractedMedia, startStream]);
+  }, [url, extractedMedia, startStream, contextMedia]);
 
   // Measure bottom chrome for mini-player clip height
   useEffect(() => {
@@ -395,21 +420,14 @@ export function Player({
   }, [isMini, barHeight]);
 
   // Sync playable extracted media into app context (last-session + shared state).
-  // Keep a ref of context so we can merge prior titles without depending on it
-  // (depending would re-fire this effect after every setMedia).
-  const contextMediaRef = useRef(contextMedia);
-  useEffect(() => {
-    contextMediaRef.current = contextMedia;
-  }, [contextMedia]);
+  // Titles/covers come from extract + stashed search/history meta (peekSearchMeta).
   useEffect(() => {
     if (!extractedMedia?.fileUrl) return;
-    const prior = contextMediaRef.current;
     const ytId = getYouTubeId(extractedMedia.sourceUrl);
     setMedia({
       ...extractedMedia,
       metadata: mergeTrackMetadata(
         extractedMedia.metadata,
-        prior?.sourceUrl === extractedMedia.sourceUrl ? prior.metadata : undefined,
         ytId ? peekSearchMeta(ytId) : undefined,
       ),
     });

@@ -71,6 +71,31 @@ function isKnown(value: string | undefined | null): value is string {
   return isKnownMetaValue(value);
 }
 
+/** YouTube page thumbs (hqdefault etc.) — prefer music/search covers over these. */
+export function isWeakCoverUrl(url: string | undefined | null): boolean {
+  if (!url) return true;
+  let decoded = url;
+  try {
+    decoded = decodeURIComponent(url);
+  } catch {
+    // keep raw
+  }
+  return /i\.ytimg\.com\/vi\/[^/?#]+\/(default|mqdefault|hqdefault|sddefault|hq720)\.jpg/i.test(
+    decoded,
+  );
+}
+
+function pickCover(
+  current: string | undefined,
+  candidate: string | undefined,
+): string | undefined {
+  if (!candidate) return current;
+  if (!current || isWeakCoverUrl(current)) {
+    if (!isWeakCoverUrl(candidate) || !current) return candidate;
+  }
+  return current;
+}
+
 /** Prefer real titles/authors from earlier sources over cache/extract placeholders. */
 export function mergeTrackMetadata(
   primary: Partial<Media["metadata"]> | undefined,
@@ -83,7 +108,7 @@ export function mergeTrackMetadata(
     if (!isKnown(merged.author) && isKnown(fb.author)) merged.author = fb.author;
     if (merged.artist == null && fb.artist != null) merged.artist = fb.artist;
     if (merged.album == null && fb.album != null) merged.album = fb.album;
-    if (!merged.coverUrl && fb.coverUrl) merged.coverUrl = fb.coverUrl;
+    merged.coverUrl = pickCover(merged.coverUrl, fb.coverUrl);
     if (merged.id == null && fb.id != null) merged.id = fb.id;
   }
 
