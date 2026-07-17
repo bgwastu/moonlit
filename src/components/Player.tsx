@@ -2,7 +2,6 @@
 
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { SiYoutube, SiYoutubemusic } from "@icons-pack/react-simple-icons";
 import { generateColors } from "@mantine/colors-generator";
 import {
   ActionIcon,
@@ -12,9 +11,7 @@ import {
   Image,
   Loader,
   MantineProvider,
-  Menu,
   Progress,
-  Slider,
   Text,
   Transition,
   useMantineTheme,
@@ -26,10 +23,6 @@ import {
   IconChevronUp,
   IconChevronsLeft,
   IconChevronsRight,
-  IconDownload,
-  IconExternalLink,
-  IconHome,
-  IconMenu2,
   IconMusic,
   IconPlayerPauseFilled,
   IconPlayerPlay,
@@ -39,11 +32,12 @@ import {
   IconRepeat,
   IconRewindBackward5,
   IconRewindForward5,
-  IconVideo,
   IconVolume3,
   IconVolumeOff,
 } from "@tabler/icons-react";
+import { PlayerFloatingChrome } from "@/components/PlayerFloatingChrome";
 import { type PlaybackMode, PlayerModeSelector } from "@/components/PlayerModeSelector";
+import { PlayerSeekBar } from "@/components/PlayerSeekBar";
 import { PlayerTransportControls } from "@/components/PlayerTransportControls";
 import { type PlayerMode, useAppContext } from "@/context/AppContext";
 import { useDominantColor } from "@/hooks/useDominantColor";
@@ -68,7 +62,7 @@ import { mergeTrackMetadata } from "@/lib/searchMeta";
 import { appTheme } from "@/lib/theme";
 import { isMarkedAudioTrackVideo } from "@/lib/trackFlags";
 import { getModeFromRate, getVideoState, saveVideoState } from "@/lib/videoState";
-import { getFormattedTime, getYouTubeId, isYoutubeURL } from "@/utils";
+import { getYouTubeId, isYoutubeURL } from "@/utils";
 import {
   createDynamicTheme,
   getOriginalPlatformUrl,
@@ -182,7 +176,8 @@ export function Player({
     };
   }, [isMini, barHeight]);
 
-  // Persist history once media is playable; refresh cover/title when extraction completes
+  // Persist history once media is playable (keeps fileUrl for same-session offline reuse;
+  // durable offline after reload comes from IndexedDB via resolvePlayableMedia).
   useEffect(() => {
     if (!isHistoryWriteAllowed()) return;
     if (!media?.sourceUrl || !media.fileUrl) return;
@@ -849,103 +844,12 @@ export function Player({
   const [downloadModalOpened, { open: openDownloadModal, close: closeDownloadModal }] =
     useDisclosure(false);
 
-  const [seekPosition, setSeekPosition] = useState<number | null>(null);
-  const seekPositionRef = useRef<number | null>(null);
-  const wasPlayingOnSeekRef = useRef(false);
-  const [isSeekTrackHovered, setIsSeekTrackHovered] = useState(false);
-  const [isSeeking, setIsSeeking] = useState(false);
-  const showSeekChrome = isSeekTrackHovered || isSeeking;
-  // Fixed slot so the thumb never jumps when the bar thickens
-  const seekSlotHeight = 5;
-  const seekTrackHeight = showSeekChrome ? 5 : 2;
-  const seekThumbSize = 17;
-
-  // Clear scrub UI whenever the track source changes
-  useEffect(() => {
-    seekPositionRef.current = null;
-    let cancelled = false;
-    queueMicrotask(() => {
-      if (cancelled) return;
-      setSeekPosition(null);
-      setIsSeeking(false);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [url, media?.fileUrl]);
-
-  const displayTime = isMediaReady ? (seekPosition ?? currentTime) : 0;
-  const displayDuration = isMediaReady ? duration : 0;
-
-  const handleSliderChange = useCallback((value: number) => {
-    if (process.env.NODE_ENV !== "production") {
-      console.debug("[Player slider] onChange", value);
-    }
-    setIsSeeking(true);
-    seekPositionRef.current = value;
-    setSeekPosition(value);
+  const [displayTime, setDisplayTime] = useState(0);
+  const [displayDuration, setDisplayDuration] = useState(0);
+  const handleDisplayTimeChange = useCallback((time: number, total: number) => {
+    setDisplayTime(time);
+    setDisplayDuration(total);
   }, []);
-
-  const handleSeekEnd = useCallback(
-    (value: number) => {
-      const finalPosition = seekPositionRef.current ?? value;
-      if (process.env.NODE_ENV !== "production") {
-        console.debug("[Player slider] onChangeEnd", {
-          callbackValue: value,
-          latestPosition: seekPositionRef.current,
-          finalPosition,
-        });
-      }
-      const resumeAfterEnd = isEnded;
-      seek(finalPosition);
-      seekPositionRef.current = null;
-      setSeekPosition(null);
-      setIsSeeking(false);
-      // Scrubbing can stall native/advanced playback — resume if it was playing
-      // or if the track had finished (seek-from-end should autoplay).
-      if (wasPlayingOnSeekRef.current || resumeAfterEnd) {
-        void play();
-      }
-    },
-    [seek, play, isEnded],
-  );
-
-  const seekTrackRef = useRef<HTMLDivElement>(null);
-  const handleTrackPointerDown = useCallback(
-    (event: React.PointerEvent<HTMLDivElement>) => {
-      if (event.button !== 0 || duration <= 0 || !isMediaReady) return;
-      const track = seekTrackRef.current;
-      if (!track) return;
-
-      event.preventDefault();
-      event.stopPropagation();
-      wasPlayingOnSeekRef.current = isPlaying || isEnded;
-      track.setPointerCapture?.(event.pointerId);
-
-      const updatePosition = (clientX: number) => {
-        const rect = track.getBoundingClientRect();
-        const ratio = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
-        const value = Math.round(ratio * duration * 10) / 10;
-        handleSliderChange(value);
-        return value;
-      };
-
-      updatePosition(event.clientX);
-      const onMove = (moveEvent: PointerEvent) => {
-        updatePosition(moveEvent.clientX);
-      };
-      const onUp = (upEvent: PointerEvent) => {
-        const value = updatePosition(upEvent.clientX);
-        handleSeekEnd(value);
-        document.removeEventListener("pointermove", onMove);
-        document.removeEventListener("pointerup", onUp);
-      };
-
-      document.addEventListener("pointermove", onMove);
-      document.addEventListener("pointerup", onUp, { once: true });
-    },
-    [duration, handleSeekEnd, handleSliderChange, isPlaying, isEnded, isMediaReady],
-  );
 
   const handleTogglePlayer = useCallback(() => {
     if (isEnded) {
@@ -1731,130 +1635,23 @@ export function Player({
         </Box>
       </Box>
 
-      {/* Floating chrome above dock: mobile timer + expanded Lyrics/Menu share one row */}
-      {(isMobile || !isMini) && (
-        <Flex
-          align="center"
-          justify="space-between"
-          gap="xs"
-          style={{
-            position: "fixed",
-            left: 10,
-            right: 10,
-            // Keep the same bottom offset in mini + expanded so the timer does not jump
-            bottom: barHeight + 8,
-            height: 36,
-            zIndex: 202,
-            pointerEvents: "none",
-          }}
-        >
-          {isMobile && (
-            <Box
-              style={{
-                height: 36,
-                display: "inline-flex",
-                alignItems: "center",
-                paddingLeft: 14,
-                paddingRight: 14,
-                boxShadow: "0px 0px 0px 1px #383A3F",
-                backgroundColor: theme.colors.dark[6],
-                borderRadius: theme.radius.sm,
-                opacity: isMediaReady ? 1 : 0.45,
-                pointerEvents: "none",
-                flexShrink: 0,
-              }}
-            >
-              <Text
-                fz="sm"
-                style={{
-                  fontVariantNumeric: "tabular-nums",
-                  userSelect: "none",
-                  WebkitUserSelect: "none",
-                  lineHeight: 1,
-                }}
-              >
-                {`${getFormattedTime(displayTime)} / ${getFormattedTime(displayDuration)}`}
-              </Text>
-            </Box>
-          )}
-          {!isMini && (
-            <Flex gap="xs" style={{ pointerEvents: "auto", marginLeft: "auto" }}>
-              <Button
-                variant="default"
-                size="sm"
-                h={36}
-                leftSection={<IconMusic size={18} />}
-                onClick={() => setLyricsModalOpened(true)}
-                loading={lyricsState === "loading"}
-              >
-                Lyrics
-              </Button>
-              <Menu shadow="md" width={200} position="top-end">
-                <Menu.Target>
-                  <Button
-                    variant="default"
-                    size="sm"
-                    h={36}
-                    leftSection={<IconMenu2 size={18} />}
-                  >
-                    Menu
-                  </Button>
-                </Menu.Target>
-                <Menu.Dropdown>
-                  <Menu.Label>Navigation</Menu.Label>
-                  <Menu.Item
-                    leftSection={<IconHome size={14} />}
-                    onClick={() => onRequestCollapse?.()}
-                  >
-                    Home
-                  </Menu.Item>
-                  {originalPlatformUrl && (
-                    <Menu.Item
-                      leftSection={
-                        media.isAudioTrackVideo ? (
-                          <SiYoutubemusic size={14} />
-                        ) : (
-                          <SiYoutube size={14} />
-                        )
-                      }
-                      component="a"
-                      href={originalPlatformUrl}
-                      rightSection={<IconExternalLink size={12} />}
-                      target="_blank"
-                    >
-                      {media.isAudioTrackVideo ? "YouTube Music" : "YouTube"}
-                    </Menu.Item>
-                  )}
-                  <Menu.Divider />
-                  <Menu.Label>Actions</Menu.Label>
-                  {hasVideoStream && (
-                    <Menu.Item
-                      leftSection={<IconVideo size={14} />}
-                      onClick={handleToggleShowVideo}
-                      disabled={!hasVideoStream && !showVideo}
-                      rightSection={
-                        showVideo && hasVideoStream ? (
-                          <Text size="xs" c="dimmed">
-                            On
-                          </Text>
-                        ) : undefined
-                      }
-                    >
-                      Show video
-                    </Menu.Item>
-                  )}
-                  <Menu.Item
-                    leftSection={<IconDownload size={14} />}
-                    onClick={openDownloadModal}
-                  >
-                    Download
-                  </Menu.Item>
-                </Menu.Dropdown>
-              </Menu>
-            </Flex>
-          )}
-        </Flex>
-      )}
+      <PlayerFloatingChrome
+        isMobile={Boolean(isMobile)}
+        isMini={isMini}
+        barHeight={barHeight}
+        isMediaReady={isMediaReady}
+        displayTime={displayTime}
+        displayDuration={displayDuration}
+        lyricsLoading={lyricsState === "loading"}
+        onOpenLyricsModal={() => setLyricsModalOpened(true)}
+        originalPlatformUrl={originalPlatformUrl}
+        isAudioTrackVideo={Boolean(media?.isAudioTrackVideo)}
+        hasVideoStream={hasVideoStream}
+        showVideo={showVideo}
+        onRequestCollapse={onRequestCollapse}
+        onToggleShowVideo={handleToggleShowVideo}
+        onOpenDownload={openDownloadModal}
+      />
 
       {/* Fixed dock — seek + transport; does not slide away */}
       <Box
@@ -1870,106 +1667,20 @@ export function Player({
           boxShadow: isMini ? "0 -8px 24px rgba(0,0,0,0.35)" : undefined,
         }}
       >
-        {/* Seek flush to dock top edge — height 0 so thumb/track never add a black band */}
-        <Box
-          style={{
-            position: "relative",
-            width: "100%",
-            height: 0,
-            flexShrink: 0,
-            overflow: "visible",
-            zIndex: 5,
-          }}
-        >
-          <Box
-            ref={seekTrackRef}
-            onPointerDown={handleTrackPointerDown}
-            onMouseEnter={() => setIsSeekTrackHovered(true)}
-            onMouseLeave={() => setIsSeekTrackHovered(false)}
-            style={{
-              position: "absolute",
-              left: 0,
-              right: 0,
-              top: -12,
-              height: 24,
-              touchAction: "none",
-              cursor: "pointer",
-              zIndex: 3,
-            }}
-          />
-          {displayDuration > 0 &&
-            buffered.map((range, i) => (
-              <Box
-                key={i}
-                style={{
-                  position: "absolute",
-                  left: `${(range.start / displayDuration) * 100}%`,
-                  width: `${((range.end - range.start) / displayDuration) * 100}%`,
-                  height: seekTrackHeight,
-                  top: 0,
-                  backgroundColor: "rgba(255, 255, 255, 0.12)",
-                  borderRadius: 0,
-                  pointerEvents: "none",
-                  zIndex: 0,
-                  transition: "height 0.15s",
-                }}
-              />
-            ))}
-          <Slider
-            style={{
-              pointerEvents: "none",
-              width: "100%",
-              height: seekSlotHeight,
-              position: "absolute",
-              left: 0,
-              right: 0,
-              top: 0,
-            }}
-            disabled={!isMediaReady || (isLoading && !isNativeFallback)}
-            value={displayTime}
-            onChange={handleSliderChange}
-            onChangeEnd={handleSeekEnd}
-            min={0}
-            step={0.1}
-            radius={0}
-            showLabelOnHover={false}
-            size="xs"
-            thumbSize={seekThumbSize}
-            styles={{
-              root: { width: "100%", height: seekSlotHeight },
-              trackContainer: {
-                overflow: "visible",
-                height: seekSlotHeight,
-              },
-              track: {
-                height: seekTrackHeight,
-                backgroundColor: "rgba(255, 255, 255, 0.12)",
-                transition: "height 0.15s",
-              },
-              bar: {
-                backgroundColor: barColor,
-                transition: "height 0.15s",
-              },
-              thumb: {
-                border: "none",
-                borderWidth: 0,
-                boxShadow: "none",
-                backgroundColor: barColor,
-                borderRadius: "50%",
-                boxSizing: "border-box",
-                padding: 0,
-                opacity: showSeekChrome ? 1 : 0,
-                transition: "opacity 0.12s ease",
-                // Never capture hover — the hit area above owns it (avoids thumb jitter)
-                pointerEvents: "none",
-              },
-            }}
-            label={(v) =>
-              displayTime >= displayDuration - 5 ? null : getFormattedTime(v)
-            }
-            max={Math.max(displayDuration, 0.1)}
-          />
-        </Box>
+        <PlayerSeekBar
+          currentTime={currentTime}
+          duration={duration}
+          buffered={buffered}
+          isMediaReady={isMediaReady}
+          disabled={!isMediaReady || (isLoading && !isNativeFallback)}
+          isPlaying={isPlaying}
+          isEnded={isEnded}
+          barColor={barColor}
+          resetKey={`${url ?? ""}|${media?.fileUrl ?? ""}`}
+          seek={seek}
+          play={play}
+          onDisplayTimeChange={handleDisplayTimeChange}
+        />
 
         <Box style={{ backgroundColor: theme.colors.dark[7], paddingTop: 4 }}>
           <Flex gap={isMobile ? 4 : "sm"} px="xs" py="xs" align="center">

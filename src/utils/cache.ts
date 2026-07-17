@@ -80,6 +80,17 @@ export async function getCachedMediaUrl(sourceUrl: string): Promise<string | nul
   return URL.createObjectURL(blob);
 }
 
+/** True when IndexedDB already holds audio for this source (offline replay). */
+export async function hasCachedMedia(sourceUrl: string): Promise<boolean> {
+  if (!sourceUrl) return false;
+  try {
+    const value = await mediaStore.getItem(sourceUrl);
+    return value != null && sourceUrl !== META_KEY;
+  } catch {
+    return false;
+  }
+}
+
 export async function clearMediaCache(): Promise<void> {
   try {
     await mediaStore.clear();

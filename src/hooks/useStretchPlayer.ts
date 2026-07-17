@@ -1,8 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { parseApiError } from "@/lib/apiError";
+import { getDecodedAudio, setDecodedAudio } from "@/lib/decodedAudioCache";
+import { fetchAudioFile } from "@/lib/fetchAudioFile";
 import { loadSignalsmithStretch } from "@/lib/signalsmith";
-import { STREAM_CHUNK_BYTES } from "@/lib/streamConstants";
-import { setMediaCacheWithLimit } from "@/utils/cache";
+import {
+  type PlayerRuntime,
+  generateImpulseResponse,
+  startStretchTick,
+  syncMediaSession,
+} from "@/lib/stretchRuntime";
+import { hasCachedMedia, setMediaCacheWithLimit } from "@/utils/cache";
 
 type StretchPlayerState = "loading" | "ready" | "error";
 
@@ -53,208 +59,6 @@ interface UseStretchPlayerReturn {
   setReverbAmount: (amount: number) => void;
   setVolume: (volume: number) => void;
   seek: (timeSeconds: number) => void;
-}
-
-interface SignalsmithStretchInstance {
-  connect(node: AudioNode): void;
-  disconnect(): void;
-  addBuffers(buffers: Float32Array[]): Promise<void>;
-  seek(timeSeconds: number): void;
-  stop(): void;
-  schedule(opts: {
-    active?: boolean;
-    input?: number;
-    rate?: number;
-    semitones?: number;
-    loopStart?: number;
-    loopEnd?: number;
-  }): void;
-  inputTime: number;
-  setTransposeSemitones(semitones: number): void;
-  process(input: Float32Array[], output: Float32Array[], numFrames: number): void;
-}
-
-interface PlayerRuntime {
-  audioContext: AudioContext | null;
-  stretch: SignalsmithStretchInstance | null;
-  buffer: AudioBuffer | null;
-  convolver: ConvolverNode | null;
-  dryGain: GainNode | null;
-  wetGain: GainNode | null;
-  masterGain: GainNode | null;
-  isPlaying: boolean;
-  duration: number;
-  rate: number;
-  semitones: number;
-  volume: number;
-  reverbAmount: number;
-  repeat: boolean;
-  currentPosition: number;
-  pendingSeek: number | null;
-  rafId: number | null;
-  lastUiUpdateMs: number;
-  onEnded?: () => void;
-}
-
-const decodedAudioCache = new Map<string, AudioBuffer>();
-const MAX_DECODED_AUDIO_CACHE_ENTRIES = 2;
-const UI_UPDATE_INTERVAL = 100;
-const DRIFT_THRESHOLD = 0.25;
-
-function syncMediaSession(position: number, duration: number, playbackRate = 1): void {
-  if ("mediaSession" in navigator && "setPositionState" in navigator.mediaSession) {
-    try {
-      navigator.mediaSession.setPositionState({
-        duration: duration || 0,
-        playbackRate: Math.max(0.25, playbackRate),
-        position,
-      });
-    } catch {}
-  }
-}
-
-function startStretchTick(
-  runtime: PlayerRuntime,
-  setCurrentTime: (t: number) => void,
-  setIsPlaying: (p: boolean) => void,
-  syncPosition = false,
-): void {
-  const tick = () => {
-    if (!runtime.stretch) {
-      runtime.rafId = null;
-      return;
-    }
-    if (runtime.isPlaying) {
-      const reportedTime = runtime.stretch.inputTime;
-      const pendingSeek = runtime.pendingSeek;
-      const t =
-        pendingSeek !== null &&
-        (!Number.isFinite(reportedTime) ||
-          Math.abs(reportedTime - pendingSeek) > DRIFT_THRESHOLD)
-          ? pendingSeek
-          : reportedTime;
-      if (pendingSeek !== null && t === reportedTime) runtime.pendingSeek = null;
-      if (Number.isFinite(t)) runtime.currentPosition = t;
-      const now = performance.now();
-      if (now - runtime.lastUiUpdateMs > UI_UPDATE_INTERVAL) {
-        const clamped = Number.isFinite(t) ? Math.min(t, runtime.duration) : 0;
-        setCurrentTime(clamped);
-        if (syncPosition) {
-          syncMediaSession(clamped, runtime.duration, runtime.rate);
-        }
-        runtime.lastUiUpdateMs = now;
-      }
-      if (t >= runtime.duration - 0.05) {
-        if (runtime.repeat) {
-          runtime.stretch.schedule({
-            input: 0,
-            rate: runtime.rate,
-            semitones: runtime.semitones,
-            active: true,
-          });
-        } else {
-          runtime.stretch.schedule({ active: false });
-          runtime.isPlaying = false;
-          setIsPlaying(false);
-          setCurrentTime(runtime.duration);
-          runtime.onEnded?.();
-          runtime.rafId = null;
-          return;
-        }
-      }
-    }
-    runtime.rafId = requestAnimationFrame(tick);
-  };
-  runtime.rafId = requestAnimationFrame(tick);
-}
-
-async function fetchFile(
-  url: string,
-  onProgress?: (loaded: number, total: number) => void,
-  signal?: AbortSignal,
-): Promise<ArrayBuffer> {
-  const chunkSize = STREAM_CHUNK_BYTES;
-  const firstEnd = chunkSize - 1;
-  const firstResponse = await fetch(url, {
-    headers: { Range: `bytes=0-${firstEnd}` },
-    signal,
-  });
-  if (!firstResponse.ok) {
-    throw new Error(await parseApiError(firstResponse));
-  }
-
-  // Some upstreams ignore Range and return the complete file. Use that response
-  // directly rather than concatenating duplicate full-file responses.
-  if (firstResponse.status === 200) {
-    const total = Number(firstResponse.headers.get("content-length")) || 0;
-    const buffer = await firstResponse.arrayBuffer();
-    onProgress?.(buffer.byteLength, total || buffer.byteLength);
-    return buffer;
-  }
-
-  const firstRange = firstResponse.headers.get("content-range");
-  const firstMatch = firstRange?.match(/^bytes (\d+)-(\d+)\/(\d+)$/);
-  if (!firstMatch || Number(firstMatch[1]) !== 0) {
-    throw new Error("Audio server returned an invalid byte range");
-  }
-
-  const total = Number(firstMatch[3]);
-  const merged = new Uint8Array(total);
-  const firstBuffer = new Uint8Array(await firstResponse.arrayBuffer());
-  const firstEndActual = Number(firstMatch[2]);
-  if (firstBuffer.byteLength !== firstEndActual + 1) {
-    throw new Error("Audio server returned incomplete byte range");
-  }
-  merged.set(firstBuffer, 0);
-  let loaded = firstBuffer.byteLength;
-  onProgress?.(loaded, total);
-
-  if (loaded >= total) return merged.buffer;
-
-  let nextStart = loaded;
-  const worker = async () => {
-    for (;;) {
-      const start = nextStart;
-      if (start >= total) return;
-      nextStart = Math.min(start + chunkSize, total);
-      const end = nextStart - 1;
-      const response = await fetch(url, {
-        headers: { Range: `bytes=${start}-${end}` },
-        signal,
-      });
-      if (response.status !== 206) {
-        throw new Error(await parseApiError(response));
-      }
-      const range = response.headers.get("content-range");
-      const match = range?.match(/^bytes (\d+)-(\d+)\/(\d+)$/);
-      if (!match || Number(match[1]) !== start || Number(match[2]) !== end) {
-        throw new Error("Audio server returned an unexpected byte range");
-      }
-      const bytes = new Uint8Array(await response.arrayBuffer());
-      if (bytes.byteLength !== end - start + 1 || Number(match[3]) !== total) {
-        throw new Error("Audio server returned an incomplete byte range");
-      }
-      merged.set(bytes, start);
-      loaded += bytes.byteLength;
-      onProgress?.(loaded, total);
-    }
-  };
-
-  await Promise.all(Array.from({ length: 4 }, () => worker()));
-  return merged.buffer;
-}
-
-function generateImpulseResponse(context: AudioContext, dur = 2, decay = 2): AudioBuffer {
-  const length = context.sampleRate * dur;
-  const impulse = context.createBuffer(2, length, context.sampleRate);
-  for (let c = 0; c < 2; c++) {
-    const d = impulse.getChannelData(c);
-    for (let i = 0; i < length; i++) {
-      const n = i / context.sampleRate;
-      d[i] = (Math.random() * 2 - 1) * Math.pow(1 - n / dur, decay);
-    }
-  }
-  return impulse;
 }
 
 export function useStretchPlayer({
@@ -463,10 +267,10 @@ export function useStretchPlayer({
       rt.audioContext = audioContext;
 
       const signalsmithModulePromise = loadSignalsmithStretch();
-      let audioBuffer = decodedAudioCache.get(fileUrl);
+      let audioBuffer = getDecodedAudio(fileUrl);
       if (!audioBuffer) {
         setProgress({ phase: "downloading", percent: 0 });
-        const arrayBuffer = await fetchFile(
+        const arrayBuffer = await fetchAudioFile(
           fileUrl,
           (loaded, total) => {
             const pct = total ? Math.round((loaded / total) * 70) : 0;
@@ -483,12 +287,7 @@ export function useStretchPlayer({
         }
         setProgress({ phase: "processing", percent: 70 });
         audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
-        decodedAudioCache.set(fileUrl, audioBuffer);
-        while (decodedAudioCache.size > MAX_DECODED_AUDIO_CACHE_ENTRIES) {
-          const oldestKey = decodedAudioCache.keys().next().value;
-          if (oldestKey === undefined) break;
-          decodedAudioCache.delete(oldestKey);
-        }
+        setDecodedAudio(fileUrl, audioBuffer);
       } else {
         setProgress({ phase: "processing", percent: 70 });
       }
@@ -704,6 +503,22 @@ export function useStretchPlayer({
           setDuration(audio.duration);
           setupNative(audio, resumePos);
 
+          // Durable offline cache (IndexedDB) — history blob URLs die on reload.
+          if (sourceUrl.startsWith("http://") || sourceUrl.startsWith("https://")) {
+            void (async () => {
+              if (await hasCachedMedia(sourceUrl)) return;
+              try {
+                const buf = await fetchAudioFile(fileUrl);
+                await setMediaCacheWithLimit(
+                  sourceUrl,
+                  new Blob([buf], { type: "audio/mp4" }),
+                );
+              } catch {
+                // Best-effort; playback already works via fileUrl.
+              }
+            })();
+          }
+
           setState("ready");
           setTimeout(() => {
             if (aborted) return;
@@ -744,6 +559,7 @@ export function useStretchPlayer({
     };
   }, [
     fileUrl,
+    sourceUrl,
     advancedStretch,
     initialPosition,
     onPlayerError,
