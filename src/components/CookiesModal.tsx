@@ -1,7 +1,16 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Button, Flex, Modal, Stack, Switch, Text, Textarea } from "@mantine/core";
+import {
+  Anchor,
+  Button,
+  Flex,
+  Modal,
+  Stack,
+  Switch,
+  Text,
+  Textarea,
+} from "@mantine/core";
 import {
   getUserCookies,
   isCustomCookiesEnabled,
@@ -57,32 +66,32 @@ export default function CookiesModal({ opened, onClose }: CookiesModalProps) {
   return (
     <Modal opened={opened} onClose={onClose} title="Cookies" size="md" centered>
       <Stack gap="md">
-        <Switch
-          labelPosition="left"
-          label="Enable custom cookies"
-          description={
-            <Text component="span" size="xs" c="dimmed">
-              Cookies help bypass age restrictions and rate limits for YouTube. Export a
-              Netscape cookies.txt while signed into YouTube (needs LOGIN_INFO or
-              __Secure-1PSID). Extra non-YouTube domains are ignored. Use{" "}
-              <Text
-                component="a"
-                href="https://chromewebstore.google.com/detail/get-cookiestxt-locally/cclelndahbckbenkjhflpdbgdldlbecc"
-                target="_blank"
-                td="underline"
-                inherit
-              >
-                this extension
-              </Text>
-              . Unrelated domains are rejected.
-            </Text>
-          }
-          checked={customEnabled}
-          onChange={(e) => {
-            setCustomEnabled(e.currentTarget.checked);
-            setValidationError(null);
-          }}
-        />
+        <Stack gap={6}>
+          <Switch
+            labelPosition="left"
+            label="Enable custom cookies"
+            description="Cookies help bypass age restrictions and rate limits for YouTube."
+            checked={customEnabled}
+            onChange={(e) => {
+              setCustomEnabled(e.currentTarget.checked);
+              setValidationError(null);
+            }}
+          />
+          {/* Keep the link outside Switch's <label> so it stays clickable */}
+          <Text size="xs" c="dimmed">
+            Export a Netscape cookies.txt while signed into YouTube (needs LOGIN_INFO or
+            __Secure-1PSID). Extra non-YouTube domains are ignored. Use{" "}
+            <Anchor
+              href="https://chromewebstore.google.com/detail/get-cookiestxt-locally/cclelndahbckbenkjhflpdbgdldlbecc"
+              target="_blank"
+              rel="noopener noreferrer"
+              size="xs"
+            >
+              this extension
+            </Anchor>
+            . Unrelated domains are rejected.
+          </Text>
+        </Stack>
 
         {customEnabled && (
           <Textarea
