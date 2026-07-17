@@ -1,5 +1,14 @@
 /* Global rules that cannot be expressed with Mantine style props alone. */
 
+/* No mobile blue flash on tap; keep keyboard focus rings via :focus-visible */
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+:focus:not(:focus-visible) {
+  outline: none;
+}
+
 /* Non-text chrome: no accidental selection while tapping/dragging */
 img,
 svg,
