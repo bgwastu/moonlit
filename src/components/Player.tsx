@@ -362,6 +362,25 @@ export function Player({
     autoPlayedRef.current = false;
   }, [media?.fileUrl]);
 
+  // Same-URL history replay (e.g. session-restored track) keeps prevUrl equal, so the
+  // URL reset effect never clears extractedMedia — adopt a freshly seeded blob here.
+  useEffect(() => {
+    if (!url || !contextMedia?.fileUrl) return;
+    const same =
+      contextMedia.sourceUrl === url ||
+      (!!getYouTubeId(contextMedia.sourceUrl) &&
+        getYouTubeId(contextMedia.sourceUrl) === getYouTubeId(url));
+    if (!same) return;
+    if (extractedMedia?.fileUrl === contextMedia.fileUrl) return;
+    const seeded = contextMedia;
+    const timer = window.setTimeout(() => {
+      autoPlayedRef.current = false;
+      streamStarted.current = true;
+      setExtractedMedia(seeded);
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [url, contextMedia, extractedMedia?.fileUrl]);
+
   // Auto-start stream for URL mode — check extractedMedia, not media (which includes provisionalMedia)
   useEffect(() => {
     if (extractedMedia || streamStarted.current) return;
@@ -643,19 +662,38 @@ export function Player({
     onError: handleAudioError,
   });
 
+  // Allow another autoplay attempt when the engine reloads (history seeds fileUrl
+  // early; a ready→loading→ready flicker used to leave autoPlayed stuck true).
+  useEffect(() => {
+    if (stretchState === "loading") {
+      autoPlayedRef.current = false;
+    }
+  }, [stretchState]);
+
+  // Session restore opens paused (autoPlay false); a later user open must retry.
+  const prevAutoPlayRef = useRef(autoPlay);
+  useEffect(() => {
+    if (autoPlay && !prevAutoPlayRef.current) {
+      autoPlayedRef.current = false;
+    }
+    prevAutoPlayRef.current = autoPlay;
+  }, [autoPlay]);
+
   // Try autoplay when playable media is ready (key off fileUrl so provisional media can't steal the flag)
   useEffect(() => {
     if (!autoPlay) return;
     if (!media?.fileUrl || stretchState !== "ready" || autoPlayedRef.current) return;
-    autoPlayedRef.current = true;
-    const id = setTimeout(async () => {
-      try {
-        await play();
-      } catch {
-        autoPlayedRef.current = false;
-      }
+    let cancelled = false;
+    const id = setTimeout(() => {
+      void (async () => {
+        const ok = await play();
+        if (!cancelled) autoPlayedRef.current = ok;
+      })();
     }, 100);
-    return () => clearTimeout(id);
+    return () => {
+      cancelled = true;
+      clearTimeout(id);
+    };
   }, [autoPlay, media?.fileUrl, stretchState, play]);
 
   const applyLyricsSettings = useCallback(

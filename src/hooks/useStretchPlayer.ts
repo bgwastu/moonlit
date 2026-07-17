@@ -46,7 +46,7 @@ interface UseStretchPlayerReturn {
   volume: number;
   progress: LoadProgress;
   isNativeFallback: boolean;
-  play: (startTime?: number) => void;
+  play: (startTime?: number) => Promise<boolean>;
   pause: () => void;
   togglePlayback: () => void;
   setRate: (rate: number) => void;
@@ -755,9 +755,9 @@ export function useStretchPlayer({
 
   useEffect(() => cleanup, [cleanup]);
 
-  const play = useCallback(async (startTime?: number) => {
+  const play = useCallback(async (startTime?: number): Promise<boolean> => {
     const a = audioRef.current;
-    if (!a) return;
+    if (!a) return false;
     const rt = runtime.current;
     if ("mediaSession" in navigator) navigator.mediaSession.playbackState = "playing";
 
@@ -771,21 +771,22 @@ export function useStretchPlayer({
         await a.play();
         rt.isPlaying = true;
         setIsPlaying(true);
+        return true;
       } catch {
         rt.isPlaying = false;
         setIsPlaying(false);
+        return false;
       }
-      return;
     }
 
     // Advanced stretch mode
-    if (!rt.audioContext || !rt.stretch) return;
+    if (!rt.audioContext || !rt.stretch) return false;
     if (rt.audioContext.state === "suspended") {
       try {
         await rt.audioContext.resume();
       } catch {
         setIsPlaying(false);
-        return;
+        return false;
       }
     }
     const t =
@@ -806,6 +807,7 @@ export function useStretchPlayer({
     if (rt.rafId === null) {
       startStretchTick(rt, setCurrentTime, setIsPlaying, true);
     }
+    return true;
   }, []);
 
   const pause = useCallback(() => {

@@ -39,31 +39,36 @@ export default function HistoryList({
     onPlay?.();
 
     const url = historyItemSourceUrl(item);
-    const ytId = getYouTubeId(url ?? item.sourceUrl) ?? item.metadata?.id;
+    const playUrl = url ?? item.sourceUrl;
+    if (!playUrl) return;
+
+    const ytId = getYouTubeId(playUrl) ?? item.metadata?.id;
     if (ytId) stashSearchMeta(String(ytId), item.metadata);
 
     const cached = await resolveCachedMedia(item);
     if (cached) {
       // Pass url for YouTube so embed id resolves; IDB stays audio-only.
+      // Normalize sourceUrl to playUrl so Player same-source checks keep the shell.
       openPlayer({
-        media: cached,
-        url: url ?? item.sourceUrl,
+        media: { ...cached, sourceUrl: playUrl },
+        url: playUrl,
         expand: true,
+        autoPlay: true,
       });
       return;
     }
 
-    if (!url) return;
     // Seed titles/cover so extract/cache cannot flash Unknown + YT hqdefault.
     openPlayer({
-      url,
+      url: playUrl,
       media: {
         fileUrl: "",
-        sourceUrl: url,
+        sourceUrl: playUrl,
         metadata: { ...item.metadata },
         ...(item.isAudioTrackVideo ? { isAudioTrackVideo: true } : {}),
       },
       expand: true,
+      autoPlay: true,
     });
   };
 
