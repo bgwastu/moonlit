@@ -12,7 +12,7 @@ import { MantineThemeOverride } from "@mantine/core";
 import { HistoryItem, Media } from "@/interfaces";
 import { MAX_HISTORY_ITEMS } from "@/lib/constants";
 import { clearLastSession, loadLastSession, saveLastSession } from "@/lib/lastSession";
-import { mediaFromLocalCache } from "@/lib/playFromCache";
+import { resolvePlayableMedia } from "@/lib/playFromCache";
 import { playerPathForMedia, softReplaceUrl } from "@/lib/playerNavigation";
 import { isKnownMetaValue, mergeTrackMetadata, stashSearchMeta } from "@/lib/searchMeta";
 import { appTheme } from "@/lib/theme";
@@ -248,7 +248,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
     const timer = window.setTimeout(() => {
       void (async () => {
-        const cached = await mediaFromLocalCache(session.sourceUrl, seedMeta);
+        const cached = await resolvePlayableMedia({
+          sourceUrl: session.sourceUrl,
+          metadata: seedMeta,
+        });
         if (cached) {
           openPlayer({
             url: session.sourceUrl,

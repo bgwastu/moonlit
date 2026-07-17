@@ -29,40 +29,53 @@ function withAtvFlag(media: Media): Media {
   return atv ? { ...media, isAudioTrackVideo: true } : media;
 }
 
-/** Build playable media from a locally cached audio blob, if available. */
-export async function mediaFromLocalCache(
-  sourceUrl: string,
-  metadata?: Partial<Media["metadata"]>,
+export type ResolvePlayableOptions = {
+  sourceUrl: string;
+  metadata?: Partial<Media["metadata"]>;
+  /** History row — preserves extra fields and strips stale proxy video URLs. */
+  fromHistory?: HistoryItem;
+};
+
+/**
+ * Resolve on-device cache into playable Media.
+ * Single entry point for history replay, session restore, and stream cache hits.
+ */
+export async function resolvePlayableMedia(
+  options: ResolvePlayableOptions,
 ): Promise<Media | null> {
+  const { sourceUrl, metadata, fromHistory } = options;
+
+  if (sourceUrl.startsWith("local:")) {
+    const blob = await getMedia(sourceUrl);
+    if (!blob) return null;
+    if (fromHistory) {
+      return { ...fromHistory, fileUrl: URL.createObjectURL(blob) };
+    }
+    return {
+      fileUrl: URL.createObjectURL(blob),
+      sourceUrl,
+      metadata: buildMetadata(sourceUrl, metadata),
+    };
+  }
+
   const fileUrl = await getCachedMediaUrl(sourceUrl);
   if (!fileUrl) return null;
 
-  // Audio only — YouTube visuals use a client embed, not IndexedDB.
+  if (fromHistory) {
+    return withAtvFlag(
+      withoutStaleProxyVideo({
+        ...fromHistory,
+        fileUrl,
+        metadata: buildMetadata(sourceUrl, fromHistory.metadata),
+      }),
+    );
+  }
+
   return withAtvFlag({
     fileUrl,
     sourceUrl,
     metadata: buildMetadata(sourceUrl, metadata),
   });
-}
-
-/** Resolve a history/local item to playable media using on-device cache. */
-export async function resolveCachedMedia(item: HistoryItem): Promise<Media | null> {
-  if (item.sourceUrl.startsWith("local:")) {
-    const blob = await getMedia(item.sourceUrl);
-    if (!blob) return null;
-    return { ...item, fileUrl: URL.createObjectURL(blob) };
-  }
-
-  const fileUrl = await getCachedMediaUrl(item.sourceUrl);
-  if (!fileUrl) return null;
-
-  return withAtvFlag(
-    withoutStaleProxyVideo({
-      ...item,
-      fileUrl,
-      metadata: buildMetadata(item.sourceUrl, item.metadata),
-    }),
-  );
 }
 
 /** YouTube watch URL for a history item, if one can be derived. */

@@ -22,7 +22,6 @@ import {
   useMantineTheme,
 } from "@mantine/core";
 import { useDisclosure, useHotkeys, useMediaQuery } from "@mantine/hooks";
-import { notifications } from "@mantine/notifications";
 import {
   IconAdjustments,
   IconChevronDown,
@@ -51,13 +50,13 @@ import {
 import { type PlayerMode, useAppContext } from "@/context/AppContext";
 import { useDominantColor } from "@/hooks/useDominantColor";
 import { useLyrics } from "@/hooks/useLyrics";
+import { usePlayerMedia } from "@/hooks/usePlayerMedia";
 import { usePlayerSheetGestures } from "@/hooks/usePlayerSheetGestures";
 import { usePlayerTapGestures } from "@/hooks/usePlayerTapGestures";
 import { useStretchPlayer } from "@/hooks/useStretchPlayer";
 import { useSyncedVideo } from "@/hooks/useSyncedVideo";
 import { useSyncedYouTubeEmbed } from "@/hooks/useSyncedYouTubeEmbed";
 import { HistoryItem, LyricsSettings, Media } from "@/interfaces";
-import { youtubeErrorTitle } from "@/lib/apiError";
 import { MAX_HISTORY_ITEMS } from "@/lib/constants";
 import { patchLastSession } from "@/lib/lastSession";
 import { stripVideoTitleFiller } from "@/lib/lyrics";
@@ -67,18 +66,16 @@ import {
   savePlaybackPrefs,
   setShowVideo,
 } from "@/lib/playerPrefs";
-import { mergeTrackMetadata, peekSearchMeta } from "@/lib/searchMeta";
+import { mergeTrackMetadata } from "@/lib/searchMeta";
 import { appTheme } from "@/lib/theme";
 import { isMarkedAudioTrackVideo } from "@/lib/trackFlags";
 import { getModeFromRate, getVideoState, saveVideoState } from "@/lib/videoState";
-import { getFormattedTime, getYouTubeId, isSupportedURL, isYoutubeURL } from "@/utils";
+import { getFormattedTime, getYouTubeId, isYoutubeURL } from "@/utils";
 import {
   createDynamicTheme,
   getOriginalPlatformUrl,
   getSemitonesFromRate,
-  isSameMediaSource,
 } from "@/utils/player";
-import { StreamError, StreamState, streamWithProgress } from "@/utils/streamer";
 import CustomizePlaybackModal from "./CustomizePlaybackModal";
 import DownloadModal from "./DownloadModal";
 import { ErrorScreen } from "./ErrorScreen";
@@ -101,22 +98,6 @@ const PLAYBACK_MODE_ICONS: Record<PlaybackMode, ReactNode> = {
   speedup: <IconChevronsRight size={24} />,
   custom: <IconAdjustments size={24} />,
 };
-
-function getPrepopulatedMetadata(
-  url: string,
-): Record<string, string | number> | undefined {
-  try {
-    const id = url.match(
-      /^.*(?:youtu\.be\/|v\/|vi\/|u\/\w\/|embed\/|shorts\/|watch\?v=|\&v=)([^#\&\?]*).*/,
-    )?.[1];
-    if (!id) return undefined;
-    // peek (not consume) so long-lived tabs / re-extracts keep titles after leave.
-    const meta = peekSearchMeta(id);
-    return meta as Record<string, string | number> | undefined;
-  } catch {
-    return undefined;
-  }
-}
 
 export function Player({
   url,
@@ -148,276 +129,37 @@ export function Player({
   } = useAppContext();
   const isMini = mode === "mini";
 
-  // Phase management: extracting while URL is being resolved, then playing
-  const [extractedMedia, setExtractedMedia] = useState<Media | null>(null);
-  const [streamState, setStreamState] = useState<StreamState>({ status: "idle" });
-  const [playbackError, setPlaybackError] = useState<string | null>(null);
-  const streamStarted = useRef(false);
-  /** Per-sourceUrl playback failures. Must NOT reset on extract success or cursed
-   * streams (extract OK, play fail) re-extract forever and burn the rate limit. */
-  const audioErrorCount = useRef(0);
-  const extractAbortRef = useRef<AbortController | null>(null);
-  const audioErrorRetryRef = useRef<number | null>(null);
-  const urlRef = useRef(url);
   const autoPlayedRef = useRef(false);
   const autoPlayGenRef = useRef(0);
-  const bottomBarRef = useRef<HTMLDivElement>(null);
-  const [barHeight, setBarHeight] = useState(148);
-
-  // Check for pre-populated metadata from search results (sessionStorage)
-  const initialMeta = useMemo(
-    () => (url ? getPrepopulatedMetadata(url) : undefined),
-    [url],
-  );
-
-  // Keep the player shell mounted while extracting (pasted links have no search meta).
-  const provisionalMedia = useMemo<Media | null>(() => {
-    if (!url) return null;
-    const ytId = getYouTubeId(url);
-    if (initialMeta) {
-      return {
-        fileUrl: "",
-        sourceUrl: url,
-        metadata: {
-          id: ytId || null,
-          title: (initialMeta.title as string) || "Unknown",
-          author: (initialMeta.author as string) || "Unknown",
-          artist: (initialMeta.artist as string) || undefined,
-          album: (initialMeta.album as string) || undefined,
-          coverUrl: (() => {
-            const raw = initialMeta.coverUrl as string | undefined;
-            if (!raw) {
-              return ytId
-                ? `/api/cover?url=${encodeURIComponent(`https://i.ytimg.com/vi/${ytId}/hqdefault.jpg`)}`
-                : "";
-            }
-            if (
-              raw.startsWith("/api/cover") ||
-              raw.startsWith("blob:") ||
-              raw.startsWith("data:")
-            ) {
-              return raw;
-            }
-            return `/api/cover?url=${encodeURIComponent(raw)}`;
-          })(),
-        },
-      };
-    }
-    // Bare URL — keep shell + optional YT thumb; no "Loading…" placeholder in the dock
-    return {
-      fileUrl: "",
-      sourceUrl: url,
-      metadata: {
-        id: ytId || null,
-        title: "",
-        author: "",
-        coverUrl: ytId
-          ? `/api/cover?url=${encodeURIComponent(`https://i.ytimg.com/vi/${ytId}/hqdefault.jpg`)}`
-          : "",
-      },
-    };
-  }, [url, initialMeta]);
-
-  const media = useMemo(() => {
-    // Ignore stale media from a previous track while a new URL loads
-    const sameSource = (m: Media | null | undefined) =>
-      m && (!url || isSameMediaSource(m.sourceUrl, url)) ? m : null;
-    const extracted = sameSource(extractedMedia);
-    const context = sameSource(contextMedia);
-
-    // Prefer a playable fileUrl; keep context/provisional as metadata shell.
-    // When history reseeds the same source with a new blob, prefer context over
-    // stale extractedMedia (URL-reset never cleared it because the URL matched).
-    const fresherContext =
-      context?.fileUrl && extracted?.fileUrl && context.fileUrl !== extracted.fileUrl
-        ? context
-        : null;
-    const playable =
-      fresherContext ||
-      (extracted?.fileUrl ? extracted : null) ||
-      (context?.fileUrl ? context : null);
-    const shell = playable || extracted || context || provisionalMedia;
-    if (!shell) return null;
-
-    const ytId = getYouTubeId(shell.sourceUrl || url || "");
-    return {
-      ...shell,
-      metadata: mergeTrackMetadata(
-        shell.metadata,
-        playable?.metadata,
-        extracted?.metadata,
-        context?.metadata,
-        provisionalMedia?.metadata,
-        ytId ? peekSearchMeta(ytId) : undefined,
-      ),
-    };
-  }, [extractedMedia, provisionalMedia, url, contextMedia]);
-  // Show extracting UI only when resolving URL and not in error state
-  const isExtracting = !media && !!url && streamState.status !== "error";
-  const isMediaReady = Boolean(media?.fileUrl);
-
-  // Inlined extraction logic (was in InitialPlayer + useMediaStreamer)
-  const startStream = useCallback(() => {
-    if (!url || !isSupportedURL(url)) {
-      notifications.show({ title: "Error", message: "Invalid URL provided." });
-      return;
-    }
-    extractAbortRef.current?.abort();
-    const abortController = new AbortController();
-    extractAbortRef.current = abortController;
-    setStreamState({ status: "idle" });
-    const updateStreamState = (next: StreamState) => {
-      setStreamState((prev) => ({ ...prev, ...next }));
-    };
-    streamWithProgress(url, updateStreamState, abortController.signal)
-      .then((streamedMedia: Media) => {
-        if (abortController.signal.aborted) return;
-        // Do not reset audioErrorCount here — extract OK + play fail must not loop.
-        setPlaybackError(null);
-        const ytId = getYouTubeId(url);
-        setExtractedMedia({
-          ...streamedMedia,
-          metadata: mergeTrackMetadata(
-            streamedMedia.metadata,
-            ytId ? peekSearchMeta(ytId) : undefined,
-          ),
-        });
-      })
-      .catch((e) => {
-        if (e instanceof DOMException && e.name === "AbortError") return;
-        if (abortController.signal.aborted) return;
-        console.error("Stream error:", e);
-        const code = e instanceof StreamError ? e.code : undefined;
-        const message = e instanceof Error ? e.message : "Could not process the media.";
-        setExtractedMedia(null);
-        setPlaybackError(null);
-        setStreamState({ status: "error", message });
-        const hint =
-          code === "RATE_LIMITED"
-            ? " Wait a moment and try again."
-            : code === "YOUTUBE_BLOCKED" || code === "STREAM_UNAVAILABLE"
-              ? " Try configuring cookies from a logged-in account in the app settings."
-              : " Try configuring cookies from a logged-in account in the app settings if the problem persists.";
-        notifications.show({
-          title:
-            youtubeErrorTitle(code) === "Request failed"
-              ? "Stream failed"
-              : youtubeErrorTitle(code),
-          message: `${message}${hint}`,
-          color: "red",
-          autoClose:
-            code === "RATE_LIMITED" || code === "YOUTUBE_UNAVAILABLE" ? 20000 : 10000,
-        });
-        // Provisional media keeps the player shell mounted; leave it so we don't
-        // stick on "Processing the audio…" after extract failures (e.g. TVOD blocks).
-        onRequestClose?.();
-      });
-  }, [url, onRequestClose]);
-
-  const retryExtract = useCallback(() => {
-    audioErrorCount.current = 0;
-    streamStarted.current = true;
-    setStreamState({ status: "idle" });
-    startStream();
-  }, [startStream]);
-
-  const retryPlayback = useCallback(() => {
-    audioErrorCount.current = 0;
-    setPlaybackError(null);
-    setExtractedMedia(null);
-    streamStarted.current = false;
-    setStreamState({ status: "idle" });
-    queueMicrotask(() => {
-      streamStarted.current = true;
-      startStream();
-    });
-  }, [startStream]);
-
-  useEffect(() => {
-    urlRef.current = url;
-  }, [url]);
-
-  // Reset extraction when the source URL changes (new track while shell stays mounted)
-  const prevUrlRef = useRef(url);
-  useEffect(() => {
-    if (prevUrlRef.current === url) return;
-    prevUrlRef.current = url;
-    extractAbortRef.current?.abort();
-    extractAbortRef.current = null;
-    if (audioErrorRetryRef.current !== null) {
-      window.clearTimeout(audioErrorRetryRef.current);
-      audioErrorRetryRef.current = null;
-    }
-    streamStarted.current = false;
-    audioErrorCount.current = 0;
+  const invalidateAutoplay = useCallback(() => {
     autoPlayedRef.current = false;
     autoPlayGenRef.current += 1;
-    setExtractedMedia(null);
-    setPlaybackError(null);
-    setStreamState({ status: "idle" });
-    // Keep media already seeded for this URL (history replay). Only drop unrelated tracks.
-    if (url) {
-      setMedia((prev) => {
-        if (!prev) return null;
-        if (isSameMediaSource(prev.sourceUrl, url)) return prev;
-        const prevId = getYouTubeId(prev.sourceUrl) ?? prev.metadata.id;
-        const nextId = getYouTubeId(url);
-        if (prevId && nextId && String(prevId) === String(nextId)) return prev;
-        return null;
-      });
-    }
-  }, [url, setMedia]);
+  }, []);
+
+  const {
+    media,
+    streamState,
+    playbackError,
+    isExtracting,
+    isMediaReady,
+    retryExtract,
+    retryPlayback,
+    handleAudioError,
+  } = usePlayerMedia({
+    url,
+    contextMedia,
+    setMedia,
+    onRequestClose,
+    onInvalidateAutoplay: invalidateAutoplay,
+  });
 
   // Reset autoplay gate whenever the playable file changes
   useEffect(() => {
-    autoPlayedRef.current = false;
-    autoPlayGenRef.current += 1;
-  }, [media?.fileUrl]);
+    invalidateAutoplay();
+  }, [media?.fileUrl, invalidateAutoplay]);
 
-  // Ensure extracted media for URL mode: adopt a history/cache seed, or start extract.
-  // Same-URL replay keeps prevUrl equal so the URL-reset effect never clears
-  // extractedMedia — adopt a fresher context blob when fileUrl differs.
-  // Key context by fileUrl/sourceUrl so metadata-only setMedia does not abort extract.
-  useEffect(() => {
-    if (!url) return;
-
-    const seeded =
-      contextMedia?.fileUrl && isSameMediaSource(contextMedia.sourceUrl, url)
-        ? contextMedia
-        : null;
-
-    if (seeded && extractedMedia?.fileUrl !== seeded.fileUrl) {
-      extractAbortRef.current?.abort();
-      extractAbortRef.current = null;
-      const adopt = seeded;
-      const timer = window.setTimeout(() => {
-        autoPlayedRef.current = false;
-        streamStarted.current = true;
-        setExtractedMedia(adopt);
-      }, 0);
-      return () => window.clearTimeout(timer);
-    }
-
-    if (extractedMedia || streamStarted.current) return;
-    streamStarted.current = true;
-
-    const timer = window.setTimeout(() => {
-      if (seeded) {
-        setExtractedMedia(seeded);
-        return;
-      }
-      startStream();
-    }, 0);
-    return () => {
-      window.clearTimeout(timer);
-      extractAbortRef.current?.abort();
-      extractAbortRef.current = null;
-      streamStarted.current = false;
-    };
-    // Seed payload reads full contextMedia; deps key identity only so metadata
-    // updates do not abort an in-flight extract.
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- see above
-  }, [url, extractedMedia, contextMedia?.fileUrl, contextMedia?.sourceUrl, startStream]);
+  const bottomBarRef = useRef<HTMLDivElement>(null);
+  const [barHeight, setBarHeight] = useState(148);
 
   // Measure bottom chrome for mini-player clip height
   useEffect(() => {
@@ -443,20 +185,6 @@ export function Player({
       document.body.style.setProperty("--moonlit-player-inset", "0px");
     };
   }, [isMini, barHeight]);
-
-  // Sync playable extracted media into app context (last-session + shared state).
-  // Titles/covers come from extract + stashed search/history meta (peekSearchMeta).
-  useEffect(() => {
-    if (!extractedMedia?.fileUrl) return;
-    const ytId = getYouTubeId(extractedMedia.sourceUrl);
-    setMedia({
-      ...extractedMedia,
-      metadata: mergeTrackMetadata(
-        extractedMedia.metadata,
-        ytId ? peekSearchMeta(ytId) : undefined,
-      ),
-    });
-  }, [extractedMedia, setMedia]);
 
   // Persist history once media is playable; refresh cover/title when extraction completes
   useEffect(() => {
@@ -588,53 +316,6 @@ export function Player({
     const id = requestAnimationFrame(() => setStateLoaded(true));
     return () => cancelAnimationFrame(id);
   }, []);
-
-  // One re-extract on load failure (expired token). Cap at 1 retry per sourceUrl —
-  // some blocked/TVOD tracks extract a URL that always fails to fetch.
-  const handleAudioError = useCallback(
-    (e?: unknown) => {
-      const message =
-        e instanceof Error
-          ? e.message
-          : "Couldn't load audio. Try again or check cookies in settings.";
-
-      if (audioErrorCount.current >= 1) {
-        setPlaybackError(message);
-        setStreamState({ status: "error", message });
-        notifications.show({
-          title: "Playback failed",
-          message: `${message} Try configuring cookies from a logged-in account in the app settings if the problem persists.`,
-          color: "red",
-          autoClose: 10000,
-        });
-        onRequestClose?.();
-        return;
-      }
-      audioErrorCount.current++;
-      // Drop expired fileUrl but keep titles/cover so the shell doesn't flash Unknown.
-      if (contextMedia && (!url || isSameMediaSource(contextMedia.sourceUrl, url))) {
-        setMedia({
-          fileUrl: "",
-          sourceUrl: contextMedia.sourceUrl,
-          metadata: contextMedia.metadata,
-        });
-      }
-      setExtractedMedia(null);
-      streamStarted.current = true;
-      setStreamState({ status: "idle" });
-      setPlaybackError(null);
-      if (audioErrorRetryRef.current !== null) {
-        window.clearTimeout(audioErrorRetryRef.current);
-      }
-      const retryUrl = url;
-      audioErrorRetryRef.current = window.setTimeout(() => {
-        audioErrorRetryRef.current = null;
-        if (urlRef.current !== retryUrl) return;
-        startStream();
-      }, 500);
-    },
-    [startStream, onRequestClose, contextMedia, url, setMedia],
-  );
 
   // Unified player (audio + DSP processing)
   const {

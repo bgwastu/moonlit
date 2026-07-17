@@ -16,7 +16,7 @@ import { IconHistory, IconTrash } from "@tabler/icons-react";
 import MediaResultRow from "@/components/MediaResultRow";
 import { useAppContext } from "@/context/AppContext";
 import type { HistoryItem } from "@/interfaces";
-import { historyItemSourceUrl, resolveCachedMedia } from "@/lib/playFromCache";
+import { historyItemSourceUrl, resolvePlayableMedia } from "@/lib/playFromCache";
 import { stashSearchMeta } from "@/lib/searchMeta";
 import { getYouTubeId, timeAgo } from "@/utils";
 
@@ -45,7 +45,11 @@ export default function HistoryList({
     const ytId = getYouTubeId(playUrl) ?? item.metadata?.id;
     if (ytId) stashSearchMeta(String(ytId), item.metadata);
 
-    const cached = await resolveCachedMedia(item);
+    const cached = await resolvePlayableMedia({
+      sourceUrl: item.sourceUrl,
+      metadata: item.metadata,
+      fromHistory: item,
+    });
     if (cached) {
       // Pass url for YouTube so embed id resolves; IDB stays audio-only.
       // Normalize sourceUrl to playUrl so shell identity stays aligned with the open URL.

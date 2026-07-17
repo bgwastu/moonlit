@@ -1,7 +1,7 @@
 import { Media } from "@/interfaces";
 import { parseApiErrorBody } from "@/lib/apiError";
 import { cookieRequestHeaders, getCookiesToUse } from "@/lib/cookies";
-import { mediaFromLocalCache } from "@/lib/playFromCache";
+import { resolvePlayableMedia } from "@/lib/playFromCache";
 import { mergeTrackMetadata, peekSearchMeta } from "@/lib/searchMeta";
 import { isMarkedAudioTrackVideo, markAudioTrackVideo } from "@/lib/trackFlags";
 import { getYouTubeId, isDirectMediaURL, isYoutubeURL } from "@/utils";
@@ -123,10 +123,10 @@ export async function streamWithProgress(
 
   const id = getYouTubeId(url);
   const priorMeta = id ? peekSearchMeta(id) : undefined;
-  const cached = await mediaFromLocalCache(
-    url,
-    mergeTrackMetadata(priorMeta, id ? { id } : undefined),
-  );
+  const cached = await resolvePlayableMedia({
+    sourceUrl: url,
+    metadata: mergeTrackMetadata(priorMeta, id ? { id } : undefined),
+  });
 
   // Audio cache hit: skip extract. Show video uses YouTube embed by video id.
   if (cached) {
