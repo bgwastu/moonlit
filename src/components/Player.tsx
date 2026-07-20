@@ -45,6 +45,7 @@ import { useLyrics } from "@/hooks/useLyrics";
 import { usePlayerMedia } from "@/hooks/usePlayerMedia";
 import { usePlayerSheetGestures } from "@/hooks/usePlayerSheetGestures";
 import { usePlayerTapGestures } from "@/hooks/usePlayerTapGestures";
+import { useStableCoverUrl } from "@/hooks/useStableCoverUrl";
 import { useStretchPlayer } from "@/hooks/useStretchPlayer";
 import { useSyncedVideo } from "@/hooks/useSyncedVideo";
 import { useSyncedYouTubeEmbed } from "@/hooks/useSyncedYouTubeEmbed";
@@ -262,12 +263,12 @@ export function Player({
     setLyricsSettings(savedState?.lyrics ?? null);
   }
   const [lyricsModalOpened, setLyricsModalOpened] = useState(false);
-  const dominantColor = useDominantColor(media?.metadata.coverUrl);
+  const coverUrl = useStableCoverUrl(media?.metadata.coverUrl, sourceUrl);
+  const dominantColor = useDominantColor(coverUrl || undefined);
   const barColor = useMemo(() => {
     if (!dominantColor) return theme.colors.violet[5];
     return generateColors(dominantColor)[5];
   }, [dominantColor, theme.colors.violet]);
-  const coverUrl = media?.metadata.coverUrl;
 
   // Set document title to current track name
   useEffect(() => {
@@ -1187,7 +1188,7 @@ export function Player({
         ) : coverUrl ? (
           <>
             <Box
-              key={`wash-${sourceUrl || coverUrl}`}
+              key={`wash-${sourceUrl || "cover"}`}
               style={{
                 position: "absolute",
                 inset: 0,
@@ -1412,9 +1413,9 @@ export function Player({
                     />
                   ) : null}
                   {showVideoCover ? (
-                    media.metadata.coverUrl ? (
+                    coverUrl ? (
                       <Image
-                        key={sourceUrl || coverUrl}
+                        key={sourceUrl || "cover"}
                         src={coverUrl}
                         width="100%"
                         height="100%"
@@ -1707,7 +1708,7 @@ export function Player({
               gap={isMobile ? 6 : undefined}
             >
               <Image
-                key={sourceUrl || coverUrl || "cover"}
+                key={sourceUrl || "cover"}
                 src={coverUrl || undefined}
                 radius="sm"
                 h={38}
