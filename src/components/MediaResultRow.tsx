@@ -6,13 +6,13 @@ import {
   Box,
   Center,
   Flex,
-  Image,
   Paper,
   Text,
   rgba,
   useMantineTheme,
 } from "@mantine/core";
 import { IconMusic } from "@tabler/icons-react";
+import ShimmerImage from "@/components/ShimmerImage";
 import { SEARCH_ACCENT_VAR } from "@/lib/theme";
 
 export interface MediaResultItem {
@@ -88,13 +88,14 @@ export default function MediaResultRow({
       <Flex gap="sm" align="center">
         <Box pos="relative" style={{ flexShrink: 0 }}>
           {item.thumbnail ? (
-            <Image
+            <ShimmerImage
               src={item.thumbnail}
               alt=""
               w={thumbW}
               h={thumbH}
               radius="sm"
               fit="cover"
+              wrapperStyle={{ width: thumbW, height: thumbH }}
             />
           ) : (
             <Center

@@ -67,3 +67,36 @@ button *,
   );
   background-color: color-mix(in srgb, var(--mantine-color-dark-8) 50%, transparent);
 }
+
+/* Soft cover / thumb shimmer while remote art loads */
+.moonlit-shimmer::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  transform: translateX(-100%);
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.08) 45%,
+    rgba(255, 255, 255, 0.16) 50%,
+    rgba(255, 255, 255, 0.08) 55%,
+    transparent 100%
+  );
+  animation: moonlit-shimmer-sweep 1.25s ease-in-out infinite;
+}
+
+@keyframes moonlit-shimmer-sweep {
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .moonlit-shimmer::after {
+    animation: none;
+    opacity: 0.35;
+    transform: none;
+    background: rgba(255, 255, 255, 0.06);
+  }
+}

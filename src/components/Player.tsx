@@ -8,7 +8,6 @@ import {
   Box,
   Button,
   Flex,
-  Image,
   Loader,
   MantineProvider,
   Progress,
@@ -39,6 +38,7 @@ import { PlayerFloatingChrome } from "@/components/PlayerFloatingChrome";
 import { type PlaybackMode, PlayerModeSelector } from "@/components/PlayerModeSelector";
 import { PlayerSeekBar } from "@/components/PlayerSeekBar";
 import { PlayerTransportControls } from "@/components/PlayerTransportControls";
+import ShimmerImage from "@/components/ShimmerImage";
 import { type PlayerMode, useAppContext } from "@/context/AppContext";
 import { useDominantColor } from "@/hooks/useDominantColor";
 import { useLyrics } from "@/hooks/useLyrics";
@@ -1414,18 +1414,19 @@ export function Player({
                   ) : null}
                   {showVideoCover ? (
                     coverUrl ? (
-                      <Image
+                      <ShimmerImage
                         key={sourceUrl || "cover"}
                         src={coverUrl}
                         width="100%"
                         height="100%"
                         radius={theme.radius.md}
                         fit="contain"
+                        wrapperStyle={{ width: "100%", height: "100%" }}
                         style={{
                           userSelect: "none",
                           pointerEvents: "none",
                           filter: stretchState === "loading" ? "blur(8px)" : "none",
-                          transition: "filter 0.3s ease-out",
+                          transition: "filter 0.3s ease-out, opacity 0.2s ease-out",
                         }}
                         alt={media.metadata.title}
                       />
@@ -1794,7 +1795,7 @@ export function Player({
               align="center"
               gap={isMobile ? 6 : undefined}
             >
-              <Image
+              <ShimmerImage
                 key={sourceUrl || "cover"}
                 src={coverUrl || undefined}
                 radius="sm"
@@ -1802,6 +1803,7 @@ export function Player({
                 w={38}
                 visibleFrom="xs"
                 alt="cover image"
+                wrapperStyle={{ width: 38, height: 38, flexShrink: 0 }}
                 style={{
                   userSelect: "none",
                   WebkitUserSelect: "none",

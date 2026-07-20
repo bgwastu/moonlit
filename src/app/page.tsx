@@ -240,6 +240,7 @@ function SearchPanel({
   const [resultsForQuery, setResultsForQuery] = useState("");
   const [loading, setLoading] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
+  const [inputFocused, setInputFocused] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const searchAbortRef = useRef<AbortController | null>(null);
   const form = useForm({ initialValues: { query: "" } });
@@ -253,7 +254,8 @@ function SearchPanel({
   const showSkeleton = !isLink && loading;
   const showEmpty = !isLink && hasSearched && results.length === 0 && !loading;
   const showResultCards = !isLink && hasSearched && results.length > 0 && !loading;
-  const showEnterHint = hasQuery && !loading;
+  const showLinkHint = isLink && hasQuery && !loading;
+  const showSearchHint = !isLink && hasQuery && !loading && inputFocused;
 
   function resetSearchUi() {
     searchAbortRef.current?.abort();
@@ -433,6 +435,8 @@ function SearchPanel({
                 inputRef.current?.blur();
               }
             }}
+            onFocus={() => setInputFocused(true)}
+            onBlur={() => setInputFocused(false)}
             rightSection={
               hasQuery ? (
                 <Group gap={4} wrap="nowrap" pr={isMobile ? 4 : 6}>
@@ -471,17 +475,18 @@ function SearchPanel({
           />
         </form>
 
-        {showEnterHint ? (
+        {showLinkHint ? (
           <Group gap="sm" wrap="nowrap" mt="xs" px="sm">
-            {isLink ? (
-              <IconLink size={16} stroke={1.5} color={theme.colors.gray[5]} />
-            ) : (
-              <IconSearch size={16} stroke={1.5} color={theme.colors.gray[5]} />
-            )}
+            <IconLink size={16} stroke={1.5} color={theme.colors.gray[5]} />
             <Text size="sm" fw={600} c="dimmed">
-              {isLink ? "Press Enter to play" : "Press Enter to search"}
+              Press Enter to play
             </Text>
           </Group>
+        ) : null}
+        {showSearchHint ? (
+          <Text size="sm" fw={600} c="dimmed" mt="xs">
+            Press Enter to search
+          </Text>
         ) : null}
       </Box>
 
