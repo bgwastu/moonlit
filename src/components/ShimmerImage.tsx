@@ -25,6 +25,8 @@ type ShimmerImageProps = {
   visibleFrom?: MantineBreakpoint;
   hiddenFrom?: MantineBreakpoint;
   fallbackSrc?: string;
+  /** Keep the shimmer visible even after the bitmap has painted (e.g. audio loading). */
+  forceShimmer?: boolean;
   onLoad?: (event: SyntheticEvent<HTMLImageElement>) => void;
   onError?: (event: SyntheticEvent<HTMLImageElement>) => void;
 };
@@ -51,16 +53,24 @@ export default function ShimmerImage({
   style,
   wrapperStyle,
   radius,
+  forceShimmer = false,
   onLoad,
   onError,
   visibleFrom,
   hiddenFrom,
+  w,
+  h,
+  width,
+  height,
   ...rest
 }: ShimmerImageProps) {
   const theme = useMantineTheme();
   const [loadedSrc, setLoadedSrc] = useState<string | null>(null);
   const loaded = Boolean(src) && loadedSrc === src;
+  const showShimmer = forceShimmer || !loaded;
   const borderRadius = resolveRadius(radius, theme);
+  const boxW = w ?? width ?? wrapperStyle?.width;
+  const boxH = h ?? height ?? wrapperStyle?.height;
 
   const handleLoad = useCallback(
     (event: SyntheticEvent<HTMLImageElement>) => {
@@ -79,15 +89,40 @@ export default function ShimmerImage({
   );
 
   if (!src) {
+    if (!forceShimmer) {
+      return (
+        <Image
+          src={src}
+          alt={alt}
+          radius={radius}
+          style={style}
+          visibleFrom={visibleFrom}
+          hiddenFrom={hiddenFrom}
+          w={w}
+          h={h}
+          width={width}
+          height={height}
+          {...rest}
+        />
+      );
+    }
+
     return (
-      <Image
-        src={src}
-        alt={alt}
-        radius={radius}
-        style={style}
+      <Box
+        pos="relative"
         visibleFrom={visibleFrom}
         hiddenFrom={hiddenFrom}
-        {...rest}
+        className="moonlit-shimmer"
+        aria-hidden
+        style={{
+          overflow: "hidden",
+          borderRadius,
+          width: boxW,
+          height: boxH,
+          flexShrink: 0,
+          backgroundColor: rgba(theme.colors.dark[5], 0.55),
+          ...wrapperStyle,
+        }}
       />
     );
   }
@@ -107,10 +142,12 @@ export default function ShimmerImage({
       style={{
         overflow: "hidden",
         borderRadius,
+        width: boxW,
+        height: boxH,
         ...wrapperStyle,
       }}
     >
-      {!loaded ? (
+      {showShimmer ? (
         <Box
           className="moonlit-shimmer"
           aria-hidden
@@ -129,9 +166,18 @@ export default function ShimmerImage({
         src={src}
         alt={alt}
         radius={radius}
+        w={w}
+        h={h}
+        width={width}
+        height={height}
         style={{
           ...style,
-          opacity: loaded ? (Number.isFinite(targetOpacity) ? targetOpacity : 1) : 0,
+          opacity:
+            loaded && !forceShimmer
+              ? Number.isFinite(targetOpacity)
+                ? targetOpacity
+                : 1
+              : 0,
           transition: style?.transition ?? "opacity 0.2s ease-out",
         }}
         onLoad={handleLoad}

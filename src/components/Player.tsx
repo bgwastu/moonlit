@@ -1801,15 +1801,14 @@ export function Player({
                 radius="sm"
                 h={38}
                 w={38}
-                visibleFrom="xs"
                 alt="cover image"
+                forceShimmer={isLoading || !isMediaReady}
                 wrapperStyle={{ width: 38, height: 38, flexShrink: 0 }}
                 style={{
                   userSelect: "none",
                   WebkitUserSelect: "none",
                   pointerEvents: "none",
                   flexShrink: 0,
-                  opacity: isMediaReady ? 1 : 0.55,
                 }}
               />
               <Box ml="sm" style={{ minWidth: 0, flex: 1 }}>

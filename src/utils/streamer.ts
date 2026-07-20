@@ -1,9 +1,16 @@
 import { Media } from "@/interfaces";
 import { parseApiErrorBody } from "@/lib/apiError";
 import { cookieRequestHeaders, getCookiesToUse } from "@/lib/cookies";
+import { loadHistoryFromStorage } from "@/lib/historyStorage";
 import { resolvePlayableMedia } from "@/lib/playFromCache";
-import { mergeTrackMetadata, peekSearchMeta } from "@/lib/searchMeta";
+import {
+  isKnownMetaValue,
+  mergeTrackMetadata,
+  peekSearchMeta,
+  stashSearchMeta,
+} from "@/lib/searchMeta";
 import { isMarkedAudioTrackVideo, markAudioTrackVideo } from "@/lib/trackFlags";
+import { ensureYouTubeLinkMeta } from "@/lib/youtubeOembed";
 import { getYouTubeId, isDirectMediaURL, isYoutubeURL } from "@/utils";
 
 export interface StreamState {
@@ -123,35 +130,74 @@ export async function streamWithProgress(
 
   const id = getYouTubeId(url);
   const priorMeta = id ? peekSearchMeta(id) : undefined;
+  const historyMeta = peekHistoryMeta(id, url);
   const cached = await resolvePlayableMedia({
     sourceUrl: url,
-    metadata: mergeTrackMetadata(priorMeta, id ? { id } : undefined),
+    metadata: mergeTrackMetadata(priorMeta, historyMeta, id ? { id } : undefined),
   });
 
   // Audio cache hit: skip extract. Show video uses YouTube embed by video id.
-  // Still normalize cover through stash / proxy so cached plays aren't blank.
+  // Recover titles from history / oembed when stash was empty (pasted links).
   if (cached) {
-    onState({ status: "ready" });
     const atv = Boolean(cached.isAudioTrackVideo) || isMarkedAudioTrackVideo(id);
     const coverUrl =
       cached.metadata.coverUrl ||
       priorMeta?.coverUrl ||
+      historyMeta?.coverUrl ||
       (id ? `https://i.ytimg.com/vi/${id}/maxresdefault.jpg` : "");
-    return {
-      ...cached,
-      ...(atv ? { isAudioTrackVideo: true } : {}),
-      metadata: mergeTrackMetadata(cached.metadata, priorMeta, {
-        coverUrl,
-        ...(id ? { id } : {}),
-      }),
-    };
+
+    let metadata = mergeTrackMetadata(cached.metadata, priorMeta, historyMeta, {
+      coverUrl,
+      ...(id ? { id } : {}),
+    });
+
+    if (id && (!isKnownMetaValue(metadata.title) || !isKnownMetaValue(metadata.author))) {
+      const oembedMeta = await ensureYouTubeLinkMeta(id);
+      if (oembedMeta) {
+        metadata = mergeTrackMetadata(metadata, oembedMeta);
+      }
+    }
+
+    if (isKnownMetaValue(metadata.title)) {
+      if (id) stashSearchMeta(id, metadata);
+      onState({ status: "ready" });
+      return {
+        ...cached,
+        ...(atv ? { isAudioTrackVideo: true } : {}),
+        metadata,
+      };
+    }
+    // Titles still unknown — fall through to extract for real metadata.
   }
 
   onState({ status: "extracting", message: "Extracting stream..." });
 
   const data = await extractYouTube(url, abortSignal);
   onState({ status: "ready" });
-  return mediaFromExtract(url, data);
+  return mediaFromExtract(
+    url,
+    data,
+    undefined,
+    mergeTrackMetadata(priorMeta, historyMeta),
+  );
+}
+
+function peekHistoryMeta(
+  id: string | null,
+  sourceUrl: string,
+): Partial<Media["metadata"]> | undefined {
+  if (typeof window === "undefined") return undefined;
+  try {
+    const items = loadHistoryFromStorage();
+    const hit = items.find((item) => {
+      if (item.sourceUrl === sourceUrl) return true;
+      if (!id) return false;
+      return item.metadata?.id === id || getYouTubeId(item.sourceUrl) === id;
+    });
+    return hit?.metadata;
+  } catch {
+    return undefined;
+  }
 }
 
 // ---- Direct media handler (inlined from previous implementation) ----

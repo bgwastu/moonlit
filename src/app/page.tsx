@@ -52,6 +52,7 @@ import { youtubeErrorTitle } from "@/lib/apiError";
 import { cookieRequestHeaders } from "@/lib/cookies";
 import { stashSearchMeta } from "@/lib/searchMeta";
 import { SEARCH_ACCENT_VAR } from "@/lib/theme";
+import { ensureYouTubeLinkMeta } from "@/lib/youtubeOembed";
 import { getYouTubeId, isDirectMediaURL, isYoutubeURL } from "@/utils";
 import { setMediaCache } from "@/utils/cache";
 
@@ -359,8 +360,11 @@ function SearchPanel({
     if (isYoutubeURL(clean)) {
       const id = getYouTubeId(clean);
       if (id) {
+        const playUrl = `https://www.youtube.com/watch?v=${id}`;
+        // Stash oembed titles before open so paste doesn't flash / stick on Unknown.
+        await ensureYouTubeLinkMeta(id);
         resetSearchUi();
-        openPlayer({ url: `https://www.youtube.com/watch?v=${id}`, expand: true });
+        openPlayer({ url: playUrl, expand: true });
       }
       return;
     }

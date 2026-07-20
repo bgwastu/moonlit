@@ -13,7 +13,9 @@ import {
 } from "@mantine/core";
 import { IconMusic } from "@tabler/icons-react";
 import ShimmerImage from "@/components/ShimmerImage";
+import { toDisplayCoverUrl } from "@/lib/mergePlayerMedia";
 import { SEARCH_ACCENT_VAR } from "@/lib/theme";
+import { getYouTubeId } from "@/utils";
 
 export interface MediaResultItem {
   id: string;
@@ -61,6 +63,8 @@ export default function MediaResultRow({
     : item.lengthSeconds
       ? formatDuration(item.lengthSeconds)
       : "";
+  const ytId = getYouTubeId(item.id) ?? (/^[\w-]{11}$/.test(item.id) ? item.id : null);
+  const thumbSrc = toDisplayCoverUrl(item.thumbnail || undefined, ytId);
 
   return (
     <Paper
@@ -87,9 +91,9 @@ export default function MediaResultRow({
     >
       <Flex gap="sm" align="center">
         <Box pos="relative" style={{ flexShrink: 0 }}>
-          {item.thumbnail ? (
+          {thumbSrc ? (
             <ShimmerImage
-              src={item.thumbnail}
+              src={thumbSrc}
               alt=""
               w={thumbW}
               h={thumbH}

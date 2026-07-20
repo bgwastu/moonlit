@@ -5,7 +5,8 @@ import { useRouter } from "next/navigation";
 import LoadingOverlay from "@/components/LoadingOverlay";
 import { useAppContext } from "@/context/AppContext";
 import { playerPathForMedia, softReplaceUrl } from "@/lib/playerNavigation";
-import { isDirectMediaURL, isYoutubeURL } from "@/utils";
+import { ensureYouTubeLinkMeta } from "@/lib/youtubeOembed";
+import { getYouTubeId, isDirectMediaURL, isYoutubeURL } from "@/utils";
 
 /**
  * Deep-link / rewrite entry for /player and /watch.
@@ -21,25 +22,31 @@ export default function PlayerRouteBridge({ url }: { url?: string }) {
     if (started.current) return;
     started.current = true;
 
-    if (url && (isDirectMediaURL(url) || isYoutubeURL(url))) {
-      // syncUrl false — router.replace("/") would stomp a soft /watch path.
-      openPlayer({ url, expand: true, syncUrl: false });
-      router.replace("/");
-      // Re-apply shareable URL after Next lands on Home.
-      const path = playerPathForMedia(url, null);
-      requestAnimationFrame(() => softReplaceUrl(path));
-      return;
-    }
+    void (async () => {
+      if (url && (isDirectMediaURL(url) || isYoutubeURL(url))) {
+        if (isYoutubeURL(url)) {
+          const id = getYouTubeId(url);
+          if (id) await ensureYouTubeLinkMeta(id);
+        }
+        // syncUrl false — router.replace("/") would stomp a soft /watch path.
+        openPlayer({ url, expand: true, syncUrl: false });
+        router.replace("/");
+        // Re-apply shareable URL after Next lands on Home.
+        const path = playerPathForMedia(url, null);
+        requestAnimationFrame(() => softReplaceUrl(path));
+        return;
+      }
 
-    if (media) {
-      openPlayer({ media, expand: true, syncUrl: false });
-      const path = playerPathForMedia(null, media);
-      router.replace("/");
-      requestAnimationFrame(() => softReplaceUrl(path));
-      return;
-    }
+      if (media) {
+        openPlayer({ media, expand: true, syncUrl: false });
+        const path = playerPathForMedia(null, media);
+        router.replace("/");
+        requestAnimationFrame(() => softReplaceUrl(path));
+        return;
+      }
 
-    router.replace("/");
+      router.replace("/");
+    })();
   }, [url, openPlayer, router, media]);
 
   return (
