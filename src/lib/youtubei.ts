@@ -1,6 +1,7 @@
 import { readFile } from "fs/promises";
 import path from "path";
 import { Innertube, UniversalCache, YTNodes } from "youtubei.js";
+import { upgradeCoverUrl } from "@/lib/coverUrl";
 import { getYouTubeId } from "@/utils";
 
 export const YOUTUBE_ANDROID_VR_UA =
@@ -252,10 +253,11 @@ export async function searchYouTube(
     const lengthSeconds = duration?.seconds ?? 0;
     if (lengthSeconds <= 0) continue;
 
-    const thumbnail =
+    const thumbnail = upgradeCoverUrl(
       video.best_thumbnail?.url ||
-      video.thumbnails?.[0]?.url ||
-      `https://i.ytimg.com/vi/${id}/hqdefault.jpg`;
+        pickThumbnail(video.thumbnails || []) ||
+        `https://i.ytimg.com/vi/${id}/maxresdefault.jpg`,
+    );
 
     results.push({
       id,
@@ -317,8 +319,10 @@ export async function searchMusic(
     const lengthSeconds = duration?.seconds ?? 0;
     if (lengthSeconds <= 0) continue;
 
-    const thumbnails = song.thumbnails || [];
-    const thumbnail = thumbnails[0]?.url || `https://i.ytimg.com/vi/${id}/hqdefault.jpg`;
+    const thumbnail = upgradeCoverUrl(
+      pickThumbnail(song.thumbnails || []) ||
+        `https://i.ytimg.com/vi/${id}/maxresdefault.jpg`,
+    );
 
     const artists: { name: string; channelId?: string }[] = (song.artists || []).map(
       (a) => ({
@@ -359,7 +363,7 @@ function pickThumbnail(
   for (const t of thumbnails) {
     if ((t.width || 0) > (best.width || 0)) best = t;
   }
-  return best.url || "";
+  return upgradeCoverUrl(best.url || "");
 }
 
 // ---- Stream extraction ----

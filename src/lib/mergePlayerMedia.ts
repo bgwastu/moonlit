@@ -1,4 +1,5 @@
 import type { Media } from "@/interfaces";
+import { upgradeCoverUrl } from "@/lib/coverUrl";
 import { mergeTrackMetadata, peekSearchMeta } from "@/lib/searchMeta";
 import { getYouTubeId } from "@/utils";
 import { isSameMediaSource } from "@/utils/player";
@@ -6,7 +7,7 @@ import { isSameMediaSource } from "@/utils/player";
 function coverProxyUrl(raw: string | undefined, ytId: string | null): string {
   if (!raw) {
     return ytId
-      ? `/api/cover?url=${encodeURIComponent(`https://i.ytimg.com/vi/${ytId}/hqdefault.jpg`)}`
+      ? `/api/cover?url=${encodeURIComponent(`https://i.ytimg.com/vi/${ytId}/maxresdefault.jpg`)}`
       : "";
   }
   if (
@@ -16,7 +17,7 @@ function coverProxyUrl(raw: string | undefined, ytId: string | null): string {
   ) {
     return raw;
   }
-  return `/api/cover?url=${encodeURIComponent(raw)}`;
+  return `/api/cover?url=${encodeURIComponent(upgradeCoverUrl(raw))}`;
 }
 
 /** Shell media while a URL resolves — keeps titles/cover from search stash when present. */

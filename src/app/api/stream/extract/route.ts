@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import crypto from "crypto";
 import { youtubeErrorCode } from "@/lib/apiError";
 import { readRequestCookies, sanitizeUserCookies } from "@/lib/cookies";
+import { upgradeCoverUrl } from "@/lib/coverUrl";
 import {
   enforceYouTubeExtractLimit,
   handleYoutubeGuardError,
@@ -51,7 +52,7 @@ export async function POST(req: Request) {
         artist: streamInfo.artist,
         album: streamInfo.album,
         coverUrl: streamInfo.thumbnail
-          ? `/api/cover?url=${encodeURIComponent(streamInfo.thumbnail)}`
+          ? `/api/cover?url=${encodeURIComponent(upgradeCoverUrl(streamInfo.thumbnail))}`
           : "",
       },
       duration: streamInfo.duration,
