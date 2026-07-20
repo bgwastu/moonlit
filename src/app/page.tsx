@@ -28,7 +28,6 @@ import { useMediaQuery } from "@mantine/hooks";
 import { notifications } from "@mantine/notifications";
 import {
   IconAlertCircle,
-  IconArrowRight,
   IconCookie,
   IconDotsVertical,
   IconLink,
@@ -57,7 +56,6 @@ import { getYouTubeId, isDirectMediaURL, isYoutubeURL } from "@/utils";
 import { setMediaCache } from "@/utils/cache";
 
 const LOCAL_FILE_ACCEPT = ["audio/mpeg", "video/mp4", "audio/wav"];
-const SEARCH_LIMIT = 10;
 
 interface YouTubeResult {
   id: string;
@@ -249,18 +247,13 @@ function SearchPanel({
   const hasQuery = form.values.query.length > 0;
   const isLink = isYoutubeURL(query) || isDirectMediaURL(query);
   const clearBtnSize = isMobile ? 28 : 32;
-  const submitBtnSize = isMobile ? 36 : 40;
-  const rightSectionWidth = (() => {
-    if (isLink && hasQuery) return isMobile ? 96 : 108;
-    if (isLink || hasQuery) return isMobile ? 54 : 64;
-    return isMobile ? 12 : 16;
-  })();
+  const rightSectionWidth = hasQuery ? (isMobile ? 54 : 64) : isMobile ? 12 : 16;
   const listMaxH = isMobile ? rem(320) : rem(420);
 
   const showSkeleton = !isLink && loading;
   const showEmpty = !isLink && hasSearched && results.length === 0 && !loading;
   const showResultCards = !isLink && hasSearched && results.length > 0 && !loading;
-  const showLinkHint = isLink && !loading && query.length > 0;
+  const showEnterHint = hasQuery && !loading;
 
   function resetSearchUi() {
     searchAbortRef.current?.abort();
@@ -298,7 +291,7 @@ function SearchPanel({
       setSearchActive(true);
       try {
         const response = await fetch(
-          `/api/youtube/search?q=${encodeURIComponent(value)}&limit=${SEARCH_LIMIT}`,
+          `/api/youtube/search?q=${encodeURIComponent(value)}`,
           { signal: controller.signal, headers: cookieRequestHeaders() },
         );
         const data = (await response.json()) as {
@@ -441,36 +434,21 @@ function SearchPanel({
               }
             }}
             rightSection={
-              hasQuery || isLink ? (
+              hasQuery ? (
                 <Group gap={4} wrap="nowrap" pr={isMobile ? 4 : 6}>
-                  {hasQuery ? (
-                    <ActionIcon
-                      type="button"
-                      size={clearBtnSize}
-                      radius="xl"
-                      variant="subtle"
-                      color="gray"
-                      aria-label="Clear search"
-                      className="moonlit-focusable"
-                      onMouseDown={(event) => event.preventDefault()}
-                      onClick={clearInput}
-                    >
-                      <IconX size={isMobile ? 16 : 18} stroke={2} />
-                    </ActionIcon>
-                  ) : null}
-                  {isLink ? (
-                    <ActionIcon
-                      type="submit"
-                      size={submitBtnSize}
-                      radius="sm"
-                      loading={loading}
-                      variant="filled"
-                      color={theme.primaryColor}
-                      className="moonlit-focusable"
-                    >
-                      <IconArrowRight size={isMobile ? 18 : 22} />
-                    </ActionIcon>
-                  ) : null}
+                  <ActionIcon
+                    type="button"
+                    size={clearBtnSize}
+                    radius="xl"
+                    variant="subtle"
+                    color="gray"
+                    aria-label="Clear search"
+                    className="moonlit-focusable"
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={clearInput}
+                  >
+                    <IconX size={isMobile ? 16 : 18} stroke={2} />
+                  </ActionIcon>
                 </Group>
               ) : null
             }
@@ -493,11 +471,15 @@ function SearchPanel({
           />
         </form>
 
-        {showLinkHint ? (
+        {showEnterHint ? (
           <Group gap="sm" wrap="nowrap" mt="xs" px="sm">
-            <IconLink size={16} stroke={1.5} color={theme.colors.gray[5]} />
+            {isLink ? (
+              <IconLink size={16} stroke={1.5} color={theme.colors.gray[5]} />
+            ) : (
+              <IconSearch size={16} stroke={1.5} color={theme.colors.gray[5]} />
+            )}
             <Text size="sm" fw={600} c="dimmed">
-              Press Enter to play
+              {isLink ? "Press Enter to play" : "Press Enter to search"}
             </Text>
           </Group>
         ) : null}

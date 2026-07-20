@@ -29,17 +29,38 @@ export function useStableCoverUrl(
     if (!next || next === displayUrl) return;
 
     const gen = ++loadGenRef.current;
-    const img = new window.Image();
-    img.onload = () => {
+    const loaders: HTMLImageElement[] = [];
+
+    const adopt = (url: string) => {
       if (loadGenRef.current !== gen) return;
-      setDisplayUrl(next);
+      setDisplayUrl(url);
     };
-    img.src = next;
+
+    const preload = (url: string, allowProxyRetry: boolean) => {
+      const img = new window.Image();
+      loaders.push(img);
+      img.onload = () => adopt(url);
+      img.onerror = () => {
+        if (loadGenRef.current !== gen) return;
+        // Remote CDN often fails without our cover proxy — retry once via /api/cover.
+        if (allowProxyRetry && url.startsWith("http") && !url.includes("/api/cover")) {
+          preload(`/api/cover?url=${encodeURIComponent(url)}`, false);
+          return;
+        }
+        // Adopt anyway so a later upgrade can replace it; avoids stuck blank art.
+        adopt(url);
+      };
+      img.src = url;
+    };
+
+    preload(next, true);
 
     return () => {
       loadGenRef.current += 1;
-      img.onload = null;
-      img.onerror = null;
+      for (const img of loaders) {
+        img.onload = null;
+        img.onerror = null;
+      }
     };
   }, [coverUrl, displayUrl]);
 

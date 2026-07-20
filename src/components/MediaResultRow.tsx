@@ -53,8 +53,9 @@ export default function MediaResultRow({
   compact = false,
 }: MediaResultRowProps) {
   const theme = useMantineTheme();
-  const thumbW = compact ? 72 : 100;
-  const thumbH = compact ? 48 : 60;
+  // Match player cover aspect (1:1)
+  const thumbW = compact ? 56 : 64;
+  const thumbH = thumbW;
   const durationLabel = item.isLive
     ? "LIVE"
     : item.lengthSeconds

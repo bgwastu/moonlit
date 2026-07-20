@@ -20,6 +20,11 @@ function coverProxyUrl(raw: string | undefined, ytId: string | null): string {
   return `/api/cover?url=${encodeURIComponent(upgradeCoverUrl(raw))}`;
 }
 
+/** Normalize a cover URL for <Image> display (proxy remote CDN URLs). */
+export function toDisplayCoverUrl(raw: string | undefined, ytId: string | null): string {
+  return coverProxyUrl(raw, ytId);
+}
+
 /** Shell media while a URL resolves — keeps titles/cover from search stash when present. */
 export function buildProvisionalMedia(
   url: string,
@@ -83,15 +88,19 @@ export function mergePlayerMedia({
   if (!shell) return null;
 
   const ytId = getYouTubeId(shell.sourceUrl || url || "");
+  const metadata = mergeTrackMetadata(
+    shell.metadata,
+    playable?.metadata,
+    extracted?.metadata,
+    context?.metadata,
+    provisionalMedia?.metadata,
+    ytId ? peekSearchMeta(ytId) : undefined,
+  );
   return {
     ...shell,
-    metadata: mergeTrackMetadata(
-      shell.metadata,
-      playable?.metadata,
-      extracted?.metadata,
-      context?.metadata,
-      provisionalMedia?.metadata,
-      ytId ? peekSearchMeta(ytId) : undefined,
-    ),
+    metadata: {
+      ...metadata,
+      coverUrl: coverProxyUrl(metadata.coverUrl, ytId),
+    },
   };
 }

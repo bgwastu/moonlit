@@ -24,7 +24,12 @@ function readSessionStorage(id: string): Partial<Media["metadata"]> | undefined 
 /** Stash metadata for a track id (session restore, search results, history replay). */
 export function stashSearchMeta(id: string, meta: Partial<Media["metadata"]>): void {
   if (!id) return;
-  const next = { ...memoryCache.get(id), ...meta };
+  const prev = memoryCache.get(id);
+  const next = { ...prev, ...meta };
+  // Never wipe a known cover with an empty one from history / incomplete rows.
+  if (!meta.coverUrl && prev?.coverUrl) {
+    next.coverUrl = prev.coverUrl;
+  }
   if (next.coverUrl) next.coverUrl = upgradeCoverUrl(next.coverUrl);
   memoryCache.set(id, next);
   if (typeof window === "undefined") return;

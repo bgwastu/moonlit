@@ -16,6 +16,7 @@ import { IconHistory, IconTrash } from "@tabler/icons-react";
 import MediaResultRow from "@/components/MediaResultRow";
 import { useAppContext } from "@/context/AppContext";
 import type { HistoryItem } from "@/interfaces";
+import { buildProvisionalMedia } from "@/lib/mergePlayerMedia";
 import { historyItemSourceUrl, resolvePlayableMedia } from "@/lib/playFromCache";
 import { stashSearchMeta } from "@/lib/searchMeta";
 import { getYouTubeId, timeAgo } from "@/utils";
@@ -61,12 +62,11 @@ export default function HistoryList({
     }
 
     // Seed titles/cover so extract/cache cannot flash Unknown + YT hqdefault.
+    // Always go through provisional builder so remote covers are proxied.
     openPlayer({
       url: playUrl,
       media: {
-        fileUrl: "",
-        sourceUrl: playUrl,
-        metadata: { ...item.metadata },
+        ...buildProvisionalMedia(playUrl, item.metadata),
         ...(item.isAudioTrackVideo ? { isAudioTrackVideo: true } : {}),
       },
     });

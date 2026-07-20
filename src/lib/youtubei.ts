@@ -229,7 +229,8 @@ export async function searchYouTube(
   const cleanQuery = query.trim();
   if (!cleanQuery) return [];
 
-  const limit = Math.min(Math.max(options.limit ?? 10, 1), 20);
+  const limit =
+    options.limit != null ? Math.max(1, options.limit) : Number.POSITIVE_INFINITY;
   const cacheKey = `q=${cleanQuery}|limit=${limit}|c=${simpleHash(options.cookies || "")}`;
 
   const cached = searchCache.get(cacheKey);
@@ -285,7 +286,8 @@ export async function searchMusic(
   const cleanQuery = query.trim();
   if (!cleanQuery) return [];
 
-  const limit = Math.min(Math.max(options.limit ?? 10, 1), 20);
+  const limit =
+    options.limit != null ? Math.max(1, options.limit) : Number.POSITIVE_INFINITY;
   const cacheKey = `music:q=${cleanQuery}|limit=${limit}|c=${simpleHash(options.cookies || "")}`;
 
   const cached = musicSearchCache.get(cacheKey);

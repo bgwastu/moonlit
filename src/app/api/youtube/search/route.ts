@@ -33,7 +33,6 @@ export async function GET(request: Request) {
 
   const { searchParams } = new URL(request.url);
   const query = searchParams.get("q")?.trim() ?? "";
-  const limit = Number(searchParams.get("limit") ?? 10);
   const includeVideos = searchParams.get("videos") === "1";
 
   if (!query) {
@@ -42,7 +41,7 @@ export async function GET(request: Request) {
 
   try {
     const cookies = readRequestCookies(request);
-    const searchOptions = { limit: Math.min(limit, 50), cookies };
+    const searchOptions = { cookies };
 
     const musicResults = await withYoutubeCircuit(() =>
       searchMusic(query, searchOptions),

@@ -129,12 +129,21 @@ export async function streamWithProgress(
   });
 
   // Audio cache hit: skip extract. Show video uses YouTube embed by video id.
+  // Still normalize cover through stash / proxy so cached plays aren't blank.
   if (cached) {
     onState({ status: "ready" });
     const atv = Boolean(cached.isAudioTrackVideo) || isMarkedAudioTrackVideo(id);
+    const coverUrl =
+      cached.metadata.coverUrl ||
+      priorMeta?.coverUrl ||
+      (id ? `https://i.ytimg.com/vi/${id}/maxresdefault.jpg` : "");
     return {
       ...cached,
       ...(atv ? { isAudioTrackVideo: true } : {}),
+      metadata: mergeTrackMetadata(cached.metadata, priorMeta, {
+        coverUrl,
+        ...(id ? { id } : {}),
+      }),
     };
   }
 

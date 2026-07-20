@@ -1,4 +1,5 @@
 import type { HistoryItem, Media } from "@/interfaces";
+import { toDisplayCoverUrl } from "@/lib/mergePlayerMedia";
 import { mergeTrackMetadata, peekSearchMeta } from "@/lib/searchMeta";
 import { isMarkedAudioTrackVideo, markAudioTrackVideo } from "@/lib/trackFlags";
 import { getYouTubeId } from "@/utils";
@@ -10,7 +11,11 @@ function buildMetadata(
 ): Media["metadata"] {
   const id = getYouTubeId(sourceUrl) ?? metadata?.id ?? null;
   const sessionMeta = id ? peekSearchMeta(id) : undefined;
-  return mergeTrackMetadata(metadata, sessionMeta, { id });
+  const merged = mergeTrackMetadata(metadata, sessionMeta, { id });
+  return {
+    ...merged,
+    coverUrl: toDisplayCoverUrl(merged.coverUrl, id ? String(id) : null),
+  };
 }
 
 /** Drop expired proxy video URLs — YouTube video uses embed; local files keep blob URLs. */

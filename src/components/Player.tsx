@@ -1473,49 +1473,51 @@ export function Player({
                       <Loader size="md" color="white" />
                     </Box>
                   )}
-                  {/* Processing overlay with progress bar */}
-                  {stretchState === "loading" && !isWaiting && (
-                    <Box
-                      style={{
-                        position: "absolute",
-                        inset: 0,
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        zIndex: 10,
-                        pointerEvents: "none",
-                      }}
-                    >
+                  {/* Processing / error on cover — hide with cover when mobile lyrics are open */}
+                  {!(isMobile && lyricsClosedAmt < 0.5) &&
+                    stretchState === "loading" &&
+                    !isWaiting && (
                       <Box
                         style={{
-                          background: "rgba(0, 0, 0, 0.45)",
-                          backdropFilter: "blur(12px)",
-                          borderRadius: theme.radius.sm,
-                          padding: "16px 24px",
-                          boxShadow: "0 8px 32px rgba(0, 0, 0, 0.2)",
+                          position: "absolute",
+                          inset: 0,
                           display: "flex",
-                          flexDirection: "column",
                           alignItems: "center",
-                          gap: 12,
+                          justifyContent: "center",
+                          zIndex: 10,
+                          pointerEvents: "none",
                         }}
                       >
-                        <Text style={{ color: "white" }} fw={600}>
-                          Processing the audio…
-                        </Text>
-                        <Box style={{ width: 200 }}>
-                          <Progress
-                            value={progress?.percent ?? 100}
-                            striped
-                            animated
-                            color="rgba(255, 255, 255, 0.7)"
-                            bg="rgba(255, 255, 255, 0.1)"
-                            size="sm"
-                          />
+                        <Box
+                          style={{
+                            background: "rgba(0, 0, 0, 0.45)",
+                            backdropFilter: "blur(12px)",
+                            borderRadius: theme.radius.sm,
+                            padding: "16px 24px",
+                            boxShadow: "0 8px 32px rgba(0, 0, 0, 0.2)",
+                            display: "flex",
+                            flexDirection: "column",
+                            alignItems: "center",
+                            gap: 12,
+                          }}
+                        >
+                          <Text style={{ color: "white" }} fw={600}>
+                            Processing the audio…
+                          </Text>
+                          <Box style={{ width: 200 }}>
+                            <Progress
+                              value={progress?.percent ?? 100}
+                              striped
+                              animated
+                              color="rgba(255, 255, 255, 0.7)"
+                              bg="rgba(255, 255, 255, 0.1)"
+                              size="sm"
+                            />
+                          </Box>
                         </Box>
                       </Box>
-                    </Box>
-                  )}
-                  {stretchState === "error" && (
+                    )}
+                  {!(isMobile && lyricsClosedAmt < 0.5) && stretchState === "error" && (
                     <Box
                       style={{
                         position: "absolute",
@@ -1630,6 +1632,91 @@ export function Player({
                   isMobile
                   visible={lyricsClosedAmt < 0.5}
                 />
+              </Box>
+            )}
+
+            {/* Mobile lyrics: processing / error stay visible above the sheet */}
+            {isMobile &&
+              lyricsClosedAmt < 0.5 &&
+              stretchState === "loading" &&
+              !isWaiting && (
+                <Box
+                  style={{
+                    position: "absolute",
+                    inset: 0,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    zIndex: 5,
+                    pointerEvents: "none",
+                  }}
+                >
+                  <Box
+                    style={{
+                      background: "rgba(0, 0, 0, 0.45)",
+                      backdropFilter: "blur(12px)",
+                      borderRadius: theme.radius.sm,
+                      padding: "16px 24px",
+                      boxShadow: "0 8px 32px rgba(0, 0, 0, 0.2)",
+                      display: "flex",
+                      flexDirection: "column",
+                      alignItems: "center",
+                      gap: 12,
+                    }}
+                  >
+                    <Text style={{ color: "white" }} fw={600}>
+                      Processing the audio…
+                    </Text>
+                    <Box style={{ width: 200 }}>
+                      <Progress
+                        value={progress?.percent ?? 100}
+                        striped
+                        animated
+                        color="rgba(255, 255, 255, 0.7)"
+                        bg="rgba(255, 255, 255, 0.1)"
+                        size="sm"
+                      />
+                    </Box>
+                  </Box>
+                </Box>
+              )}
+            {isMobile && lyricsClosedAmt < 0.5 && stretchState === "error" && (
+              <Box
+                style={{
+                  position: "absolute",
+                  inset: 0,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  zIndex: 5,
+                }}
+              >
+                <Box
+                  style={{
+                    background: "rgba(0, 0, 0, 0.55)",
+                    backdropFilter: "blur(12px)",
+                    borderRadius: theme.radius.sm,
+                    padding: "16px 24px",
+                    boxShadow: "0 8px 32px rgba(0, 0, 0, 0.2)",
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "center",
+                    gap: 12,
+                    maxWidth: 320,
+                    textAlign: "center",
+                  }}
+                >
+                  <Text style={{ color: "white" }} fw={600}>
+                    Couldn&apos;t load audio
+                  </Text>
+                  <Text style={{ color: "rgba(255,255,255,0.75)" }} size="sm">
+                    {playbackError ||
+                      "Playback failed. Try again or check cookies in settings."}
+                  </Text>
+                  <Button size="sm" variant="light" color="red" onClick={retryPlayback}>
+                    Retry playback
+                  </Button>
+                </Box>
               </Box>
             )}
           </Box>

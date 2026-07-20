@@ -17,6 +17,7 @@ import {
   saveHistoryToStorage,
 } from "@/lib/historyStorage";
 import { clearLastSession, loadLastSession, saveLastSession } from "@/lib/lastSession";
+import { buildProvisionalMedia } from "@/lib/mergePlayerMedia";
 import { resolvePlayableMedia } from "@/lib/playFromCache";
 import { playerPathForMedia, softReplaceUrl } from "@/lib/playerNavigation";
 import { isKnownMetaValue, mergeTrackMetadata, stashSearchMeta } from "@/lib/searchMeta";
@@ -267,11 +268,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         // Keep metadata shell while re-extracting so titles survive long idle restores.
         openPlayer({
           url: session.sourceUrl,
-          media: {
-            fileUrl: "",
-            sourceUrl: session.sourceUrl,
-            metadata: seedMeta,
-          },
+          media: buildProvisionalMedia(session.sourceUrl, seedMeta),
           expand: false,
           autoPlay: false,
           syncUrl: true,
