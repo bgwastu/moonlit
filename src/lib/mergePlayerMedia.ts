@@ -1,15 +1,11 @@
 import type { Media } from "@/interfaces";
-import { upgradeCoverUrl } from "@/lib/coverUrl";
+import { isWeakYtimgCoverUrl, upgradeCoverUrl } from "@/lib/coverUrl";
 import { mergeTrackMetadata, peekSearchMeta } from "@/lib/searchMeta";
 import { getYouTubeId } from "@/utils";
 import { isSameMediaSource } from "@/utils/player";
 
 function coverProxyUrl(raw: string | undefined, ytId: string | null): string {
-  if (!raw) {
-    return ytId
-      ? `/api/cover?url=${encodeURIComponent(`https://i.ytimg.com/vi/${ytId}/maxresdefault.jpg`)}`
-      : "";
-  }
+  if (!raw) return "";
   if (
     raw.startsWith("/api/cover") ||
     raw.startsWith("blob:") ||
@@ -22,6 +18,16 @@ function coverProxyUrl(raw: string | undefined, ytId: string | null): string {
 
 /** Normalize a cover URL for <Image> display (proxy remote CDN URLs). */
 export function toDisplayCoverUrl(raw: string | undefined, ytId: string | null): string {
+  return (
+    coverProxyUrl(raw, ytId) ||
+    (ytId
+      ? `/api/cover?url=${encodeURIComponent(`https://i.ytimg.com/vi/${ytId}/maxresdefault.jpg`)}`
+      : "")
+  );
+}
+
+function trustedProvisionalCover(raw: string | undefined, ytId: string | null): string {
+  if (!raw || isWeakYtimgCoverUrl(raw)) return "";
   return coverProxyUrl(raw, ytId);
 }
 
@@ -41,7 +47,7 @@ export function buildProvisionalMedia(
         author: initialMeta.author || "Unknown",
         artist: initialMeta.artist || undefined,
         album: initialMeta.album || undefined,
-        coverUrl: coverProxyUrl(initialMeta.coverUrl, ytId),
+        coverUrl: trustedProvisionalCover(initialMeta.coverUrl, ytId),
       },
     };
   }
@@ -52,7 +58,7 @@ export function buildProvisionalMedia(
       id: ytId || null,
       title: "",
       author: "",
-      coverUrl: coverProxyUrl(undefined, ytId),
+      coverUrl: "",
     },
   };
 }
