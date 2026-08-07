@@ -1,6 +1,6 @@
 import { apiError } from "@/lib/apiError";
 import { proxyStreamRange, streamCorsHeaders } from "@/lib/streamProxy";
-import { getTokenStore } from "@/lib/streamTokens";
+import { getStreamToken } from "@/lib/streamTokens";
 
 const cors = streamCorsHeaders;
 
@@ -14,19 +14,17 @@ export async function GET(
 ) {
   const { token } = await params;
 
-  if (!token || !/^[a-f0-9-]+$/i.test(token)) {
+  if (!token || !/^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(token)) {
     return apiError("Invalid token", 400, cors());
   }
 
-  const store = getTokenStore();
-  const entry = store.get(token);
+  const entry = getStreamToken(token);
 
   if (!entry) {
     return apiError("Token not found or expired", 404, cors());
   }
 
   if (Date.now() > entry.expiresAt) {
-    store.delete(token);
     return apiError("Token expired", 410, cors());
   }
 

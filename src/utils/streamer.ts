@@ -10,7 +10,6 @@ import {
   stashSearchMeta,
 } from "@/lib/searchMeta";
 import { isMarkedAudioTrackVideo, markAudioTrackVideo } from "@/lib/trackFlags";
-import { ensureYouTubeLinkMeta } from "@/lib/youtubeOembed";
 import { getYouTubeId, isDirectMediaURL, isYoutubeURL } from "@/utils";
 
 export interface StreamState {
@@ -151,23 +150,15 @@ export async function streamWithProgress(
       ...(id ? { id } : {}),
     });
 
-    if (id && (!isKnownMetaValue(metadata.title) || !isKnownMetaValue(metadata.author))) {
-      const oembedMeta = await ensureYouTubeLinkMeta(id);
-      if (oembedMeta) {
-        metadata = mergeTrackMetadata(metadata, oembedMeta);
-      }
-    }
-
-    if (isKnownMetaValue(metadata.title)) {
-      if (id) stashSearchMeta(id, metadata);
-      onState({ status: "ready" });
-      return {
-        ...cached,
-        ...(atv ? { isAudioTrackVideo: true } : {}),
-        metadata,
-      };
-    }
-    // Titles still unknown — fall through to extract for real metadata.
+    // A cached track is already playable offline. Never re-extract just to improve
+    // metadata, otherwise history replay can unexpectedly call YouTube again.
+    if (id && isKnownMetaValue(metadata.title)) stashSearchMeta(id, metadata);
+    onState({ status: "ready" });
+    return {
+      ...cached,
+      ...(atv ? { isAudioTrackVideo: true } : {}),
+      metadata,
+    };
   }
 
   onState({ status: "extracting", message: "Extracting stream..." });

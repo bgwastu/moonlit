@@ -280,7 +280,7 @@ export function useStretchPlayer({
         );
         throwIfInactive();
         if (sourceUrl.startsWith("http://") || sourceUrl.startsWith("https://")) {
-          void setMediaCacheWithLimit(
+          await setMediaCacheWithLimit(
             sourceUrl,
             new Blob([arrayBuffer], { type: "audio/mp4" }),
           );

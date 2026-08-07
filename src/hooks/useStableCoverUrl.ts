@@ -1,6 +1,11 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { getCachedCoverUrl, setCoverCache } from "@/utils/cache";
+
+function isLocalCoverUrl(url: string | undefined): boolean {
+  return Boolean(url && (url.startsWith("blob:") || url.startsWith("data:")));
+}
 
 /**
  * Keep showing the last painted cover while a replacement URL loads.
@@ -10,59 +15,66 @@ export function useStableCoverUrl(
   coverUrl: string | undefined,
   trackKey: string | undefined,
 ): string {
-  const [displayUrl, setDisplayUrl] = useState(() => coverUrl || "");
+  const [displayUrl, setDisplayUrl] = useState(() =>
+    isLocalCoverUrl(coverUrl) ? coverUrl || "" : "",
+  );
   const [displayTrackKey, setDisplayTrackKey] = useState(trackKey);
   const loadGenRef = useRef(0);
 
   // Reset immediately when the track changes (adjust state during render).
   if (trackKey !== displayTrackKey) {
     setDisplayTrackKey(trackKey);
-    setDisplayUrl(coverUrl || "");
-  } else if (!displayUrl && coverUrl) {
-    // First cover for this track — adopt without waiting for preload.
-    setDisplayUrl(coverUrl);
+    setDisplayUrl(isLocalCoverUrl(coverUrl) ? coverUrl || "" : "");
   }
 
   useEffect(() => {
     const next = coverUrl || "";
-    // Same track with no cover yet — keep the last painted art through processing.
-    if (!next || next === displayUrl) return;
+    if (!next) {
+      // Keep the last painted art while metadata is temporarily incomplete.
+      return;
+    }
+
+    if (isLocalCoverUrl(next)) {
+      return;
+    }
 
     const gen = ++loadGenRef.current;
-    const loaders: HTMLImageElement[] = [];
+    let cancelled = false;
 
     const adopt = (url: string) => {
-      if (loadGenRef.current !== gen) return;
+      if (cancelled || loadGenRef.current !== gen) return;
       setDisplayUrl(url);
     };
 
-    const preload = (url: string, allowProxyRetry: boolean) => {
-      const img = new window.Image();
-      loaders.push(img);
-      img.onload = () => adopt(url);
-      img.onerror = () => {
-        if (loadGenRef.current !== gen) return;
-        // Remote CDN often fails without our cover proxy — retry once via /api/cover.
-        if (allowProxyRetry && url.startsWith("http") && !url.includes("/api/cover")) {
-          preload(`/api/cover?url=${encodeURIComponent(url)}`, false);
+    const load = async () => {
+      if (trackKey) {
+        const cached = await getCachedCoverUrl(trackKey, next);
+        if (cached) {
+          adopt(cached);
           return;
         }
-        // Adopt anyway so a later upgrade can replace it; avoids stuck blank art.
-        adopt(url);
-      };
-      img.src = url;
-    };
+      }
 
-    preload(next, true);
-
-    return () => {
-      loadGenRef.current += 1;
-      for (const img of loaders) {
-        img.onload = null;
-        img.onerror = null;
+      try {
+        const response = await fetch(next, { cache: "force-cache" });
+        if (!response.ok) throw new Error(`Cover request failed (${response.status})`);
+        const blob = await response.blob();
+        if (!blob.size) throw new Error("Empty cover response");
+        if (trackKey) await setCoverCache(trackKey, next, blob);
+        adopt(URL.createObjectURL(blob));
+      } catch {
+        // Keep a direct URL as a last resort when the proxy is temporarily unavailable.
+        adopt(next);
       }
     };
-  }, [coverUrl, displayUrl]);
+
+    void load();
+
+    return () => {
+      cancelled = true;
+      loadGenRef.current += 1;
+    };
+  }, [coverUrl, trackKey]);
 
   return displayUrl;
 }

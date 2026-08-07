@@ -3,7 +3,7 @@ import { toDisplayCoverUrl } from "@/lib/mergePlayerMedia";
 import { mergeTrackMetadata, peekSearchMeta } from "@/lib/searchMeta";
 import { isMarkedAudioTrackVideo, markAudioTrackVideo } from "@/lib/trackFlags";
 import { getYouTubeId } from "@/utils";
-import { getCachedMediaUrl, getMedia } from "@/utils/cache";
+import { getCachedCoverUrl, getCachedMediaUrl, getMedia } from "@/utils/cache";
 
 function buildMetadata(
   sourceUrl: string,
@@ -66,12 +66,18 @@ export async function resolvePlayableMedia(
   const fileUrl = await getCachedMediaUrl(sourceUrl);
   if (!fileUrl) return null;
 
+  const cachedMetadata = buildMetadata(sourceUrl, fromHistory?.metadata ?? metadata);
+  const cachedCoverUrl = await getCachedCoverUrl(sourceUrl, cachedMetadata.coverUrl);
+  const resolvedMetadata = cachedCoverUrl
+    ? { ...cachedMetadata, coverUrl: cachedCoverUrl }
+    : cachedMetadata;
+
   if (fromHistory) {
     return withAtvFlag(
       withoutStaleProxyVideo({
         ...fromHistory,
         fileUrl,
-        metadata: buildMetadata(sourceUrl, fromHistory.metadata),
+        metadata: resolvedMetadata,
       }),
     );
   }
@@ -79,7 +85,7 @@ export async function resolvePlayableMedia(
   return withAtvFlag({
     fileUrl,
     sourceUrl,
-    metadata: buildMetadata(sourceUrl, metadata),
+    metadata: resolvedMetadata,
   });
 }
 

@@ -8,6 +8,12 @@ const mediaStore = localforage.createInstance({
   storeName: "media-cache",
 });
 
+const coverStore = localforage.createInstance({
+  name: "moonlit",
+  storeName: "cover-cache",
+});
+const COVER_META_KEY = "__moonlit-cover-cache-meta__";
+
 interface CacheMeta {
   order: string[];
 }
@@ -91,9 +97,56 @@ export async function hasCachedMedia(sourceUrl: string): Promise<boolean> {
   }
 }
 
+function coverCacheKey(sourceUrl: string, coverUrl: string): string {
+  return `${sourceUrl}\n${coverUrl}`;
+}
+
+/** Return a local object URL for a previously loaded track cover. */
+export async function getCachedCoverUrl(
+  sourceUrl: string,
+  coverUrl: string,
+): Promise<string | null> {
+  if (!sourceUrl || !coverUrl) return null;
+  try {
+    const key = coverCacheKey(sourceUrl, coverUrl);
+    const blob = await coverStore.getItem<Blob>(key);
+    if (blob) {
+      const meta = (await coverStore.getItem<CacheMeta>(COVER_META_KEY)) ?? { order: [] };
+      meta.order = [key, ...meta.order.filter((entry) => entry !== key)];
+      await coverStore.setItem(COVER_META_KEY, meta);
+    }
+    return blob ? URL.createObjectURL(blob) : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Persist a cover independently from audio so offline replay does not hit the server. */
+export async function setCoverCache(
+  sourceUrl: string,
+  coverUrl: string,
+  blob: Blob,
+): Promise<void> {
+  if (!sourceUrl || !coverUrl || !blob.size) return;
+  try {
+    const key = coverCacheKey(sourceUrl, coverUrl);
+    await coverStore.setItem(key, blob);
+    const meta = (await coverStore.getItem<CacheMeta>(COVER_META_KEY)) ?? { order: [] };
+    meta.order = [key, ...meta.order.filter((entry) => entry !== key)];
+    while (meta.order.length > MAX_CACHED_TRACKS) {
+      const evict = meta.order.pop();
+      if (evict) await coverStore.removeItem(evict);
+    }
+    await coverStore.setItem(COVER_META_KEY, meta);
+  } catch (e) {
+    console.error("Failed to cache cover:", e);
+  }
+}
+
 export async function clearMediaCache(): Promise<void> {
   try {
     await mediaStore.clear();
+    await coverStore.clear();
   } catch (e) {
     console.error("Failed to clear media cache:", e);
   }

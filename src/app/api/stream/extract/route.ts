@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import crypto from "crypto";
 import { youtubeErrorCode } from "@/lib/apiError";
 import { readRequestCookies, sanitizeUserCookies } from "@/lib/cookies";
 import { upgradeCoverUrl } from "@/lib/coverUrl";
@@ -7,7 +6,7 @@ import {
   enforceYouTubeExtractLimit,
   handleYoutubeGuardError,
 } from "@/lib/rateLimitYouTube";
-import { TOKEN_TTL_MS, getTokenStore, pruneExpired } from "@/lib/streamTokens";
+import { TOKEN_TTL_MS, createStreamToken, pruneExpired } from "@/lib/streamTokens";
 import { withYoutubeCircuit } from "@/lib/youtubeCircuit";
 import { extractStreamUrl } from "@/lib/youtubei";
 
@@ -30,11 +29,9 @@ export async function POST(req: Request) {
 
     pruneExpired();
 
-    const store = getTokenStore();
     const expiresAt = Date.now() + TOKEN_TTL_MS;
 
-    const token = crypto.randomUUID();
-    store.set(token, {
+    const token = createStreamToken({
       url: streamInfo.url,
       contentType: streamInfo.contentType,
       headers: streamInfo.headers,
