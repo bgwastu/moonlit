@@ -25,7 +25,7 @@ type ShimmerImageProps = {
   visibleFrom?: MantineBreakpoint;
   hiddenFrom?: MantineBreakpoint;
   fallbackSrc?: string;
-  /** Keep the shimmer visible even after the bitmap has painted (e.g. audio loading). */
+  /** Keep the shimmer visible over the bitmap while another resource loads. */
   forceShimmer?: boolean;
   onLoad?: (event: SyntheticEvent<HTMLImageElement>) => void;
   onError?: (event: SyntheticEvent<HTMLImageElement>) => void;
@@ -172,12 +172,7 @@ export default function ShimmerImage({
         height={height}
         style={{
           ...style,
-          opacity:
-            loaded && !forceShimmer
-              ? Number.isFinite(targetOpacity)
-                ? targetOpacity
-                : 1
-              : 0,
+          opacity: loaded ? (Number.isFinite(targetOpacity) ? targetOpacity : 1) : 0,
           transition: style?.transition ?? "opacity 0.2s ease-out",
         }}
         onLoad={handleLoad}
