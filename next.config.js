@@ -1,5 +1,14 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  async headers() {
+    const noStore = [{ key: "Cache-Control", value: "no-store" }];
+    return [
+      { source: "/", headers: noStore },
+      { source: "/player", headers: noStore },
+      { source: "/watch", headers: noStore },
+      { source: "/shorts/:id", headers: noStore },
+    ];
+  },
   async rewrites() {
     return [
       {
