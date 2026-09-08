@@ -4,6 +4,9 @@ import { Innertube, UniversalCache, YTNodes } from "youtubei.js";
 import { upgradeCoverUrl } from "@/lib/coverUrl";
 import { getYouTubeId } from "@/utils";
 
+export const YOUTUBE_IOS_UA =
+  "com.google.ios.youtube/20.11.6 (iPhone10,4; U; CPU iOS 16_7_7 like Mac OS X)";
+
 export const YOUTUBE_ANDROID_VR_UA =
   "com.google.android.apps.youtube.vr.oculus/1.65.10 (Linux; U; Android 12L; eureka-user Build/SQ3A.220605.009.A1) gzip";
 
@@ -370,11 +373,12 @@ function pickThumbnail(
 
 // ---- Stream extraction ----
 
-type ExtractClient = "ANDROID_VR" | "TV";
+type ExtractClient = "iOS" | "ANDROID_VR" | "TV";
 
-const EXTRACT_CLIENTS: ExtractClient[] = ["ANDROID_VR", "TV"];
+const EXTRACT_CLIENTS: ExtractClient[] = ["iOS", "ANDROID_VR", "TV"];
 
 function userAgentForClient(client: ExtractClient): string {
+  if (client === "iOS") return YOUTUBE_IOS_UA;
   return client === "TV" ? YOUTUBE_TV_UA : YOUTUBE_ANDROID_VR_UA;
 }
 
@@ -398,7 +402,7 @@ async function doFullExtraction(
   sourceUrl: string,
   options: { cookies?: string; signal?: AbortSignal; clientType?: ExtractClient },
 ): Promise<StreamInfo> {
-  const clientType = options.clientType ?? "ANDROID_VR";
+  const clientType = options.clientType ?? "iOS";
   const yt = await getInnertube(options.cookies, clientType);
 
   const info = await yt.getBasicInfo(id);
@@ -430,10 +434,13 @@ async function doFullExtraction(
     throw new Error("No audio formats available for this video.");
   }
 
+  const sortedAudioFormats = formats
+    .filter((f) => f.url)
+    .sort((a, b) => (b.bitrate || 0) - (a.bitrate || 0));
+
   const format =
-    formats.find((f) => f.mime_type?.includes("mp4")) ||
-    formats.sort((a, b) => (b.bitrate || 0) - (a.bitrate || 0))[0];
-  const streamUrl = format.url;
+    sortedAudioFormats.find((f) => f.mime_type?.includes("mp4")) || sortedAudioFormats[0];
+  const streamUrl = format?.url;
 
   if (!streamUrl) {
     throw new Error("Could not obtain a usable stream URL.");
@@ -491,6 +498,112 @@ async function doFullExtraction(
 }
 
 /**
+ * Primary extraction using Android testsuite player request (params=2AMB).
+ * Bypasses YouTube's 403 range cutoff that affects standard ANDROID_VR streams past ~262KB / 60s.
+ */
+async function extractWithAndroidTestsuite(
+  id: string,
+  sourceUrl: string,
+  cookies?: string,
+): Promise<StreamInfo | null> {
+  try {
+    const yt = await getInnertube(cookies, "ANDROID");
+    const playerRes = await yt.actions.execute("/player", {
+      videoId: id,
+      params: "2AMB",
+      client: "ANDROID",
+    });
+
+    const data = playerRes.data as {
+      playabilityStatus?: { status?: string; reason?: string };
+      videoDetails?: {
+        title?: string;
+        author?: string;
+        lengthSeconds?: string | number;
+        thumbnail?: { thumbnails?: { url?: string; width?: number; height?: number }[] };
+      };
+      streamingData?: {
+        formats?: Record<string, unknown>[];
+        adaptiveFormats?: Record<string, unknown>[];
+      };
+    };
+
+    if (data?.playabilityStatus?.status !== "OK" || !data.streamingData) {
+      return null;
+    }
+
+    const allFormats = [
+      ...(data.streamingData.formats || []),
+      ...(data.streamingData.adaptiveFormats || []),
+    ];
+
+    const audioFormats = allFormats
+      .filter(
+        (f) => f.hasAudio !== false && !f.width && !f.height && typeof f.url === "string",
+      )
+      .sort((a, b) => (Number(b.bitrate) || 0) - (Number(a.bitrate) || 0));
+
+    if (!audioFormats.length) return null;
+
+    const format =
+      audioFormats.find((f) => String(f.mimeType || f.mime_type || "").includes("mp4")) ||
+      audioFormats[0];
+
+    const streamUrl = String(format.url);
+    if (!streamUrl) return null;
+
+    const rawMime = String(format.mimeType || format.mime_type || "audio/mp4");
+    const contentType = rawMime.split(";")[0]?.trim() || "audio/mp4";
+    const details = data.videoDetails;
+
+    let artist: string | undefined;
+    let album: string | undefined;
+    let thumbnail = pickThumbnail(details?.thumbnail?.thumbnails || []);
+    let isAudioTrackVideo = false;
+
+    try {
+      const musicInfo = await yt.music.getInfo(id);
+      const musicBasic = musicInfo.basic_info;
+      if (musicBasic?.author && musicBasic.author !== details?.author) {
+        artist = musicBasic.author;
+      }
+      if (musicBasic && typeof (musicBasic as { album?: string }).album !== "undefined") {
+        album = (musicBasic as { album?: string }).album;
+      }
+      const musicThumb = pickThumbnail(
+        (musicBasic?.thumbnail as { url?: string; width?: number; height?: number }[]) ||
+          [],
+      );
+      if (musicThumb) thumbnail = musicThumb;
+      isAudioTrackVideo = isAudioTrackVideoType(readMusicVideoType(musicInfo));
+    } catch {
+      if (details?.author?.includes(" - Topic")) {
+        isAudioTrackVideo = true;
+      }
+    }
+
+    return {
+      url: streamUrl,
+      contentType,
+      headers: {
+        "User-Agent": YOUTUBE_IOS_UA,
+      },
+      duration: Math.floor(Number(details?.lengthSeconds) || 0),
+      title: details?.title || "Unknown",
+      author: details?.author || "Unknown",
+      thumbnail,
+      artist: artist || details?.author,
+      album,
+      sourceUrl,
+      isAudioTrackVideo,
+    };
+  } catch (err) {
+    console.warn("[Moonlit] Android testsuite extract failed:", err);
+    return null;
+  }
+}
+
+/**
  * Extract a playable stream URL for a YouTube video.
  */
 export async function extractStreamUrl(
@@ -502,6 +615,9 @@ export async function extractStreamUrl(
 ): Promise<StreamInfo> {
   const id = getYouTubeId(url);
   if (!id) throw new Error("Invalid YouTube URL");
+
+  const testsuiteStream = await extractWithAndroidTestsuite(id, url, options.cookies);
+  if (testsuiteStream) return testsuiteStream;
 
   let lastError: Error | null = null;
   for (let i = 0; i < EXTRACT_CLIENTS.length; i++) {

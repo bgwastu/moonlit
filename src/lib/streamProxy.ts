@@ -1,6 +1,6 @@
 import { STREAM_CHUNK_BYTES } from "@/lib/streamConstants";
 import type { StreamToken } from "@/lib/streamTokens";
-import { YOUTUBE_ANDROID_VR_UA } from "@/lib/youtubei";
+import { YOUTUBE_IOS_UA } from "@/lib/youtubei";
 
 const UPSTREAM_TIMEOUT_MS = 30_000;
 
@@ -78,7 +78,7 @@ export async function proxyStreamRange(
     const upstream = await fetch(entry.url, {
       headers: {
         ...entry.headers,
-        "User-Agent": entry.headers["User-Agent"] || YOUTUBE_ANDROID_VR_UA,
+        "User-Agent": entry.headers["User-Agent"] || YOUTUBE_IOS_UA,
         Range: `bytes=${start}-${end}`,
       },
       signal: controller.signal,
