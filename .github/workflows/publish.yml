@@ -132,7 +132,7 @@ jobs:
           fi
           response="$(mktemp)"
           code="$(curl --silent --show-error --output "$response" --write-out '%{http_code}' \
-            --request GET "$WEBHOOK_URL" \
+            --request POST "$WEBHOOK_URL" \
             --header "Authorization: Bearer $WEBHOOK_TOKEN")"
           echo "HTTP $code"
           cat "$response"
