@@ -239,7 +239,7 @@ export async function searchYouTube(
     if (age < SEARCH_TTL_MS) return cached.value;
   }
 
-  const yt = await getInnertube(options.cookies, "ANDROID_VR");
+  const yt = await getInnertube(options.cookies, "WEB");
   const search = await yt.search(cleanQuery, { type: "video" });
 
   const results: YouTubeSearchResult[] = [];
@@ -296,7 +296,7 @@ export async function searchMusic(
     if (age < SEARCH_TTL_MS) return cached.value;
   }
 
-  const yt = await getInnertube(options.cookies, "ANDROID_VR");
+  const yt = await getInnertube(options.cookies, "WEB");
   const search = await yt.music.search(cleanQuery, { type: "song" });
 
   const songs = search.songs?.contents || [];
