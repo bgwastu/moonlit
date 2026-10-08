@@ -28,8 +28,16 @@ export async function GET(
     return apiError("Token expired", 410, cors());
   }
 
-  const result = await proxyStreamRange(entry, req.headers.get("range"));
-  if (result instanceof Response) return result;
-
-  return apiError(result.message, result.status, cors());
+  try {
+    const result = await proxyStreamRange(entry, req.headers.get("range"), req.signal);
+    if (result instanceof Response) return result;
+    return apiError(result.message, result.status, cors());
+  } catch (error) {
+    return apiError(
+      (error as Error).message,
+      (error as any).status || 503,
+      cors(),
+      (error as any).code,
+    );
+  }
 }

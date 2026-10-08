@@ -97,12 +97,7 @@ export function usePlayerMedia({
         setExtractedMedia(null);
         setPlaybackError(null);
         setStreamState({ status: "error", message });
-        const hint =
-          code === "RATE_LIMITED"
-            ? " Wait a moment and try again."
-            : code === "YOUTUBE_BLOCKED" || code === "STREAM_UNAVAILABLE"
-              ? " Try configuring cookies from a logged-in account in the app settings."
-              : " Try configuring cookies from a logged-in account in the app settings if the problem persists.";
+        const hint = code === "RATE_LIMITED" ? " Wait a moment and try again." : "";
         notifications.show({
           title:
             youtubeErrorTitle(code) === "Request failed"
@@ -230,16 +225,14 @@ export function usePlayerMedia({
   const handleAudioError = useCallback(
     (e?: unknown) => {
       const message =
-        e instanceof Error
-          ? e.message
-          : "Couldn't load audio. Try again or check cookies in settings.";
+        e instanceof Error ? e.message : "Couldn't load audio. Please try again.";
 
       if (audioErrorCount.current >= 1) {
         setPlaybackError(message);
         setStreamState({ status: "error", message });
         notifications.show({
           title: "Playback failed",
-          message: `${message} Try configuring cookies from a logged-in account in the app settings if the problem persists.`,
+          message,
           color: "red",
           autoClose: 10000,
         });

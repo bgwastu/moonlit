@@ -27,7 +27,7 @@ export function enforceYouTubeStatusLimit(
 ): Response | null {
   const ip = getClientIp(request);
   // system: cold-start probes only (cache hits skip this). user: ephemeral privacy probes.
-  const limit = kind === "system" ? 30 : 20;
+  const limit = kind === "system" ? 120 : 100;
   const result = checkRateLimit(`youtube:status:${kind}:${ip}`, limit, STATUS_WINDOW_MS);
   if (result.ok === false) return rateLimitResponse(result.retryAfterSec);
   return null;

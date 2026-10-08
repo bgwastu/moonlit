@@ -88,8 +88,9 @@ function parseNetscapeRows(content: string): CookieRow[] | { error: string } {
   const rows: CookieRow[] = [];
 
   for (const line of content.split(/\r?\n/)) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith("#")) continue;
+    let trimmed = line.trim();
+    if (trimmed.startsWith("#HttpOnly_")) trimmed = trimmed.slice(10);
+    else if (!trimmed || trimmed.startsWith("#")) continue;
 
     const parts = trimmed.split("\t");
     if (parts.length < 7) {

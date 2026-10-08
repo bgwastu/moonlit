@@ -1,7 +1,7 @@
-import { readFile } from "fs/promises";
-import path from "path";
-import { Innertube, UniversalCache, YTNodes } from "youtubei.js";
+import { createHash } from "node:crypto";
+import { Constants, Innertube, UniversalCache, YTNodes } from "youtubei.js";
 import { upgradeCoverUrl } from "@/lib/coverUrl";
+import { resolveYoutubeCredentials } from "@/lib/youtubeCredentials";
 import { getYouTubeId } from "@/utils";
 
 export const YOUTUBE_IOS_UA =
@@ -105,9 +105,6 @@ type YTFormat = {
   mime_type?: string;
 };
 
-const DATA_DIR = path.join(process.cwd(), "data");
-const SYSTEM_COOKIES_PATH = path.join(DATA_DIR, "cookies.txt");
-
 // ---- Cache constants ----
 const SEARCH_TTL_MS = 30 * 60 * 1000;
 const INSTANCE_TTL_MS = 4 * 60 * 60 * 1000;
@@ -142,61 +139,18 @@ const instanceStore = new Map<
 >();
 
 // ---- Cookie helpers ----
-async function getSystemCookieString(): Promise<string | null> {
-  try {
-    const content = (await readFile(SYSTEM_COOKIES_PATH, "utf-8")).trim();
-    if (!content) return null;
-    return netscapeToCookieString(content);
-  } catch {
-    return null;
-  }
-}
-
-function netscapeToCookieString(netscape: string): string {
-  const pairs: string[] = [];
-  for (const line of netscape.split("\n")) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith("#")) continue;
-    const parts = trimmed.split("\t");
-    if (parts.length < 7) continue;
-    const name = parts[5]?.trim();
-    const value = parts[6]?.trim();
-    // Cookie header values must stay raw — URI-encoding breaks LOGIN_INFO / PSID auth.
-    if (name && value && !/[;\n\r]/.test(name) && !/[;\n\r]/.test(value)) {
-      pairs.push(`${name}=${value}`);
-    }
-  }
-  return pairs.join("; ");
-}
-
-async function resolveCookieString(userCookies?: string): Promise<string | undefined> {
-  if (userCookies?.trim()) {
-    if (userCookies.includes("\t") || userCookies.includes("#")) {
-      return netscapeToCookieString(userCookies);
-    }
-    return userCookies;
-  }
-  return (await getSystemCookieString()) ?? undefined;
-}
-
 export type YoutubeCookieSource = "user" | "system" | "none";
 
-/** Which cookie layer would be used for YouTube requests (user header → system file → none). */
+/** The explicitly selected credential source for YouTube requests. */
 export async function getYoutubeCookieSource(
   userCookies?: string,
 ): Promise<YoutubeCookieSource> {
-  if (userCookies?.trim()) return "user";
-  const system = await getSystemCookieString();
-  return system ? "system" : "none";
+  const credentials = await resolveYoutubeCredentials(userCookies);
+  return credentials.mode === "anonymous" ? "none" : credentials.mode;
 }
 
 function simpleHash(s: string): string {
-  let hash = 0;
-  for (let i = 0; i < s.length; i++) {
-    hash = (hash << 5) - hash + s.charCodeAt(i);
-    hash |= 0;
-  }
-  return Math.abs(hash).toString(36).slice(0, 8);
+  return createHash("sha256").update(s).digest("hex");
 }
 
 // ---- Innertube instance management ----
@@ -206,7 +160,7 @@ async function getInnertube(
   cookieString?: string,
   clientType?: string,
 ): Promise<Innertube> {
-  const effectiveCookie = await resolveCookieString(cookieString);
+  const effectiveCookie = (await resolveYoutubeCredentials(cookieString)).cookies;
   const key = `${clientType || "WEB"}::${effectiveCookie ? simpleHash(effectiveCookie) : DEFAULT_INSTANCE_KEY}`;
 
   const existing = instanceStore.get(key);
@@ -218,6 +172,16 @@ async function getInnertube(
     cache: new UniversalCache(true),
     ...(effectiveCookie ? { cookie: effectiveCookie } : {}),
     ...(clientType ? { client_type: clientType as any } : {}),
+    fetch: (input, init: RequestInit = {}) =>
+      fetch(input, {
+        ...init,
+        signal: init.signal
+          ? AbortSignal.any([init.signal, AbortSignal.timeout(20000)])
+          : AbortSignal.timeout(20000),
+      }),
+  }).catch((error) => {
+    instanceStore.delete(key);
+    throw error;
   });
 
   instanceStore.set(key, { promise, expiresAt: Date.now() + INSTANCE_TTL_MS });
@@ -227,17 +191,18 @@ async function getInnertube(
 // ---- Search ----
 export async function searchYouTube(
   query: string,
-  options: { limit?: number; cookies?: string } = {},
+  options: { limit?: number; cookies?: string; bypassCache?: boolean } = {},
 ): Promise<YouTubeSearchResult[]> {
   const cleanQuery = query.trim();
   if (!cleanQuery) return [];
 
   const limit =
     options.limit != null ? Math.max(1, options.limit) : Number.POSITIVE_INFINITY;
-  const cacheKey = `q=${cleanQuery}|limit=${limit}|c=${simpleHash(options.cookies || "")}`;
+  const credentials = await resolveYoutubeCredentials(options.cookies);
+  const cacheKey = `q=${cleanQuery}|limit=${limit}|c=${credentials.scope}`;
 
   const cached = searchCache.get(cacheKey);
-  if (cached) {
+  if (cached && !options.bypassCache) {
     const age = Date.now() - cached.cachedAt;
     if (age < SEARCH_TTL_MS) return cached.value;
   }
@@ -284,17 +249,18 @@ export async function searchYouTube(
 // ---- Music search ----
 export async function searchMusic(
   query: string,
-  options: { limit?: number; cookies?: string } = {},
+  options: { limit?: number; cookies?: string; bypassCache?: boolean } = {},
 ): Promise<MusicSearchResult[]> {
   const cleanQuery = query.trim();
   if (!cleanQuery) return [];
 
   const limit =
     options.limit != null ? Math.max(1, options.limit) : Number.POSITIVE_INFINITY;
-  const cacheKey = `music:q=${cleanQuery}|limit=${limit}|c=${simpleHash(options.cookies || "")}`;
+  const credentials = await resolveYoutubeCredentials(options.cookies);
+  const cacheKey = `music:q=${cleanQuery}|limit=${limit}|c=${credentials.scope}`;
 
   const cached = musicSearchCache.get(cacheKey);
-  if (cached) {
+  if (cached && !options.bypassCache) {
     const age = Date.now() - cached.cachedAt;
     if (age < SEARCH_TTL_MS) return cached.value;
   }
@@ -373,12 +339,12 @@ function pickThumbnail(
 
 // ---- Stream extraction ----
 
-type ExtractClient = "iOS" | "ANDROID_VR" | "TV";
+type ExtractClient = "IOS" | "ANDROID_VR" | "TV";
 
-const EXTRACT_CLIENTS: ExtractClient[] = ["iOS", "ANDROID_VR", "TV"];
+const EXTRACT_CLIENTS: ExtractClient[] = ["IOS", "ANDROID_VR", "TV"];
 
 function userAgentForClient(client: ExtractClient): string {
-  if (client === "iOS") return YOUTUBE_IOS_UA;
+  if (client === "IOS") return YOUTUBE_IOS_UA;
   return client === "TV" ? YOUTUBE_TV_UA : YOUTUBE_ANDROID_VR_UA;
 }
 
@@ -390,7 +356,8 @@ function isExtractRetriable(message: string): boolean {
     lower.includes("sign in to confirm") ||
     lower.includes("could not obtain") ||
     lower.includes("fetch failed") ||
-    lower.includes("network")
+    lower.includes("network") ||
+    lower.includes("status code 400")
   );
 }
 
@@ -402,10 +369,12 @@ async function doFullExtraction(
   sourceUrl: string,
   options: { cookies?: string; signal?: AbortSignal; clientType?: ExtractClient },
 ): Promise<StreamInfo> {
-  const clientType = options.clientType ?? "iOS";
+  options.signal?.throwIfAborted();
+  const clientType = options.clientType ?? "IOS";
   const yt = await getInnertube(options.cookies, clientType);
 
-  const info = await yt.getBasicInfo(id);
+  const info = await yt.getBasicInfo(id, { client: clientType });
+  options.signal?.throwIfAborted();
   const basic = info.basic_info;
 
   if (!basic) {
@@ -418,9 +387,7 @@ async function doFullExtraction(
   }
 
   if (!info.streaming_data) {
-    throw new Error(
-      "No streaming data available. Try configuring cookies from a logged-in account in the app settings.",
-    );
+    throw new Error("YouTube did not provide streaming data for this track.");
   }
 
   const allFormats: YTFormat[] = [
@@ -586,7 +553,7 @@ async function extractWithAndroidTestsuite(
       url: streamUrl,
       contentType,
       headers: {
-        "User-Agent": YOUTUBE_IOS_UA,
+        "User-Agent": Constants.CLIENTS.ANDROID.USER_AGENT,
       },
       duration: Math.floor(Number(details?.lengthSeconds) || 0),
       title: details?.title || "Unknown",
@@ -598,7 +565,7 @@ async function extractWithAndroidTestsuite(
       isAudioTrackVideo,
     };
   } catch (err) {
-    console.warn("[Moonlit] Android testsuite extract failed:", err);
+    console.warn("[Moonlit] Android testsuite extract failed:", (err as Error)?.message);
     return null;
   }
 }
@@ -615,13 +582,21 @@ export async function extractStreamUrl(
 ): Promise<StreamInfo> {
   const id = getYouTubeId(url);
   if (!id) throw new Error("Invalid YouTube URL");
+  options.signal?.throwIfAborted();
+  const authenticated =
+    (await resolveYoutubeCredentials(options.cookies)).mode !== "anonymous";
 
-  const testsuiteStream = await extractWithAndroidTestsuite(id, url, options.cookies);
+  const testsuiteStream = authenticated
+    ? null
+    : await extractWithAndroidTestsuite(id, url);
+  options.signal?.throwIfAborted();
   if (testsuiteStream) return testsuiteStream;
 
   let lastError: Error | null = null;
-  for (let i = 0; i < EXTRACT_CLIENTS.length; i++) {
-    const clientType = EXTRACT_CLIENTS[i];
+  const clients: ExtractClient[] = authenticated ? ["TV"] : EXTRACT_CLIENTS;
+  for (let i = 0; i < clients.length; i++) {
+    options.signal?.throwIfAborted();
+    const clientType = clients[i];
     try {
       return await doFullExtraction(id, url, { ...options, clientType });
     } catch (error) {
@@ -629,7 +604,7 @@ export async function extractStreamUrl(
       lastError = err;
       if (!isExtractRetriable(err.message)) throw err;
       console.warn(`[Moonlit] Extract failed with ${clientType}:`, err.message);
-      if (i < EXTRACT_CLIENTS.length - 1) {
+      if (i < clients.length - 1) {
         await new Promise((resolve) => setTimeout(resolve, 400 * (i + 1)));
       }
     }

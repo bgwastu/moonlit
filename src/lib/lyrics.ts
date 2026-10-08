@@ -56,8 +56,25 @@ export interface Lyric {
   words: string; // Full line text
   durationMs: number;
   parts?: LyricPart[]; // Word-level timing if available
+  language?: string;
+  romanization?: string;
+  romanizationLanguage?: string;
+  timedRomanization?: LyricPart[];
   /** True for synthesized or source beat/instrumental placeholders (♪). */
   isInstrumental?: boolean;
+}
+
+/** Shift every timed text layer together without changing the source lyrics. */
+export function applyLyricsOffset(lyrics: Lyric[], offsetMs: number): Lyric[] {
+  if (offsetMs === 0) return lyrics;
+  const shiftParts = (parts?: LyricPart[]) =>
+    parts?.map((part) => ({ ...part, startTimeMs: part.startTimeMs + offsetMs }));
+  return lyrics.map((lyric) => ({
+    ...lyric,
+    startTimeMs: lyric.startTimeMs + offsetMs,
+    parts: shiftParts(lyric.parts),
+    timedRomanization: shiftParts(lyric.timedRomanization),
+  }));
 }
 
 /** Gaps at least this long can get a ♪ (lead-in, outro, or clear break). */
@@ -342,17 +359,23 @@ function isTtml(text: string): boolean {
   const trimmed = text.trim();
   if (!trimmed.startsWith("<")) return false;
   return (
-    /<(?:tt|div|p|span)\b/i.test(trimmed) && /ttml|itunes:timing|<p\b/i.test(trimmed)
+    /<(?:[\w.-]+:)?(?:tt|div|p|span)\b/i.test(trimmed) &&
+    /ttml|itunes:timing|<(?:[\w.-]+:)?p\b/i.test(trimmed)
   );
 }
 
 /**
  * Parse TTML clock values to milliseconds.
- * Supports: ss.xxx, mm:ss.xxx, hh:mm:ss.xxx
+ * Supports clock values and offset values such as 500ms or 1.5s.
  */
 function parseTtmlTime(timeStr: string): number {
   const raw = timeStr.trim();
   if (!raw) return 0;
+  const offset = raw.match(/^(\d+(?:\.\d+)?)(ms|s|m|h)$/);
+  if (offset) {
+    const units = { ms: 1, s: 1000, m: 60000, h: 3600000 };
+    return Math.round(Number(offset[1]) * units[offset[2]]);
+  }
   const parts = raw.split(":");
   if (parts.length === 1) {
     const sec = parseFloat(parts[0]);
@@ -375,6 +398,74 @@ function getAttr(el: Element, name: string): string | null {
   return el.getAttribute(name) ?? el.getAttribute(name.toLowerCase());
 }
 
+function getLanguage(el: Element): string | undefined {
+  for (let current: Element | null = el; current; current = current.parentElement) {
+    const language = getAttr(current, "xml:lang");
+    if (language) return language;
+  }
+  return undefined;
+}
+
+function getTtmlElements(parent: Document | Element, localName: string): Element[] {
+  return Array.from(parent.getElementsByTagName("*")).filter(
+    (element) => element.localName === localName,
+  );
+}
+
+/** Read source and romanized text with the same whitespace/timing rules. */
+function readTtmlText(parent: Element): { words: string; parts?: LyricPart[] } {
+  const parts: LyricPart[] = [];
+  let text = "";
+  let leadingText = "";
+
+  const appendText = (value: string) => {
+    text += value;
+    if (parts.length > 0) parts[parts.length - 1].words += value;
+    else leadingText += value;
+  };
+
+  const walkNodes = (element: Element) => {
+    for (const node of Array.from(element.childNodes)) {
+      if (node.nodeType === Node.TEXT_NODE) {
+        appendText(node.textContent ?? "");
+        continue;
+      }
+      if (node.nodeType !== Node.ELEMENT_NODE) continue;
+      const el = node as Element;
+      const tag = el.localName.toLowerCase();
+      const begin = getAttr(el, "begin");
+      if (tag === "span" && begin) {
+        const nestedTimed = getTtmlElements(el, "span").some(
+          (child) => !!getAttr(child, "begin"),
+        );
+        if (nestedTimed) {
+          walkNodes(el);
+        } else {
+          const startTimeMs = parseTtmlTime(begin);
+          const end = getAttr(el, "end");
+          const words = el.textContent ?? "";
+          text += words;
+          parts.push({
+            startTimeMs,
+            words: leadingText + words,
+            durationMs: end ? Math.max(0, parseTtmlTime(end) - startTimeMs) : 0,
+          });
+          leadingText = "";
+        }
+      } else if (tag === "span") {
+        walkNodes(el);
+      } else if (tag === "br") {
+        appendText(" ");
+      }
+    }
+  };
+  walkNodes(parent);
+  return {
+    words: text.replace(/\s+/g, " ").trim(),
+    parts: parts.length > 0 ? parts : undefined,
+  };
+}
+
 /**
  * Parse Apple Music–style TTML (word/syllable spans) into Lyric[].
  * Uses DOMParser (browser). Empty or invalid input returns [].
@@ -389,11 +480,32 @@ function parseTTML(ttmlText: string, songDurationMs: number): Lyric[] {
     return [];
   }
 
-  const parseError = doc.getElementsByTagName("parsererror");
+  const parseError = getTtmlElements(doc, "parsererror");
   if (parseError.length > 0) return [];
 
-  const paragraphs = Array.from(doc.getElementsByTagName("p"));
+  const paragraphs = getTtmlElements(doc, "p");
   if (paragraphs.length === 0) return [];
+
+  const romanizations = new Map<
+    string,
+    Map<string, ReturnType<typeof readTtmlText> & { language: string }>
+  >();
+  for (const transliteration of getTtmlElements(doc, "transliteration")) {
+    const language = getLanguage(transliteration);
+    if (!language || !/^(?:ja|ko)-Latn(?:-|$)/i.test(language)) continue;
+    const sourceLanguage = language.split("-")[0].toLowerCase();
+    for (const text of getTtmlElements(transliteration, "text")) {
+      const key = getAttr(text, "for");
+      if (!key) continue;
+      const parsed = readTtmlText(text);
+      if (!parsed.words) continue;
+      const byLanguage = romanizations.get(key) || new Map();
+      if (!byLanguage.has(sourceLanguage)) {
+        byLanguage.set(sourceLanguage, { ...parsed, language });
+      }
+      romanizations.set(key, byLanguage);
+    }
+  }
 
   const rawLines: Lyric[] = [];
 
@@ -406,68 +518,34 @@ function parseTTML(ttmlText: string, songDurationMs: number): Lyric[] {
     const endTimeMs = lineEnd ? parseTtmlTime(lineEnd) : startTimeMs;
     const lineDurationMs = Math.max(0, endTimeMs - startTimeMs);
 
-    const parts: LyricPart[] = [];
-
-    // Walk paragraph children so inter-span whitespace stays attached to words.
-    const walkNodes = (parent: Element) => {
-      for (const node of Array.from(parent.childNodes)) {
-        if (node.nodeType === Node.TEXT_NODE) {
-          const ws = node.textContent ?? "";
-          if (ws && parts.length > 0) {
-            parts[parts.length - 1].words += ws;
-          }
-          continue;
-        }
-        if (node.nodeType !== Node.ELEMENT_NODE) continue;
-        const el = node as Element;
-        const tag = el.tagName.toLowerCase();
-        if (tag === "span" && getAttr(el, "begin")) {
-          const begin = getAttr(el, "begin")!;
-          const end = getAttr(el, "end");
-          const wordStart = parseTtmlTime(begin);
-          const wordEnd = end ? parseTtmlTime(end) : wordStart;
-          // Nested timed spans (syllables): flatten by walking; otherwise take text
-          const nestedTimed = Array.from(el.children).some(
-            (c) => c.tagName.toLowerCase() === "span" && getAttr(c, "begin"),
-          );
-          if (nestedTimed) {
-            walkNodes(el);
-          } else {
-            parts.push({
-              startTimeMs: wordStart,
-              words: el.textContent ?? "",
-              durationMs: Math.max(0, wordEnd - wordStart),
-            });
-          }
-        } else if (tag === "span" || tag === "br") {
-          walkNodes(el);
-        }
-      }
-    };
-    walkNodes(p);
-
-    if (parts.length > 0) {
-      const lineText =
-        parts
-          .map((part) => part.words)
-          .join("")
-          .replace(/\s+/g, " ")
-          .trim() || (p.textContent ?? "").replace(/\s+/g, " ").trim();
-
-      rawLines.push({
-        startTimeMs,
-        words: lineText,
-        durationMs: lineDurationMs,
-        parts,
-      });
-    } else {
-      const lineText = (p.textContent ?? "").replace(/\s+/g, " ").trim();
-      rawLines.push({
-        startTimeMs,
-        words: lineText,
-        durationMs: lineDurationMs,
-      });
-    }
+    const key =
+      getAttr(p, "itunes:key") ??
+      getAttr(p, "key") ??
+      Array.from(p.attributes).find((attr) => attr.localName === "key")?.value;
+    const language = getLanguage(p);
+    const source = readTtmlText(p);
+    const sourceLanguage = language
+      ? language.split("-")[0].toLowerCase()
+      : /\p{Script=Hangul}/u.test(source.words)
+        ? "ko"
+        : /[\p{Script=Hiragana}\p{Script=Katakana}]/u.test(source.words)
+          ? "ja"
+          : undefined;
+    const candidates = key ? romanizations.get(key) : undefined;
+    const romanization = sourceLanguage
+      ? candidates?.get(sourceLanguage)
+      : candidates?.size === 1
+        ? candidates.values().next().value
+        : undefined;
+    rawLines.push({
+      startTimeMs,
+      durationMs: lineDurationMs,
+      ...source,
+      language,
+      romanization: romanization?.words,
+      romanizationLanguage: romanization?.language,
+      timedRomanization: romanization?.parts,
+    });
   }
 
   rawLines.sort((a, b) => a.startTimeMs - b.startTimeMs);

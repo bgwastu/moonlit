@@ -10,6 +10,7 @@ import {
   stashSearchMeta,
 } from "@/lib/searchMeta";
 import { isMarkedAudioTrackVideo, markAudioTrackVideo } from "@/lib/trackFlags";
+import { YOUTUBE_STATUS_CHANGED_EVENT } from "@/lib/youtubeStatus";
 import { getYouTubeId, isDirectMediaURL, isYoutubeURL } from "@/utils";
 
 export interface StreamState {
@@ -56,9 +57,10 @@ type ExtractPayload = {
 async function extractYouTube(
   url: string,
   abortSignal?: AbortSignal,
+  onState?: (state: StreamState) => void,
 ): Promise<ExtractPayload> {
   const { cookies } = getCookiesToUse();
-  const res = await fetch("/api/stream/extract", {
+  let res = await fetch("/api/stream/extract", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -68,12 +70,67 @@ async function extractYouTube(
     signal: abortSignal,
   });
 
-  if (!res.ok) {
-    const body = await parseApiErrorBody(res);
-    throw new StreamError(body.error || `Extract failed (${res.status})`, body.code);
+  let job:
+    | { jobId: string; leaseId?: string; state: string; percent?: number }
+    | undefined;
+  const cancel = () => {
+    if (job)
+      fetch(`/api/stream/jobs/${job.jobId}?lease=${job.leaseId || ""}`, {
+        method: "DELETE",
+        keepalive: true,
+      }).catch(() => {});
+  };
+  abortSignal?.addEventListener("abort", cancel, { once: true });
+  try {
+    const deadline = Date.now() + 200000;
+    while (res.status === 202) {
+      const next = await res.json();
+      job = { ...next, leaseId: next.leaseId || job?.leaseId };
+      if (!/^[a-f0-9]{32}$/.test(job.jobId))
+        throw new StreamError("The audio service returned an invalid job.");
+      abortSignal?.throwIfAborted();
+      if (Date.now() > deadline)
+        throw new StreamError(
+          "Audio preparation took too long. Please try again.",
+          "AUDIO_TIMEOUT",
+        );
+      const message =
+        job.state === "downloading"
+          ? `Downloading audio${job.percent ? ` (${job.percent}%)` : ""}…`
+          : job.state === "validating"
+            ? "Checking audio…"
+            : "Preparing audio…";
+      onState?.({ status: "extracting", message });
+      await new Promise<void>((resolve, reject) => {
+        const timer = window.setTimeout(done, 500);
+        function done() {
+          abortSignal?.removeEventListener("abort", stopped);
+          resolve();
+        }
+        function stopped() {
+          window.clearTimeout(timer);
+          abortSignal?.removeEventListener("abort", stopped);
+          reject(abortSignal.reason);
+        }
+        abortSignal?.addEventListener("abort", stopped, { once: true });
+      });
+      res = await fetch(`/api/stream/jobs/${job.jobId}?lease=${job.leaseId || ""}`, {
+        signal: abortSignal,
+        cache: "no-store",
+      });
+    }
+    if (!res.ok) {
+      const body = await parseApiErrorBody(res);
+      throw new StreamError(body.error || `Extract failed (${res.status})`, body.code);
+    }
+    return (await res.json()) as ExtractPayload;
+  } catch (error) {
+    cancel();
+    throw error;
+  } finally {
+    abortSignal?.removeEventListener("abort", cancel);
+    window.dispatchEvent(new Event(YOUTUBE_STATUS_CHANGED_EVENT));
   }
-
-  return (await res.json()) as ExtractPayload;
 }
 
 function mediaFromExtract(
@@ -163,7 +220,7 @@ export async function streamWithProgress(
 
   onState({ status: "extracting", message: "Extracting stream..." });
 
-  const data = await extractYouTube(url, abortSignal);
+  const data = await extractYouTube(url, abortSignal, onState);
   onState({ status: "ready" });
   return mediaFromExtract(
     url,

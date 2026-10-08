@@ -11,6 +11,11 @@ COPY package.json bun.lock ./
 RUN --mount=type=cache,target=/root/.bun/install/cache \
     bun install --frozen-lockfile
 
+FROM node:24-alpine AS audio-deps
+WORKDIR /app/services/audio
+COPY services/audio/package.json services/audio/package-lock.json ./
+RUN --mount=type=cache,target=/root/.npm npm ci --omit=dev --ignore-scripts
+
 # Rebuild the source code only when needed
 FROM base AS builder
 WORKDIR /app
@@ -31,6 +36,7 @@ ENV NODE_ENV=production
 
 RUN addgroup --system --gid 1001 nodejs
 RUN adduser --system --uid 1001 nextjs
+RUN apk add --no-cache ffmpeg
 
 COPY --from=builder /app/public ./public
 
@@ -42,6 +48,9 @@ RUN chown -R nextjs:nodejs .next data
 # Copy build output
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
+COPY --from=audio-deps --chown=nextjs:nodejs /app/services/audio/node_modules ./services/audio/node_modules
+COPY --chown=nextjs:nodejs services/audio/*.mjs services/audio/package.json services/audio/THIRD_PARTY_NOTICES.md ./services/audio/
+COPY --chown=nextjs:nodejs scripts/start.mjs ./scripts/start.mjs
 
 USER nextjs
 
@@ -51,4 +60,4 @@ ENV PORT=3000
 
 ENV HOSTNAME=0.0.0.0
 
-CMD ["node", "server.js"]
+CMD ["node", "scripts/start.mjs"]

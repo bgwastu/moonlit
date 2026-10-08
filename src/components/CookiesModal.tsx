@@ -70,7 +70,7 @@ export default function CookiesModal({ opened, onClose }: CookiesModalProps) {
           <Switch
             labelPosition="left"
             label="Enable custom cookies"
-            description="Cookies help bypass age restrictions and rate limits for YouTube."
+            description="Use your account for tracks that require sign-in. Public playback works without cookies."
             checked={customEnabled}
             onChange={(e) => {
               setCustomEnabled(e.currentTarget.checked);

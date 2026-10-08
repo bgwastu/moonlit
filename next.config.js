@@ -1,5 +1,7 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  agentRules: false,
+  allowedDevOrigins: ["127.0.0.1"],
   async headers() {
     const noStore = [{ key: "Cache-Control", value: "no-store" }];
     return [
@@ -30,6 +32,10 @@ const nextConfig = {
   },
   skipTrailingSlashRedirect: true,
   output: "standalone",
+  serverExternalPackages: ["kuroshiro", "kuroshiro-analyzer-kuromoji", "kuromoji"],
+  outputFileTracingIncludes: {
+    "/api/lyrics/romanize": ["./node_modules/kuromoji/dict/*.dat.gz"],
+  },
 };
 
 module.exports = nextConfig;

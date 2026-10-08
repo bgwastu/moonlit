@@ -1,10 +1,12 @@
 import { youtubeErrorCode } from "@/lib/apiError";
-import { readRequestCookies } from "@/lib/cookies";
+import { readRequestCookiesResult } from "@/lib/cookies";
 import {
   enforceYouTubeSearchLimit,
   handleYoutubeGuardError,
 } from "@/lib/rateLimitYouTube";
 import { withYoutubeCircuit } from "@/lib/youtubeCircuit";
+import { resolveYoutubeCredentials } from "@/lib/youtubeCredentials";
+import { recordCapability } from "@/lib/youtubeHealth";
 import {
   type MusicSearchResult,
   type YouTubeSearchResult,
@@ -39,13 +41,23 @@ export async function GET(request: Request) {
     return Response.json({ results: [] });
   }
 
+  let scope = "anonymous";
   try {
-    const cookies = readRequestCookies(request);
+    const supplied = readRequestCookiesResult(request);
+    if (supplied.status === "invalid")
+      return Response.json(
+        { error: supplied.error, code: "INVALID_COOKIES" },
+        { status: 400 },
+      );
+    const cookies = supplied.status === "ok" ? supplied.cookies : undefined;
+    scope = (await resolveYoutubeCredentials(cookies)).scope;
     const searchOptions = { cookies };
 
-    const musicResults = await withYoutubeCircuit(() =>
-      searchMusic(query, searchOptions),
+    const musicResults = await withYoutubeCircuit(
+      () => searchMusic(query, searchOptions),
+      `search:${scope}`,
     );
+    await recordCapability(scope, "search").catch(() => {});
 
     if (musicResults.length > 0) {
       return Response.json({ results: flattenToSearchResults(musicResults) });
@@ -55,11 +67,13 @@ export async function GET(request: Request) {
       return Response.json({ results: [] });
     }
 
-    const videoResults = await withYoutubeCircuit(() =>
-      searchYouTubeVideos(query, searchOptions),
+    const videoResults = await withYoutubeCircuit(
+      () => searchYouTubeVideos(query, searchOptions),
+      `search:${scope}`,
     );
     return Response.json({ results: videoResults });
   } catch (error) {
+    await recordCapability(scope, "search", error).catch(() => {});
     const circuit = handleYoutubeGuardError(error);
     if (circuit) return circuit;
 

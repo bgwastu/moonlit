@@ -1,0 +1,21 @@
+{
+  "name": "moonlit-audio",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "start": "node server.mjs",
+    "test": "node --test test/*.test.mjs",
+    "benchmark": "node benchmark.mjs"
+  },
+  "dependencies": {
+    "bgutils-js": "4.0.3",
+    "googlevideo": "4.1.1",
+    "jsdom": "25.0.1",
+    "undici": "8.11.2",
+    "youtubei.js": "18.1.0"
+  }
+}

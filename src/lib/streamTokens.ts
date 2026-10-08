@@ -3,7 +3,9 @@ import { mkdirSync, readFileSync, writeFileSync } from "fs";
 import path from "path";
 
 export interface StreamToken {
-  url: string;
+  url?: string;
+  assetId?: string;
+  healthScope?: string;
   contentType: string;
   headers: Record<string, string>;
   sourceUrl: string;
@@ -95,7 +97,12 @@ export function getStreamToken(token: string): StreamToken | undefined {
     const entry = JSON.parse(
       Buffer.from(payload, "base64url").toString("utf8"),
     ) as StreamToken;
-    if (!entry.url || !entry.expiresAt || Date.now() > entry.expiresAt) return undefined;
+    if (
+      (!entry.url && !entry.assetId) ||
+      !entry.expiresAt ||
+      Date.now() > entry.expiresAt
+    )
+      return undefined;
     getStore().set(token, entry);
     return entry;
   } catch {

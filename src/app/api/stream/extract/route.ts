@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { youtubeErrorCode } from "@/lib/apiError";
-import { readRequestCookies, sanitizeUserCookies } from "@/lib/cookies";
+import { audioJobResponse } from "@/lib/audioJobResponse";
+import { audioProvider, createAudioJob } from "@/lib/audioWorker";
+import { readRequestCookiesResult, sanitizeUserCookies } from "@/lib/cookies";
 import { upgradeCoverUrl } from "@/lib/coverUrl";
 import {
   enforceYouTubeExtractLimit,
@@ -8,7 +10,10 @@ import {
 } from "@/lib/rateLimitYouTube";
 import { TOKEN_TTL_MS, createStreamToken, pruneExpired } from "@/lib/streamTokens";
 import { withYoutubeCircuit } from "@/lib/youtubeCircuit";
+import { resolveYoutubeCredentials } from "@/lib/youtubeCredentials";
+import { recordCapability } from "@/lib/youtubeHealth";
 import { extractStreamUrl } from "@/lib/youtubei";
+import { getYouTubeId } from "@/utils";
 
 export async function POST(req: Request) {
   const limited = enforceYouTubeExtractLimit(req);
@@ -17,15 +22,42 @@ export async function POST(req: Request) {
   try {
     const body = await req.json();
     const { url } = body;
-    const cookies = readRequestCookies(req) ?? sanitizeUserCookies(body.cookies);
+    const supplied = readRequestCookiesResult(req);
+    if (supplied.status === "invalid")
+      return NextResponse.json(
+        { error: supplied.error, code: "INVALID_COOKIES" },
+        { status: 400 },
+      );
+    const cookies =
+      supplied.status === "ok" ? supplied.cookies : sanitizeUserCookies(body.cookies);
+    if (body.cookies && !cookies)
+      return NextResponse.json(
+        { error: "Invalid YouTube cookies.", code: "INVALID_COOKIES" },
+        { status: 400 },
+      );
 
     if (!url || typeof url !== "string") {
       return NextResponse.json({ error: "Missing url" }, { status: 400 });
     }
 
-    const streamInfo = await withYoutubeCircuit(() =>
-      extractStreamUrl(url, { cookies, signal: req.signal }),
-    );
+    const videoId = getYouTubeId(url);
+    if (!videoId)
+      return NextResponse.json({ error: "Invalid YouTube URL" }, { status: 400 });
+    const credentials = await resolveYoutubeCredentials(cookies);
+    if (audioProvider() === "sabr")
+      return audioJobResponse(await createAudioJob(videoId, credentials, req.signal));
+
+    let streamInfo;
+    try {
+      streamInfo = await withYoutubeCircuit(
+        () => extractStreamUrl(url, { cookies, signal: req.signal }),
+        `playback:${credentials.scope}`,
+      );
+    } catch (error) {
+      if (!req.signal.aborted)
+        await recordCapability(credentials.scope, "playback", error).catch(() => {});
+      throw error;
+    }
 
     pruneExpired();
 
@@ -36,13 +68,13 @@ export async function POST(req: Request) {
       contentType: streamInfo.contentType,
       headers: streamInfo.headers,
       sourceUrl: streamInfo.sourceUrl,
+      healthScope: credentials.scope,
       expiresAt,
     });
 
     // Video is shown via YouTube embed on the client — no video proxy token.
     return NextResponse.json({
       token,
-      url: streamInfo.url,
       metadata: {
         title: streamInfo.title,
         author: streamInfo.author,
@@ -66,10 +98,10 @@ export async function POST(req: Request) {
 
     const message = error instanceof Error ? error.message : "Unknown error";
     console.error("[Moonlit] Stream extract error:", message);
-    const code = youtubeErrorCode(message);
+    const code = (error as { code?: string })?.code || youtubeErrorCode(message);
     return NextResponse.json(
       { error: message, ...(code ? { code } : {}) },
-      { status: 500 },
+      { status: (error as { status?: number })?.status || 502 },
     );
   }
 }

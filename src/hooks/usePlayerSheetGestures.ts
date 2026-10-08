@@ -83,7 +83,7 @@ export function usePlayerSheetGestures({
     if (!target || !(target instanceof Element)) return true;
     return (
       target.closest(
-        "button, a, input, textarea, [role='button'], [role='slider'], [data-no-sheet-gesture]",
+        "button:not([data-lyric-line]), a, input, textarea, [role='button'], [role='slider'], [data-no-sheet-gesture]",
       ) !== null
     );
   }, []);

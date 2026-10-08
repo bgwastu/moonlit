@@ -15,7 +15,7 @@ https://github.com/user-attachments/assets/64777ba1-6022-42b5-a653-c73bd4a61013
 - **Pitch Lock & Shifting**: Change the speed without affecting pitch, or shift pitch independently (non lite mode).
 - **Reverb Effect**: Add ambiance to your tracks with adjustable reverb.
 - **Search Support**: Search for videos on YouTube for faster access.
-- **Lyrics Support**: View synchronized, syllable-level lyrics while listening to your tracks.
+- **Lyrics Support**: View synchronized, syllable-level lyrics with Japanese and Korean romanization.
 - **Client-Side Cookie Management**: Use your own YouTube cookies to bypass restrictions (e.g., age-gated content).
 - **Export Options**: Download the original media or export your processed remix as a WAV or MP3 file.
 - **Self-Hostable**: Run with a single Docker container or directly on your host.
@@ -38,17 +38,23 @@ Open [http://localhost:3000](http://localhost:3000).
 
 Optional environment variables:
 
-| Variable         | Description                                                            |
-| ---------------- | ---------------------------------------------------------------------- |
-| `ADMIN_PASSWORD` | Enables the admin cookie management page at `/admin`                   |
-| `PROXY_URL`      | Proxy for all outbound requests (`http://`, `socks5://`, `socks5h://`) |
+| Variable                     | Description                                                                                                  |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `ADMIN_PASSWORD`             | Enables the admin cookie management page at `/admin`                                                         |
+| `PROXY_URL`                  | HTTP CONNECT proxy for outbound YouTube requests (`http://` or `https://`)                                   |
+| `YOUTUBE_CREDENTIAL_MODE`    | `anonymous` by default; set `system` to explicitly use `/app/data/cookies.txt` with a compatible web session |
+| `AUDIO_PROVIDER`             | `sabr` by default; `legacy` selects the previous direct-URL provider for rollback                            |
+| `AUDIO_CACHE_BYTES`          | Server audio cache quota in bytes; defaults to 2 GiB                                                         |
+| `AUDIO_CACHE_TTL_HOURS`      | Server audio cache lifetime; defaults to 24 hours                                                            |
+| `AUDIO_CONCURRENCY`          | Simultaneous audio downloads; defaults to 2                                                                  |
+| `AUDIO_MAX_DURATION_SECONDS` | Maximum recording length; defaults to 7200 seconds                                                           |
 
 ```bash
 docker run -d \
   --name moonlit \
   -p 3000:3000 \
   -e ADMIN_PASSWORD=your_password \
-  -e PROXY_URL=socks5://127.0.0.1:1080 \
+  -e PROXY_URL=http://your-proxy:3128 \
   -v moonlit-data:/app/data \
   ghcr.io/bgwastu/moonlit:latest
 ```
@@ -66,13 +72,24 @@ docker run -d \
 
 ## Native host (no Docker)
 
-Prerequisites: Bun, Node.js 24+, Python 3, ffmpeg.
+Prerequisites: Bun, Node.js 24+, ffmpeg and ffprobe, npm.
 
 ```bash
 bun install
+npm ci --prefix services/audio --omit=dev --ignore-scripts
 bun run build
 NODE_ENV=production bun run start
 ```
+
+`bun run dev` and `bun run start` supervise Next.js and the private audio worker together. The worker resolves YouTube's web player, generates playback tokens, downloads SABR audio, and validates the complete recording before serving it. Repeated plays use the server cache or the existing browser cache. Audio remains available to speed, independent pitch, reverb, and MP3 export.
+
+The worker listens on loopback port 3010 and requires a bearer secret generated in `data/.audio-worker-secret`. Keep the data volume to retain the cache and secrets across restarts. Run one worker per data directory. Do not publish its port to the internet. To run it separately, configure `AUDIO_WORKER_URL` and the same `AUDIO_WORKER_SECRET` on both processes; the app then starts only Next.js. The separate worker supports `AUDIO_WORKER_HOST`, `AUDIO_WORKER_PORT`, and `MOONLIT_DATA_DIR`.
+
+Anonymous playback is the default. On connections where YouTube requires account access, set `YOUTUBE_CREDENTIAL_MODE=system` after exporting account cookies to `data/cookies.txt`, or enable personal cookies in the app. Account sessions and caches are isolated by credential scope, and cookies are never written into the job database. Automatic playback tokens reduce manual maintenance, but YouTube can still restrict an account, connection, or recording.
+
+The status chip reports Online only after fresh search and complete audio delivery both succeed. Playback failures show Degraded even when search still works. Untested or expired evidence shows Unverified. Known private, removed, age-gated, and region-restricted recordings are reported separately.
+
+Run `bun run test:audio` for the media service checks.
 
 # Credits
 

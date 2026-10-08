@@ -43,6 +43,7 @@ interface UseStretchPlayerReturn {
   isPlaying: boolean;
   isWaiting: boolean;
   currentTime: number;
+  getPlaybackTime: () => number;
   duration: number;
   buffered: BufferedRange[];
   rate: number;
@@ -703,6 +704,13 @@ export function useStretchPlayer({
     }
   }, []);
 
+  // Lyrics can read the source clock each frame without rerendering the entire player.
+  const getPlaybackTime = useCallback(() => {
+    if (advancedStretchRef.current) return runtime.current.currentPosition;
+    const nativeTime = audioRef.current?.currentTime;
+    return Number.isFinite(nativeTime) ? nativeTime : runtime.current.currentPosition;
+  }, []);
+
   const setRate = useCallback((r: number) => {
     const rt = runtime.current;
     rt.rate = r;
@@ -752,6 +760,7 @@ export function useStretchPlayer({
     isPlaying,
     isWaiting,
     currentTime,
+    getPlaybackTime,
     duration,
     buffered,
     rate: rateState,

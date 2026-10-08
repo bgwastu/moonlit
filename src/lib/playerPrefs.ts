@@ -12,6 +12,7 @@ export interface GlobalPlaybackPrefs {
   volume: number;
   advancedStretch: boolean;
   showLyrics: boolean;
+  showRomanization: boolean;
   slowedRate: number;
   normalRate: number;
   speedupRate: number;
@@ -28,6 +29,7 @@ const DEFAULT_PLAYBACK_PREFS: GlobalPlaybackPrefs = {
   volume: 1,
   advancedStretch: false,
   showLyrics: false,
+  showRomanization: false,
   slowedRate: 0.8,
   normalRate: 1,
   speedupRate: 1.25,
@@ -66,8 +68,14 @@ export function getPlaybackPrefs(): GlobalPlaybackPrefs {
   try {
     const raw = localStorage.getItem(PLAYBACK_PREFS_KEY);
     if (!raw) return { ...DEFAULT_PLAYBACK_PREFS };
-    const parsed = JSON.parse(raw) as Partial<GlobalPlaybackPrefs>;
-    return { ...DEFAULT_PLAYBACK_PREFS, ...parsed };
+    const { showRomaji, ...parsed } = JSON.parse(raw) as Partial<GlobalPlaybackPrefs> & {
+      showRomaji?: boolean;
+    };
+    return {
+      ...DEFAULT_PLAYBACK_PREFS,
+      ...parsed,
+      showRomanization: parsed.showRomanization ?? showRomaji ?? false,
+    };
   } catch {
     return { ...DEFAULT_PLAYBACK_PREFS };
   }

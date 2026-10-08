@@ -2,6 +2,7 @@
 
 import {
   Fragment,
+  memo,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -10,24 +11,25 @@ import {
   useState,
 } from "react";
 import { Box, Button, Text } from "@mantine/core";
-import { IconRefresh } from "@tabler/icons-react";
+import { IconArrowBackUp } from "@tabler/icons-react";
 import type { LyricsState } from "@/hooks/useLyrics";
-import { Lyric, LyricPart } from "@/lib/lyrics";
-
-const SYNC_THRESHOLD_PX = 80;
-/** Desktop panel width/transform transition is ~350ms — wait before first sync. */
-const OPEN_LAYOUT_MS = 400;
-
-const ACTIVE_COLOR = "#ffffff";
-const ACTIVE_BEAT_COLOR = "rgba(255, 255, 255, 0.7)";
-const DIM_COLOR = "rgba(255, 255, 255, 0.3)";
+import { useLyricsFollow } from "@/hooks/useLyricsFollow";
+import { findActiveLyric, lyricWordProgress } from "@/lib/lyricPlayback";
+import type { Lyric, LyricPart } from "@/lib/lyrics";
+import { EMPTY_ROMANIZATIONS, getRomanizationLanguage } from "@/lib/romanization";
+import styles from "./LyricsPanel.module.css";
 
 interface LyricsPanelProps {
   lyrics: Lyric[];
+  showRomanization?: boolean;
+  romanizations?: ReadonlyMap<string, string>;
   state: LyricsState;
   error: string | null;
   currentTimeSeconds: number;
+  getPlaybackTime?: () => number;
+  rate?: number;
   isPlaying?: boolean;
+  isWaiting?: boolean;
   onSeek: (timeSeconds: number) => void;
   className?: string;
   style?: React.CSSProperties;
@@ -35,65 +37,35 @@ interface LyricsPanelProps {
   visible?: boolean;
 }
 
-/** Active line: light up whole words that have started (no wipe/slide). */
-function paintWordLine(lineEl: HTMLElement, timeMs: number, isActive: boolean): void {
-  const words = lineEl.querySelectorAll<HTMLElement>("[data-lyric-word]");
-  for (const el of words) {
-    const start = Number(el.dataset.start);
-    const on = isActive && timeMs >= start;
-    const next = on ? "1" : "0";
-    if (el.dataset.on === next) continue;
-    el.dataset.on = next;
-    el.style.color = on ? ACTIVE_COLOR : DIM_COLOR;
-  }
+interface WordElement {
+  element: HTMLElement;
+  start: number;
+  duration: number;
+  progress: number;
 }
 
-function splitWordSpacing(raw: string): {
-  leading: string;
-  core: string;
-  trailing: string;
-} {
-  const leading = raw.match(/^\s*/)?.[0] ?? "";
-  const trailing = raw.match(/\s*$/)?.[0] ?? "";
-  const core = raw.slice(leading.length, raw.length - trailing.length);
-  return { leading, core, trailing };
-}
-
-/**
- * Per-word highlight DOM: inline-block tokens + whitespace as text nodes
- * so lines wrap between words.
- */
 function WordHighlightLine({ parts }: { parts: LyricPart[] }) {
   return (
-    <span style={{ display: "inline" }}>
-      {parts.map((part, i) => {
-        const { leading, core, trailing } = splitWordSpacing(part.words);
-        if (!core) {
-          return (
-            <Fragment key={`${part.startTimeMs}-${i}`}>
-              {leading}
-              {trailing}
-            </Fragment>
-          );
-        }
+    <span>
+      {parts.map((part, index) => {
+        const leading = part.words.match(/^\s*/)?.[0] ?? "";
+        const trailing = part.words.match(/\s*$/)?.[0] ?? "";
+        const core = part.words.trim();
         return (
-          <Fragment key={`${part.startTimeMs}-${i}`}>
+          <Fragment key={index}>
             {leading}
-            <span
-              data-lyric-word
-              data-start={part.startTimeMs}
-              data-on="0"
-              style={{
-                display: "inline-block",
-                whiteSpace: "pre-wrap",
-                verticalAlign: "bottom",
-                color: DIM_COLOR,
-                transition: "color 0.12s ease",
-              }}
-            >
-              {core}
-            </span>
-            {trailing}
+            {core && (
+              <span
+                className={styles.word}
+                data-lyric-word
+                data-start={part.startTimeMs}
+                data-duration={part.durationMs}
+                data-on="0"
+              >
+                {core}
+              </span>
+            )}
+            {core && trailing}
           </Fragment>
         );
       })}
@@ -101,394 +73,284 @@ function WordHighlightLine({ parts }: { parts: LyricPart[] }) {
   );
 }
 
+const LyricRow = memo(function LyricRow({
+  lyric,
+  index,
+  active,
+  near,
+  romanization,
+  isMobile,
+  register,
+  onSeek,
+  onFollow,
+}: {
+  lyric: Lyric;
+  index: number;
+  active: boolean;
+  near: boolean;
+  romanization?: string;
+  isMobile: boolean;
+  register: (index: number, element: HTMLButtonElement | null) => void;
+  onSeek: (time: number) => void;
+  onFollow: (index?: number) => void;
+}) {
+  return (
+    <button
+      type="button"
+      className={styles.row}
+      data-lyric-line
+      data-active={active || undefined}
+      data-near={near || undefined}
+      data-instrumental={lyric.isInstrumental || undefined}
+      data-mobile={isMobile || undefined}
+      ref={(element) => register(index, element)}
+      aria-label={`Seek to ${lyric.isInstrumental ? "instrumental break" : lyric.words}`}
+      aria-current={active ? "true" : undefined}
+      onClick={() => {
+        onFollow(index);
+        onSeek(lyric.startTimeMs / 1000);
+      }}
+    >
+      <span className={styles.rowContent}>
+        {lyric.isInstrumental ? (
+          "♪"
+        ) : lyric.parts?.length ? (
+          <WordHighlightLine parts={lyric.parts} />
+        ) : (
+          lyric.words
+        )}
+        {romanization && !lyric.isInstrumental && (
+          <span
+            className={styles.romanization}
+            lang={
+              lyric.romanizationLanguage ||
+              `${getRomanizationLanguage(lyric, true) || "ja"}-Latn`
+            }
+            data-lyric-romanization
+          >
+            {lyric.timedRomanization?.length ? (
+              <WordHighlightLine parts={lyric.timedRomanization} />
+            ) : (
+              romanization
+            )}
+          </span>
+        )}
+      </span>
+    </button>
+  );
+});
+
 export default function LyricsPanel({
   lyrics,
+  showRomanization = false,
+  romanizations = EMPTY_ROMANIZATIONS,
   state,
   error,
   currentTimeSeconds,
+  getPlaybackTime,
+  rate = 1,
   isPlaying = false,
+  isWaiting = false,
   onSeek,
   className,
   style,
   isMobile = false,
   visible = true,
 }: LyricsPanelProps) {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const lineRefs = useRef<(HTMLDivElement | null)[]>([]);
-  const ignoreScrollRef = useRef(false);
-  const followPausedRef = useRef(false);
-  const scrollTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const wasVisibleRef = useRef(visible);
-  const layoutReadyRef = useRef(false);
-  const activeIndexRef = useRef(-1);
-  const lyricsRef = useRef(lyrics);
-  const [isOutOfSync, setIsOutOfSync] = useState(false);
-  const [activeIndex, setActiveIndex] = useState(-1);
-
-  const hasWordParts = useMemo(
-    () => lyrics.some((l) => !!l.parts && l.parts.length > 0),
-    [lyrics],
+  const [activeIndex, setActiveIndex] = useState(() =>
+    findActiveLyric(lyrics, currentTimeSeconds * 1000),
   );
-
-  const clockBaseRef = useRef({
+  const activeRef = useRef(activeIndex);
+  const lyricsRef = useRef(lyrics);
+  const wordsRef = useRef<WordElement[][]>([]);
+  const paintedIndexRef = useRef(-1);
+  const clockRef = useRef({
     ms: currentTimeSeconds * 1000,
     wall: 0,
+    rate,
+    running: isPlaying && !isWaiting,
+    read: getPlaybackTime,
   });
+  const lyricsKey = useMemo(
+    () => lyrics.map((line) => line.words).join("\u0000"),
+    [lyrics],
+  );
+  const {
+    containerRef,
+    listRef,
+    lineRefs,
+    registerRow,
+    following,
+    measure,
+    resumeFollow,
+    scrollProps,
+  } = useLyricsFollow({ activeIndex, lyricsKey, visible });
 
-  useEffect(() => {
-    lyricsRef.current = lyrics;
-  }, [lyrics]);
-
-  useEffect(() => {
-    activeIndexRef.current = activeIndex;
-  }, [activeIndex]);
-
-  const resolveActiveIndex = useCallback((timeMs: number, list: Lyric[]): number => {
-    if (list.length === 0) return -1;
-    for (let i = list.length - 1; i >= 0; i--) {
-      if (timeMs >= list[i].startTimeMs) return i;
-    }
-    return 0;
+  const readTime = useCallback(() => {
+    const clock = clockRef.current;
+    const actual = clock.read?.();
+    if (Number.isFinite(actual)) return actual * 1000;
+    return (
+      clock.ms +
+      (clock.running && clock.wall ? (performance.now() - clock.wall) * clock.rate : 0)
+    );
   }, []);
 
-  const paintAllWordLines = useCallback((timeMs: number, active: number) => {
-    const list = lyricsRef.current;
-    for (let i = 0; i < list.length; i++) {
-      const el = lineRefs.current[i];
-      if (!el || !list[i].parts?.length) continue;
-      paintWordLine(el, timeMs, i === active);
+  const paintLine = useCallback((index: number, timeMs: number, active: boolean) => {
+    for (const word of wordsRef.current[index] || []) {
+      const progress = active ? lyricWordProgress(timeMs, word.start, word.duration) : 0;
+      const on = active && timeMs >= word.start;
+      word.element.dataset.on = on ? "1" : "0";
+      word.element.dataset.singing = on && progress < 1 ? "true" : "false";
+      if (progress === word.progress) continue;
+      word.progress = progress;
+      word.element.style.setProperty(
+        "--lyric-fill",
+        `${Math.round(progress * 1000) / 10}%`,
+      );
     }
   }, []);
 
-  useEffect(() => {
-    const ms = currentTimeSeconds * 1000;
-    clockBaseRef.current = { ms, wall: performance.now() };
-    if (!hasWordParts) return;
-
-    const idx = resolveActiveIndex(ms, lyricsRef.current);
-    if (idx !== activeIndexRef.current) setActiveIndex(idx);
-    else activeIndexRef.current = idx;
-    paintAllWordLines(ms, idx);
-  }, [
-    currentTimeSeconds,
-    isPlaying,
-    hasWordParts,
-    resolveActiveIndex,
-    paintAllWordLines,
-  ]);
+  const paintFrame = useCallback(
+    (timeMs: number, index: number) => {
+      if (paintedIndexRef.current !== index)
+        paintLine(paintedIndexRef.current, timeMs, false);
+      paintLine(index, timeMs, true);
+      paintedIndexRef.current = index;
+    },
+    [paintLine],
+  );
 
   useLayoutEffect(() => {
-    if (!hasWordParts) return;
-    const { ms, wall } = clockBaseRef.current;
-    const timeMs = isPlaying && wall > 0 ? ms + (performance.now() - wall) : ms;
-    paintAllWordLines(timeMs, activeIndex);
-  }, [activeIndex, lyrics, hasWordParts, isPlaying, paintAllWordLines]);
-
-  useEffect(() => {
-    if (!visible || !hasWordParts || !isPlaying) return;
-
-    let rafId = 0;
-    const tick = () => {
-      const { ms, wall } = clockBaseRef.current;
-      const timeMs = ms + (performance.now() - wall);
-      const list = lyricsRef.current;
-      const idx = resolveActiveIndex(timeMs, list);
-
-      if (idx !== activeIndexRef.current) {
-        activeIndexRef.current = idx;
-        setActiveIndex(idx);
-      } else {
-        paintAllWordLines(timeMs, idx);
-      }
-      rafId = requestAnimationFrame(tick);
-    };
-    rafId = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(rafId);
-  }, [visible, isPlaying, hasWordParts, resolveActiveIndex, paintAllWordLines]);
-
-  const lineOnlyActiveIndex = useMemo(() => {
-    if (hasWordParts) return -1;
-    return resolveActiveIndex(currentTimeSeconds * 1000, lyrics);
-  }, [hasWordParts, currentTimeSeconds, lyrics, resolveActiveIndex]);
-
-  const displayActiveIndex = hasWordParts ? activeIndex : lineOnlyActiveIndex;
-
-  useEffect(() => {
-    if (!hasWordParts) activeIndexRef.current = displayActiveIndex;
-  }, [hasWordParts, displayActiveIndex]);
-
-  const scrollToIndex = useCallback(
-    (index: number, behavior: ScrollBehavior = "smooth") => {
-      if (index < 0) return;
-      const container = containerRef.current;
-      const line = lineRefs.current[index];
-      if (!container || !line) return;
-
-      followPausedRef.current = false;
-      ignoreScrollRef.current = true;
-      if (scrollTimeoutRef.current) clearTimeout(scrollTimeoutRef.current);
-
-      const containerRect = container.getBoundingClientRect();
-      const lineRect = line.getBoundingClientRect();
-      const lineCenterInContent =
-        lineRect.top - containerRect.top + container.scrollTop + lineRect.height / 2;
-      const target = Math.max(0, lineCenterInContent - container.clientHeight / 2);
-      container.scrollTo({ top: target, behavior });
-
-      scrollTimeoutRef.current = setTimeout(
-        () => {
-          ignoreScrollRef.current = false;
-        },
-        behavior === "smooth" ? 1200 : 200,
-      );
-    },
-    [],
-  );
-
-  const scrollToActive = useCallback(
-    (behavior: ScrollBehavior = "smooth") => {
-      scrollToIndex(activeIndexRef.current, behavior);
-    },
-    [scrollToIndex],
-  );
-
-  useEffect(() => {
-    const becameVisible = visible && !wasVisibleRef.current;
-    wasVisibleRef.current = visible;
-
-    if (!visible) {
-      layoutReadyRef.current = false;
-      return;
-    }
-    if (!becameVisible) return;
-
-    followPausedRef.current = false;
-    layoutReadyRef.current = false;
-    queueMicrotask(() => setIsOutOfSync(false));
-
-    const delay = isMobile ? 80 : OPEN_LAYOUT_MS;
-    const t = window.setTimeout(() => {
-      layoutReadyRef.current = true;
-      scrollToActive("auto");
-    }, delay);
-    return () => window.clearTimeout(t);
-  }, [visible, isMobile, scrollToActive]);
-
-  useEffect(() => {
-    if (!visible || lyrics.length === 0) return;
-    followPausedRef.current = false;
-    queueMicrotask(() => setIsOutOfSync(false));
-    const t = window.setTimeout(
-      () => {
-        if (!visible) return;
-        layoutReadyRef.current = true;
-        scrollToActive("auto");
-      },
-      isMobile ? 80 : OPEN_LAYOUT_MS,
+    lyricsRef.current = lyrics;
+    wordsRef.current = lyrics.map((_, index) =>
+      Array.from(
+        lineRefs.current[index]?.querySelectorAll<HTMLElement>("[data-lyric-word]") || [],
+        (element) => ({
+          element,
+          start: Number(element.dataset.start),
+          duration: Number(element.dataset.duration),
+          progress: -1,
+        }),
+      ),
     );
-    return () => window.clearTimeout(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional: lyrics identity/length
-  }, [lyrics, visible]);
+    for (let index = 0; index < lyrics.length; index += 1) paintLine(index, 0, false);
+    paintedIndexRef.current = -1;
+    measure();
+  }, [lyrics, showRomanization, romanizations, lineRefs, measure, paintLine]);
 
-  useEffect(() => {
-    if (!visible) return;
-    const onVisibility = () => {
-      if (document.hidden || activeIndexRef.current < 0) return;
-      followPausedRef.current = false;
-      setIsOutOfSync(false);
-      scrollToActive("auto");
+  useLayoutEffect(() => {
+    clockRef.current = {
+      ms: currentTimeSeconds * 1000,
+      wall: performance.now(),
+      rate,
+      running: isPlaying && !isWaiting,
+      read: getPlaybackTime,
     };
-    document.addEventListener("visibilitychange", onVisibility);
-    return () => document.removeEventListener("visibilitychange", onVisibility);
-  }, [visible, scrollToActive]);
+    const time = readTime();
+    const index = findActiveLyric(lyrics, time);
+    paintFrame(time, index);
+    let cancelled = false;
+    queueMicrotask(() => {
+      if (!cancelled && index !== activeRef.current) {
+        activeRef.current = index;
+        setActiveIndex(index);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    lyrics,
+    currentTimeSeconds,
+    getPlaybackTime,
+    rate,
+    isPlaying,
+    isWaiting,
+    showRomanization,
+    romanizations,
+    readTime,
+    paintFrame,
+  ]);
 
   useEffect(() => {
-    if (!visible || displayActiveIndex < 0) return;
-    if (!layoutReadyRef.current || followPausedRef.current) return;
-    queueMicrotask(() => setIsOutOfSync(false));
-    scrollToIndex(displayActiveIndex, "smooth");
-  }, [displayActiveIndex, visible, scrollToIndex]);
-
-  useEffect(() => {
-    followPausedRef.current = false;
-    queueMicrotask(() => setIsOutOfSync(false));
-  }, [lyrics]);
-
-  const handleScroll = useCallback(() => {
-    if (ignoreScrollRef.current || !layoutReadyRef.current) return;
-    const index = activeIndexRef.current;
-    if (index < 0 || !containerRef.current || !lineRefs.current[index]) return;
-    const container = containerRef.current.getBoundingClientRect();
-    const line = lineRefs.current[index]!.getBoundingClientRect();
-    const containerCenter = container.top + container.height / 2;
-    const lineCenter = line.top + line.height / 2;
-    const distance = Math.abs(containerCenter - lineCenter);
-    const outOfSync = distance > SYNC_THRESHOLD_PX;
-    followPausedRef.current = outOfSync;
-    setIsOutOfSync(outOfSync);
-  }, []);
-
-  const handleSyncClick = useCallback(() => {
-    setIsOutOfSync(false);
-    layoutReadyRef.current = true;
-    scrollToActive("smooth");
-  }, [scrollToActive]);
-
-  const handleLineClick = useCallback(
-    (lyric: Lyric) => onSeek(lyric.startTimeMs / 1000),
-    [onSeek],
-  );
-
-  const isEmpty = state === "error" || lyrics.length === 0;
-  const isLoading = state === "loading" || state === "idle" || state === "not_found";
-  const emptyMessage = state === "error" && error ? error : null;
+    if (!visible || !isPlaying || isWaiting) return;
+    let frame = 0;
+    const tick = () => {
+      const time = readTime();
+      const index = findActiveLyric(lyricsRef.current, time);
+      if (index !== activeRef.current) {
+        activeRef.current = index;
+        setActiveIndex(index);
+      }
+      paintFrame(time, index);
+      frame = requestAnimationFrame(tick);
+    };
+    frame = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frame);
+  }, [visible, isPlaying, isWaiting, readTime, paintFrame]);
 
   return (
     <Box
-      className={className}
-      style={{
-        ...style,
-        display: "flex",
-        flexDirection: "column",
-        height: "100%",
-        minWidth: 0,
-        width: "100%",
-        maxWidth: "100%",
-        overflow: "hidden",
-        position: "relative",
-        backgroundColor: "transparent",
-      }}
+      className={[styles.panel, className].filter(Boolean).join(" ")}
+      inert={!visible}
+      aria-hidden={!visible || undefined}
+      style={style}
+      data-mobile={isMobile || undefined}
     >
-      {isOutOfSync && !isEmpty && (
-        <Box
-          style={{
-            position: "absolute",
-            top: 150,
-            left: "50%",
-            transform: "translateX(-50%)",
-            zIndex: 10,
-          }}
-        >
+      {!following && lyrics.length > 0 && (
+        <div className={styles.followPrompt}>
           <Button
             variant="default"
-            size="md"
+            size="sm"
             radius="xl"
-            leftSection={<IconRefresh size={18} />}
-            onClick={handleSyncClick}
-            styles={{
-              root: {
-                backgroundColor: "rgba(255, 255, 255, 0.12)",
-                backdropFilter: "blur(10px)",
-                WebkitBackdropFilter: "blur(10px)",
-                border: "1px solid rgba(255, 255, 255, 0.2)",
-                color: "white",
-              },
-            }}
+            leftSection={<IconArrowBackUp size={16} />}
+            onClick={() => resumeFollow()}
+            className={styles.followButton}
           >
-            Sync lyrics
+            Back to current line
           </Button>
-        </Box>
+        </div>
       )}
-      <Box
+      <div
         ref={containerRef}
         data-lyrics-scroll
-        onScroll={handleScroll}
-        className="moonlit-hide-scrollbar"
-        style={{
-          flex: 1,
-          minWidth: 0,
-          width: "100%",
-          maxWidth: "100%",
-          overflowY: "auto",
-          overflowX: "hidden",
-          padding: isMobile ? "42vh 20px 42vh" : "42vh 16px 42vh",
-          boxSizing: "border-box",
-          scrollBehavior: "smooth",
-          scrollbarWidth: "none",
-          msOverflowStyle: "none",
-          touchAction: "pan-y",
-          WebkitMaskImage:
-            "linear-gradient(to bottom, transparent 0%, transparent 12%, black 32%, black 68%, transparent 88%, transparent 100%)",
-          maskImage:
-            "linear-gradient(to bottom, transparent 0%, transparent 12%, black 32%, black 68%, transparent 88%, transparent 100%)",
-        }}
+        className={`${styles.scroll} moonlit-hide-scrollbar`}
+        tabIndex={visible ? 0 : -1}
+        aria-label="Synced lyrics"
+        {...scrollProps}
       >
-        {isLoading ? null : isEmpty ? (
-          emptyMessage ? (
-            <Box
-              h="100%"
-              style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                gap: 8,
-                color: "rgba(255, 255, 255, 0.5)",
-                textAlign: "center",
-              }}
-            >
-              <Text size="sm">{emptyMessage}</Text>
-            </Box>
-          ) : null
-        ) : (
-          lyrics.map((lyric, i) => {
-            const isActive = i === displayActiveIndex;
-            const isBeat = !!lyric.isInstrumental;
-            const useWordHighlight =
-              hasWordParts && !!lyric.parts && lyric.parts.length > 0 && !isBeat;
-
-            const fontSize = useWordHighlight
-              ? "1.85rem"
-              : isActive
-                ? "1.925rem"
-                : "1.75rem";
-            const fontWeight = useWordHighlight ? 700 : isActive ? 700 : 600;
-
-            return (
-              <Box
-                key={`${lyric.startTimeMs}-${i}`}
-                ref={(el) => {
-                  lineRefs.current[i] = el;
-                }}
-                onClick={() => handleLineClick(lyric)}
-                style={{
-                  marginBottom: "1.5rem",
-                  cursor: "pointer",
-                  fontSize,
-                  fontWeight,
-                  color: useWordHighlight
-                    ? undefined
-                    : isActive
-                      ? isBeat
-                        ? ACTIVE_BEAT_COLOR
-                        : ACTIVE_COLOR
-                      : DIM_COLOR,
-                  transformOrigin: isMobile ? "center center" : "left center",
-                  transform: `scale(${isActive ? 1 : 0.92})`,
-                  lineHeight: 1.35,
-                  transition: useWordHighlight
-                    ? "transform 0.2s ease"
-                    : "transform 0.3s ease, color 0.3s ease",
-                  textAlign: isMobile ? "center" : "left",
-                  letterSpacing: isBeat ? "0.12em" : undefined,
-                  minWidth: 0,
-                  width: "100%",
-                  maxWidth: "100%",
-                  overflowWrap: "break-word",
-                  wordBreak: "normal",
-                }}
-              >
-                {isBeat ? (
-                  "♪"
-                ) : useWordHighlight ? (
-                  <WordHighlightLine parts={lyric.parts!} />
-                ) : (
-                  lyric.words
-                )}
-              </Box>
-            );
-          })
-        )}
-      </Box>
+        <div ref={listRef}>
+          {lyrics.length > 0 ? (
+            lyrics.map((lyric, index) => (
+              <LyricRow
+                key={index}
+                lyric={lyric}
+                index={index}
+                active={index === activeIndex}
+                near={Math.abs(index - activeIndex) === 1}
+                isMobile={isMobile}
+                romanization={
+                  showRomanization
+                    ? lyric.romanization || romanizations.get(lyric.words)
+                    : undefined
+                }
+                register={registerRow}
+                onSeek={onSeek}
+                onFollow={resumeFollow}
+              />
+            ))
+          ) : (
+            <Text className={styles.empty} size="sm" c="dimmed">
+              {state === "error"
+                ? error || "Lyrics are unavailable"
+                : state === "not_found"
+                  ? "No lyrics found"
+                  : "Finding lyrics…"}
+            </Text>
+          )}
+        </div>
+      </div>
     </Box>
   );
 }

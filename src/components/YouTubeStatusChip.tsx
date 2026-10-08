@@ -1,388 +1,131 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Badge, Box, Group, Loader, Stack, Text, Tooltip } from "@mantine/core";
-import { IconCheck, IconX } from "@tabler/icons-react";
-import {
-  COOKIES_CHANGED_EVENT,
-  cookieRequestHeaders,
-  getUserCookies,
-  isCustomCookiesEnabled,
-  validateCookies,
-} from "@/lib/cookies";
+import { Badge, Loader, Stack, Text, Tooltip } from "@mantine/core";
+import { COOKIES_CHANGED_EVENT, cookieRequestHeaders } from "@/lib/cookies";
+import { YOUTUBE_STATUS_CHANGED_EVENT } from "@/lib/youtubeStatus";
 
-type ProbeState = "idle" | "checking" | "online" | "offline";
-
-type StatusResponse = {
+type Capability = {
+  state: "healthy" | "degraded" | "unknown";
+  checkedAt: number;
+  expiresAt: number;
+};
+type Status = {
+  state: "healthy" | "degraded" | "offline" | "unknown";
   online: boolean;
-  searchOk: boolean;
-  extractOk: boolean;
-  cookieSource?: "user" | "system" | "none";
-  persisted?: boolean;
-  refreshing?: boolean;
-  code?: string;
+  expiresAt: number;
+  cookieSource?: "none" | "user" | "system";
+  capabilities?: { search: Capability; playback: Capability };
   error?: string;
+  lastItemError?: { error: string };
 };
 
-const POLL_MS = 3 * 60 * 1000;
-const USER_LAZY_MS = 1_200;
-const MOONLIT_MIN_INTERVAL_MS = 15_000;
-const USER_MIN_INTERVAL_MS = 60_000;
-const MOONLIT_CACHE_KEY = "moonlit-yt-status-moonlit";
+const unknown = (): Status => ({ state: "unknown", online: false, expiresAt: 0 });
 
-function lineContent(
-  label: string,
-  state: ProbeState,
-  data: StatusResponse | null,
-): string {
-  if (state === "idle") return `${label}: off`;
-  if (state === "checking") return `${label}: checking…`;
-  if (!data) return `${label}: unknown`;
-
-  if (data.code === "RATE_LIMITED" && data.refreshing) {
-    if (state === "online") return `${label}: online`;
-    if (state === "offline") return `${label}: offline`;
-    return `${label}: checking…`;
-  }
-
-  if (data.code === "INVALID_COOKIES") return `${label}: invalid`;
-  if (data.online) return `${label}: online`;
-  return `${label}: offline`;
-}
-
-function StatusRow({
-  label,
-  state,
-  data,
-  active,
-  loading,
-}: {
-  label: string;
-  state: ProbeState;
-  data: StatusResponse | null;
-  active: boolean;
-  loading: boolean;
-}) {
-  const text = lineContent(label, state, data);
-  const showLoader = loading || state === "checking" || Boolean(data?.refreshing);
-  const isError =
-    !showLoader && !active && (state === "offline" || data?.code === "INVALID_COOKIES");
-
-  return (
-    <Group gap={6} wrap="nowrap" align="center">
-      <Box
-        w={14}
-        h={14}
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          flexShrink: 0,
-        }}
-      >
-        {showLoader ? (
-          <Loader size={10} color="gray" />
-        ) : active ? (
-          <IconCheck size={12} stroke={2.5} />
-        ) : isError ? (
-          <IconX size={12} stroke={2.5} />
-        ) : null}
-      </Box>
-      <Text size="xs" style={{ lineHeight: 1.3 }}>
-        {text}
-      </Text>
-    </Group>
-  );
-}
-
-function keepKnownState(prev: ProbeState): ProbeState {
-  return prev === "online" || prev === "offline" ? prev : "checking";
-}
-
-function readMoonlitCache(): StatusResponse | null {
-  try {
-    const raw = sessionStorage.getItem(MOONLIT_CACHE_KEY);
-    if (!raw) return null;
-    const body = JSON.parse(raw) as StatusResponse;
-    return typeof body.online === "boolean" ? body : null;
-  } catch {
-    return null;
-  }
-}
-
-function writeMoonlitCache(body: StatusResponse): void {
-  try {
-    sessionStorage.setItem(MOONLIT_CACHE_KEY, JSON.stringify(body));
-  } catch {
-    // ignore quota / private mode
-  }
-}
-
-async function fetchStatus(
-  signal: AbortSignal,
-  withUserCookies: boolean,
-): Promise<StatusResponse | null> {
-  let headers: HeadersInit = {};
-  if (withUserCookies) {
-    try {
-      headers = cookieRequestHeaders();
-    } catch {
-      return null;
-    }
-  }
-
-  const res = await fetch("/api/youtube/status", { headers, signal });
-  const body = (await res.json()) as StatusResponse & { code?: string };
-  if (typeof body.online !== "boolean") return null;
-  if (body.code === "RATE_LIMITED") return { ...body, refreshing: true };
-  return body;
-}
-
-function stateFromCache(cache: StatusResponse | null): ProbeState {
-  if (!cache) return "checking";
-  return cache.online ? "online" : "offline";
-}
+const capabilityLabel = (state?: string) =>
+  state === "healthy" ? "Working" : state === "degraded" ? "Unavailable" : "Not verified";
 
 export default function YouTubeStatusChip() {
-  const [moonlitState, setMoonlitState] = useState<ProbeState>("checking");
-  const [moonlitData, setMoonlitData] = useState<StatusResponse | null>(null);
-  const [moonlitLoading, setMoonlitLoading] = useState(true);
-  const [userState, setUserState] = useState<ProbeState>("idle");
-  const [userData, setUserData] = useState<StatusResponse | null>(null);
-  const [userLoading, setUserLoading] = useState(false);
-
+  const [status, setStatus] = useState<Status>(unknown);
+  const [loading, setLoading] = useState(true);
   useEffect(() => {
-    let cancelled = false;
-
-    const cached = readMoonlitCache();
-    if (cached) {
-      queueMicrotask(() => {
-        if (cancelled) return;
-        setMoonlitData(cached);
-        setMoonlitState(stateFromCache(cached));
-      });
-    }
-
-    let moonlitController: AbortController | null = null;
-    let userController: AbortController | null = null;
-    let userTimer: number | undefined;
-    let lastMoonlitAt = 0;
-    let lastUserAt = 0;
-
-    const runMoonlit = (force = false) => {
-      const now = Date.now();
-      if (!force && now - lastMoonlitAt < MOONLIT_MIN_INTERVAL_MS) return;
-      lastMoonlitAt = now;
-
-      moonlitController?.abort();
-      const controller = new AbortController();
-      moonlitController = controller;
-      setMoonlitLoading(true);
-
-      fetchStatus(controller.signal, false)
-        .then((body) => {
-          if (cancelled || controller.signal.aborted) return;
-          setMoonlitLoading(false);
-          if (!body) {
-            setMoonlitState(keepKnownState);
-            return;
-          }
-          if (body.code === "RATE_LIMITED") {
-            setMoonlitData((prev) => (prev ? { ...prev, refreshing: true } : body));
-            setMoonlitState(keepKnownState);
-            return;
-          }
-          writeMoonlitCache(body);
-          setMoonlitData(body);
-          setMoonlitState(body.online ? "online" : "offline");
-        })
-        .catch((error: unknown) => {
-          if (cancelled || controller.signal.aborted) return;
-          if (error instanceof DOMException && error.name === "AbortError") return;
-          setMoonlitLoading(false);
-          setMoonlitState(keepKnownState);
+    let stopped = false;
+    let controller: AbortController;
+    let expiryTimer: number;
+    let lastAt = 0;
+    const refresh = async (force = false) => {
+      if (!force && Date.now() - lastAt < 5000) return;
+      lastAt = Date.now();
+      controller?.abort();
+      controller = new AbortController();
+      const signal = controller.signal;
+      setLoading(true);
+      try {
+        const response = await fetch("/api/youtube/status", {
+          headers: cookieRequestHeaders(),
+          cache: "no-store",
+          signal: AbortSignal.any([signal, AbortSignal.timeout(12000)]),
         });
-    };
-
-    const runUser = (force = false) => {
-      window.clearTimeout(userTimer);
-      userController?.abort();
-
-      const rawUserCookies = getUserCookies();
-      const enabled = isCustomCookiesEnabled() && rawUserCookies.trim().length > 0;
-
-      if (!enabled) {
-        setUserLoading(false);
-        setUserState("idle");
-        setUserData(null);
-        return;
-      }
-
-      const validation = validateCookies(rawUserCookies);
-      if (!validation.valid) {
-        setUserLoading(false);
-        setUserData({
-          online: false,
-          searchOk: false,
-          extractOk: false,
-          cookieSource: "user",
-          code: "INVALID_COOKIES",
-          error: validation.error || "Invalid YouTube cookies.",
-        });
-        setUserState("offline");
-        return;
-      }
-
-      const delay = force ? 0 : USER_LAZY_MS;
-      if (force) {
-        setUserState("checking");
-        setUserLoading(true);
-      }
-
-      userTimer = window.setTimeout(() => {
-        if (cancelled) return;
-
-        const now = Date.now();
-        if (!force && now - lastUserAt < USER_MIN_INTERVAL_MS) return;
-        lastUserAt = now;
-
-        const controller = new AbortController();
-        userController = controller;
-        setUserLoading(true);
-        setUserState((prev) =>
-          prev === "online" || prev === "offline" ? prev : "checking",
+        if (!response.ok) throw new Error("Could not verify YouTube status.");
+        const next = (await response.json()) as Status;
+        if (stopped || signal.aborted) return;
+        window.clearTimeout(expiryTimer);
+        setStatus(next.expiresAt > Date.now() ? next : unknown());
+        expiryTimer = window.setTimeout(
+          () => setStatus(unknown()),
+          Math.max(0, next.expiresAt - Date.now()),
         );
-
-        fetchStatus(controller.signal, true)
-          .then((body) => {
-            if (cancelled || controller.signal.aborted) return;
-            setUserLoading(false);
-            if (!body) {
-              setUserState(keepKnownState);
-              return;
-            }
-            if (body.code === "RATE_LIMITED") {
-              setUserData((prev) => (prev ? { ...prev, refreshing: true } : null));
-              setUserState(keepKnownState);
-              return;
-            }
-            // Ignore Moonlit/system payloads accidentally returned without user cookies.
-            if (body.cookieSource !== "user") {
-              setUserData({
-                online: false,
-                searchOk: false,
-                extractOk: false,
-                cookieSource: "user",
-                code: "INVALID_COOKIES",
-                error: "User cookies were not applied to the status check.",
-              });
-              setUserState("offline");
-              return;
-            }
-            setUserData(body);
-            setUserState(body.online ? "online" : "offline");
-          })
-          .catch((error: unknown) => {
-            if (cancelled || controller.signal.aborted) return;
-            if (error instanceof DOMException && error.name === "AbortError") return;
-            setUserLoading(false);
-            setUserState(keepKnownState);
-          });
-      }, delay);
+      } catch (error) {
+        if (stopped || signal.aborted) return;
+        setStatus({ ...unknown(), error: "Could not verify playback availability." });
+      } finally {
+        if (!stopped && !signal.aborted) setLoading(false);
+      }
     };
-
-    const runAll = (force = false) => {
-      runMoonlit(force);
-      runUser(force);
+    const changed = () => {
+      setStatus(unknown());
+      void refresh(true);
     };
-
-    const onFocus = () => runAll(false);
-    const onCookiesChanged = () => runAll(true);
-
-    runAll(true);
-    const id = window.setInterval(() => runAll(false), POLL_MS);
-    window.addEventListener("focus", onFocus);
-    window.addEventListener(COOKIES_CHANGED_EVENT, onCookiesChanged);
-
+    const focused = () => void refresh();
+    const interval = window.setInterval(() => {
+      void refresh();
+    }, 10000);
+    window.addEventListener("focus", focused);
+    window.addEventListener(COOKIES_CHANGED_EVENT, changed);
+    window.addEventListener(YOUTUBE_STATUS_CHANGED_EVENT, changed);
+    void refresh(true);
     return () => {
-      cancelled = true;
-      moonlitController?.abort();
-      userController?.abort();
-      window.clearTimeout(userTimer);
-      window.clearInterval(id);
-      window.removeEventListener("focus", onFocus);
-      window.removeEventListener(COOKIES_CHANGED_EVENT, onCookiesChanged);
+      stopped = true;
+      controller?.abort();
+      window.clearInterval(interval);
+      window.clearTimeout(expiryTimer);
+      window.removeEventListener("focus", focused);
+      window.removeEventListener(COOKIES_CHANGED_EVENT, changed);
+      window.removeEventListener(YOUTUBE_STATUS_CHANGED_EVENT, changed);
     };
   }, []);
 
-  const usingMoonlitFallback = userState === "offline" && moonlitState === "online";
-  const activeState: ProbeState = (() => {
-    if (userState === "online") return "online";
-    if (usingMoonlitFallback) return "online";
-    if (userState === "offline")
-      return moonlitState === "checking" ? "checking" : "offline";
-    return moonlitState;
-  })();
-
-  const moonlitActive = userState === "idle" || usingMoonlitFallback;
-  const userActive = userState === "online";
-
-  const color = usingMoonlitFallback
-    ? "yellow"
-    : activeState === "online"
-      ? "teal"
-      : activeState === "offline"
-        ? "red"
-        : "gray";
-  const badgeLoading =
-    activeState === "checking" ||
-    (moonlitLoading && moonlitState === "checking") ||
-    (userLoading && userState === "checking");
-  const label = usingMoonlitFallback
-    ? "Fallback"
-    : activeState === "online"
+  const state = status.state;
+  const label =
+    state === "healthy"
       ? "Online"
-      : activeState === "offline"
-        ? "Offline"
-        : "Loading";
-
-  const moonlitText = lineContent("Moonlit cookies", moonlitState, moonlitData);
-  const userText = lineContent("Your cookies", userState, userData);
-  const activeLabel = userActive
-    ? "Your cookies"
-    : moonlitActive
-      ? usingMoonlitFallback
-        ? "Moonlit cookies (fallback)"
-        : "Moonlit cookies"
-      : null;
-  const aria = [moonlitText, userText, activeLabel ? `Selected ${activeLabel}` : null]
-    .filter(Boolean)
-    .join(". ");
+      : state === "degraded"
+        ? "Degraded"
+        : state === "offline"
+          ? "Offline"
+          : loading
+            ? "Checking"
+            : "Unverified";
+  const color =
+    state === "healthy"
+      ? "teal"
+      : state === "degraded"
+        ? "yellow"
+        : state === "offline"
+          ? "red"
+          : "gray";
+  const search = capabilityLabel(status.capabilities?.search?.state);
+  const playback = capabilityLabel(status.capabilities?.playback?.state);
+  const account =
+    status.cookieSource === "user"
+      ? "Your account"
+      : status.cookieSource === "system"
+        ? "Server account"
+        : "Public playback";
 
   return (
     <Tooltip
       withArrow
       multiline
-      maw={320}
-      openDelay={100}
-      closeDelay={150}
+      maw={340}
       events={{ hover: true, focus: true, touch: true }}
       label={
         <Stack gap={4}>
-          <StatusRow
-            label="Moonlit cookies"
-            state={moonlitState}
-            data={moonlitData}
-            active={moonlitActive}
-            loading={moonlitLoading}
-          />
-          <StatusRow
-            label="Your cookies"
-            state={userState}
-            data={userData}
-            active={userActive}
-            loading={userLoading}
-          />
+          <Text size="xs">{account}</Text>
+          <Text size="xs">Search: {search}</Text>
+          <Text size="xs">Playback: {playback}</Text>
+          {status.error && <Text size="xs">{status.error}</Text>}
+          {status.lastItemError && <Text size="xs">{status.lastItemError.error}</Text>}
         </Stack>
       }
     >
@@ -393,8 +136,10 @@ export default function YouTubeStatusChip() {
         component="button"
         type="button"
         style={{ flexShrink: 0, cursor: "pointer", border: "none" }}
-        aria-label={aria}
-        leftSection={badgeLoading ? <Loader size={10} color="gray" /> : undefined}
+        aria-label={`YouTube ${label}. Search: ${search}. Playback: ${playback}.`}
+        leftSection={
+          loading && state === "unknown" ? <Loader size={10} color="gray" /> : undefined
+        }
       >
         {label}
       </Badge>

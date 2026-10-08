@@ -1,5 +1,7 @@
+import { workerRequest } from "@/lib/audioWorker";
 import { STREAM_CHUNK_BYTES } from "@/lib/streamConstants";
 import type { StreamToken } from "@/lib/streamTokens";
+import { recordCapability } from "@/lib/youtubeHealth";
 import { YOUTUBE_IOS_UA } from "@/lib/youtubei";
 
 const UPSTREAM_TIMEOUT_MS = 30_000;
@@ -67,7 +69,30 @@ export type StreamProxyError = {
 export async function proxyStreamRange(
   entry: StreamToken,
   rangeHeader: string | null,
+  signal?: AbortSignal,
 ): Promise<Response | StreamProxyError> {
+  if (entry.assetId) {
+    const response = await workerRequest(`/v1/assets/${entry.assetId}`, {
+      headers: rangeHeader ? { Range: rangeHeader } : {},
+      signal,
+      media: true,
+    });
+    const headers = new Headers(streamCorsHeaders());
+    for (const key of [
+      "content-type",
+      "content-length",
+      "content-range",
+      "accept-ranges",
+      "cache-control",
+    ]) {
+      const value = response.headers.get(key);
+      if (value) headers.set(key, value);
+    }
+    return new Response(response.body as ReadableStream, {
+      status: response.status,
+      headers,
+    });
+  }
   const fileSize = fileSizeFromUrl(entry.url);
   const { start, end } = boundByteRange(rangeHeader, fileSize);
 
@@ -81,13 +106,21 @@ export async function proxyStreamRange(
         "User-Agent": entry.headers["User-Agent"] || YOUTUBE_IOS_UA,
         Range: `bytes=${start}-${end}`,
       },
-      signal: controller.signal,
+      signal: signal ? AbortSignal.any([signal, controller.signal]) : controller.signal,
     });
 
     if (upstream.status !== 200 && upstream.status !== 206) {
       console.error(
         `[Moonlit] stream-proxy upstream ${upstream.status} for ${start}-${end}`,
       );
+      if (entry.healthScope)
+        await recordCapability(
+          entry.healthScope,
+          "playback",
+          Object.assign(new Error("YouTube rejected the audio download."), {
+            code: "MEDIA_EXPIRED",
+          }),
+        ).catch(() => {});
       return { status: 502, message: "Failed to fetch stream" };
     }
 
@@ -107,12 +140,20 @@ export async function proxyStreamRange(
     const length = upstream.headers.get("content-length");
     if (length) headers["Content-Length"] = length;
 
+    if (entry.healthScope)
+      await recordCapability(entry.healthScope, "playback").catch(() => {});
     return new Response(upstream.body, { status: 206, headers });
   } catch (e) {
     if (e instanceof Error && e.name === "AbortError") {
       return { status: 504, message: "Upstream request timeout", json: true };
     }
-    console.error("[Moonlit] stream-proxy error:", e);
+    if (entry.healthScope && !signal?.aborted)
+      await recordCapability(
+        entry.healthScope,
+        "playback",
+        new Error("Audio delivery failed."),
+      ).catch(() => {});
+    console.error("[Moonlit] stream-proxy delivery failed");
     return { status: 502, message: "Failed to fetch stream", json: true };
   } finally {
     clearTimeout(timeout);

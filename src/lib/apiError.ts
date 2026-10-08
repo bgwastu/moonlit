@@ -53,7 +53,7 @@ function isNetworkMessage(message: string): boolean {
 
 function isBotBlockMessage(message: string): boolean {
   const lower = message.toLowerCase();
-  return lower.includes("not a bot") || lower.includes("sign in to confirm");
+  return lower.includes("not a bot");
 }
 
 export function youtubeErrorCode(
@@ -61,8 +61,15 @@ export function youtubeErrorCode(
   httpStatus?: number,
 ): string | undefined {
   if (httpStatus === 429) return "RATE_LIMITED";
-  if (isNetworkMessage(message)) return "YOUTUBE_UNAVAILABLE";
   if (isBotBlockMessage(message)) return "YOUTUBE_BLOCKED";
+  if (/status code 400|invalid argument/i.test(message)) return "YOUTUBE_CLIENT_ERROR";
+  if (
+    /video.*(unavailable|not available)|private video|removed|not available in your country/i.test(
+      message,
+    )
+  )
+    return "CONTENT_UNAVAILABLE";
+  if (isNetworkMessage(message)) return "YOUTUBE_UNAVAILABLE";
   if (message.toLowerCase().includes("no streaming data")) return "STREAM_UNAVAILABLE";
   return undefined;
 }
@@ -77,6 +84,19 @@ export function youtubeErrorTitle(code?: string): string {
       return "YouTube blocked request";
     case "STREAM_UNAVAILABLE":
       return "Stream unavailable";
+    case "YOUTUBE_CLIENT_ERROR":
+      return "Playback request rejected";
+    case "CONTENT_UNAVAILABLE":
+    case "YOUTUBE_ACCESS_DENIED":
+      return "Track unavailable";
+    case "AUTH_REQUIRED":
+      return "Account required";
+    case "INVALID_COOKIES":
+      return "Account cookies invalid";
+    case "AUDIO_SERVICE_UNAVAILABLE":
+    case "AUDIO_TIMEOUT":
+    case "AUDIO_INCOMPLETE":
+      return "Audio preparation failed";
     default:
       return "Request failed";
   }

@@ -115,26 +115,3 @@ jobs:
         run: |
           docker buildx imagetools inspect \
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.version }}
-
-  deploy:
-    needs: merge
-    if: github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Trigger deployment
-        env:
-          WEBHOOK_URL: ${{ secrets.WEBHOOK_URL }}
-          WEBHOOK_TOKEN: ${{ secrets.WEBHOOK_TOKEN }}
-        run: |
-          if [ -z "$WEBHOOK_URL" ] || [ -z "$WEBHOOK_TOKEN" ]; then
-            echo "WEBHOOK_URL / WEBHOOK_TOKEN secrets are not set; skipping deploy."
-            exit 0
-          fi
-          response="$(mktemp)"
-          code="$(curl --silent --show-error --output "$response" --write-out '%{http_code}' \
-            --request POST "$WEBHOOK_URL" \
-            --header "Authorization: Bearer $WEBHOOK_TOKEN")"
-          echo "HTTP $code"
-          cat "$response"
-          echo
-          test "$code" -ge 200 -a "$code" -lt 300

@@ -45,6 +45,7 @@ import { useLyrics } from "@/hooks/useLyrics";
 import { usePlayerMedia } from "@/hooks/usePlayerMedia";
 import { usePlayerSheetGestures } from "@/hooks/usePlayerSheetGestures";
 import { usePlayerTapGestures } from "@/hooks/usePlayerTapGestures";
+import { useRomanization } from "@/hooks/useRomanization";
 import { useStableCoverUrl } from "@/hooks/useStableCoverUrl";
 import { useStretchPlayer } from "@/hooks/useStretchPlayer";
 import { useSyncedVideo } from "@/hooks/useSyncedVideo";
@@ -59,6 +60,7 @@ import {
   savePlaybackPrefs,
   setShowVideo,
 } from "@/lib/playerPrefs";
+import { getMissingRomanizationLines } from "@/lib/romanization";
 import { mergeTrackMetadata } from "@/lib/searchMeta";
 import { appTheme } from "@/lib/theme";
 import { isMarkedAudioTrackVideo } from "@/lib/trackFlags";
@@ -252,6 +254,7 @@ export function Player({
   const [advancedStretch, setAdvancedStretch] = useState(globalPrefs.advancedStretch);
 
   const [showLyrics, setShowLyrics] = useState(globalPrefs.showLyrics);
+  const [showRomanization, setShowRomanization] = useState(globalPrefs.showRomanization);
   const [showVideo, setShowVideoState] = useState(() => getShowVideo());
   const [lyricsSettings, setLyricsSettings] = useState<LyricsSettings | null>(
     savedState?.lyrics ?? null,
@@ -315,6 +318,7 @@ export function Player({
     currentTime,
     duration,
     rate,
+    getPlaybackTime,
     semitones,
     reverbAmount,
     volume,
@@ -433,6 +437,16 @@ export function Player({
 
   // Only open when we have real lyrics — loading / not found / error = lyrics-off layout
   const lyricsOpen = showLyrics && lyricsState === "ready";
+  const {
+    romanizations,
+    loading: romanizationLoading,
+    error: romanizationError,
+    retry: retryRomanization,
+  } = useRomanization({
+    lyrics,
+    enabled: showRomanization && lyricsOpen && !isMini,
+    trackKey: sourceUrl,
+  });
 
   const handleOffsetChange = useCallback(
     (offset: number) => {
@@ -1016,6 +1030,11 @@ export function Player({
     savePlaybackPrefs({ showLyrics: next });
   }, []);
 
+  const handleToggleShowRomanization = useCallback((next: boolean) => {
+    setShowRomanization(next);
+    savePlaybackPrefs({ showRomanization: next });
+  }, []);
+
   const { dragY, lyricsDrag, isDragging, stageRef } = usePlayerSheetGestures({
     enabled: Boolean(isMobile && !isMini),
     lyricsOpen,
@@ -1115,9 +1134,21 @@ export function Player({
 
       <LyricsModal
         opened={lyricsModalOpened}
+        trackKey={sourceUrl}
+        trackArtistName={media.metadata.artist || media.metadata.author || ""}
+        hasLyrics={lyricsState === "ready"}
+        canShowRomanization={
+          lyrics.some((line) => !!line.romanization) ||
+          getMissingRomanizationLines(lyrics).length > 0
+        }
         onClose={() => setLyricsModalOpened(false)}
         showLyrics={showLyrics}
         onToggleLyrics={handleToggleShowLyrics}
+        showRomanization={showRomanization}
+        onToggleRomanization={handleToggleShowRomanization}
+        romanizationLoading={romanizationLoading}
+        romanizationError={romanizationError}
+        onRetryRomanization={retryRomanization}
         trackDurationSeconds={duration}
         currentLyricsId={lyricsSettings?.id ?? null}
         currentLyricsTrackName={lyricsSettings?.trackName ?? null}
@@ -1548,8 +1579,7 @@ export function Player({
                           Couldn&apos;t load audio
                         </Text>
                         <Text style={{ color: "rgba(255,255,255,0.75)" }} size="sm">
-                          {playbackError ||
-                            "Playback failed. Try again or check cookies in settings."}
+                          {playbackError || "Playback failed. Please try again."}
                         </Text>
                         <Button
                           size="sm"
@@ -1586,13 +1616,19 @@ export function Player({
                   }}
                 >
                   <LyricsPanel
+                    key={sourceUrl}
                     lyrics={lyricsState === "ready" ? lyrics : []}
+                    showRomanization={showRomanization}
+                    romanizations={romanizations}
                     state={lyricsState}
                     error={lyricsError}
                     currentTimeSeconds={currentTime}
+                    getPlaybackTime={getPlaybackTime}
+                    rate={rate}
+                    isWaiting={isWaiting || stretchState !== "ready"}
                     isPlaying={isPlaying}
                     onSeek={seekFromUser}
-                    visible={lyricsOpen}
+                    visible={!isMini && lyricsOpen}
                     style={{ flex: 1, minHeight: 0, minWidth: 0, width: "100%" }}
                   />
                 </Box>
@@ -1623,15 +1659,21 @@ export function Player({
                 }}
               >
                 <LyricsPanel
+                  key={sourceUrl}
                   lyrics={lyrics}
+                  showRomanization={showRomanization}
+                  romanizations={romanizations}
                   state={lyricsState}
                   error={lyricsError}
                   currentTimeSeconds={currentTime}
+                  getPlaybackTime={getPlaybackTime}
+                  rate={rate}
+                  isWaiting={isWaiting || stretchState !== "ready"}
                   isPlaying={isPlaying}
                   onSeek={seekFromUser}
                   style={{ flex: 1, minHeight: 0, minWidth: 0, width: "100%" }}
                   isMobile
-                  visible={lyricsClosedAmt < 0.5}
+                  visible={!isMini && lyricsClosedAmt < 0.5}
                 />
               </Box>
             )}
@@ -1711,8 +1753,7 @@ export function Player({
                     Couldn&apos;t load audio
                   </Text>
                   <Text style={{ color: "rgba(255,255,255,0.75)" }} size="sm">
-                    {playbackError ||
-                      "Playback failed. Try again or check cookies in settings."}
+                    {playbackError || "Playback failed. Please try again."}
                   </Text>
                   <Button size="sm" variant="light" color="red" onClick={retryPlayback}>
                     Retry playback

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Lyric,
   LyricsSearchRecord,
+  applyLyricsOffset,
   parseLRC,
   parseSyncedLyrics,
   sortLyricsSearchRecordsForTrack,
@@ -58,19 +59,6 @@ interface UseLyricsReturn {
   state: LyricsState;
   error: string | null;
   searchResults: LyricsSearchRecord[];
-}
-
-/** Apply offset to parsed lyrics */
-function applyOffset(lyrics: Lyric[], offsetMs: number): Lyric[] {
-  if (offsetMs === 0) return lyrics;
-  return lyrics.map((lyric) => ({
-    ...lyric,
-    startTimeMs: lyric.startTimeMs + offsetMs,
-    parts: lyric.parts?.map((part) => ({
-      ...part,
-      startTimeMs: part.startTimeMs + offsetMs,
-    })),
-  }));
 }
 
 // --- In-memory session cache ---
@@ -211,7 +199,7 @@ export function useLyrics({
               artistName: a.trim(),
               syncedLyrics: ttml,
             };
-            commitLyrics(applyOffset(parsed, offsetMs), discovered);
+            commitLyrics(applyLyricsOffset(parsed, offsetMs), discovered);
             return;
           }
         }
@@ -237,40 +225,42 @@ export function useLyrics({
           searchUrl,
           signal,
           lrclibHeaders,
-        ).then((searchData) => {
-          const records = Array.isArray(searchData) ? searchData : [];
-          setSearchResults(records);
+        )
+          .then((searchData) => {
+            const records = Array.isArray(searchData) ? searchData : [];
+            setSearchResults(records);
 
-          // Search often returns synced lyrics before the external GET fallback.
-          // Display that result immediately instead of blocking on the slower request.
-          if (!hasCommittedLyrics) {
-            const ranked = sortLyricsSearchRecordsForTrack(records, d);
-            const best = ranked[0];
-            const bestSynced = best?.syncedLyrics?.trim();
-            if (best && bestSynced) {
-              const parsed = parseLRC(bestSynced, (best.duration ?? d) * 1000);
-              const discovered: DiscoveredLyrics | null =
-                parsed.length > 0
-                  ? {
-                      id: best.id,
-                      trackName: best.trackName,
-                      artistName: best.artistName,
-                      albumName: best.albumName,
-                      syncedLyrics: bestSynced,
-                    }
-                  : null;
-              commitLyrics(applyOffset(parsed, offsetMs), discovered, records);
+            // Search often returns synced lyrics before the external GET fallback.
+            // Display that result immediately instead of blocking on the slower request.
+            if (!hasCommittedLyrics) {
+              const ranked = sortLyricsSearchRecordsForTrack(records, d);
+              const best = ranked[0];
+              const bestSynced = best?.syncedLyrics?.trim();
+              if (best && bestSynced) {
+                const parsed = parseLRC(bestSynced, (best.duration ?? d) * 1000);
+                const discovered: DiscoveredLyrics | null =
+                  parsed.length > 0
+                    ? {
+                        id: best.id,
+                        trackName: best.trackName,
+                        artistName: best.artistName,
+                        albumName: best.albumName,
+                        syncedLyrics: bestSynced,
+                      }
+                    : null;
+                commitLyrics(applyLyricsOffset(parsed, offsetMs), discovered, records);
+              }
+            } else {
+              setCached(cacheK, {
+                lyrics: committedLyrics,
+                discovered: committedDiscovered,
+                searchResults: records,
+              });
             }
-          } else {
-            setCached(cacheK, {
-              lyrics: committedLyrics,
-              discovered: committedDiscovered,
-              searchResults: records,
-            });
-          }
 
-          return records;
-        });
+            return records;
+          })
+          .catch(() => []);
 
         // Try GET-cached first (fast, no external lookups)
         const getData = await fetchJson<LrclibResponse>(getUrl, signal, lrclibHeaders);
@@ -290,7 +280,7 @@ export function useLyrics({
               : null;
 
           // Show the direct match now; search results continue loading in the background.
-          commitLyrics(applyOffset(parsed, offsetMs), discovered);
+          commitLyrics(applyLyricsOffset(parsed, offsetMs), discovered);
           void searchResultsPromise;
           return;
         }
@@ -323,7 +313,7 @@ export function useLyrics({
                 }
               : null;
 
-          commitLyrics(applyOffset(parsed, offsetMs), discovered);
+          commitLyrics(applyLyricsOffset(parsed, offsetMs), discovered);
           void searchResultsPromise;
           return;
         }
@@ -370,7 +360,7 @@ export function useLyrics({
     // Already assigned to this track — parse locally, no network search
     if (selectedSyncedLyrics) {
       const parsed = parseSyncedLyrics(selectedSyncedLyrics, durationSeconds * 1000);
-      const offsetApplied = applyOffset(parsed, offsetMs);
+      const offsetApplied = applyLyricsOffset(parsed, offsetMs);
       apply(() => {
         setLyrics(offsetApplied);
         setSearchResults([]);
