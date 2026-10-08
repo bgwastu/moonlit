@@ -11,7 +11,7 @@ import {
   useState,
 } from "react";
 import { Box, Button, Text } from "@mantine/core";
-import { IconArrowBackUp } from "@tabler/icons-react";
+import { IconArrowUp } from "@tabler/icons-react";
 import type { LyricsState } from "@/hooks/useLyrics";
 import { useLyricsFollow } from "@/hooks/useLyricsFollow";
 import { findActiveLyric, lyricWordProgress } from "@/lib/lyricPlayback";
@@ -304,11 +304,12 @@ export default function LyricsPanel({
             variant="default"
             size="sm"
             radius="xl"
-            leftSection={<IconArrowBackUp size={16} />}
+            leftSection={<IconArrowUp size={16} aria-hidden />}
+            aria-label="Back to current line"
             onClick={() => resumeFollow()}
             className={styles.followButton}
           >
-            Back to current line
+            Back
           </Button>
         </div>
       )}
