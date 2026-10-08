@@ -110,8 +110,8 @@ export default function HistoryList({
         radius="md"
       >
         <Text size="sm" c="dimmed" mb="md">
-          This removes all recent plays and cached audio from this device. It cannot be
-          undone.
+          This removes all recent plays and cached audio and artwork from this device. It
+          cannot be undone.
         </Text>
         <Group justify="flex-end" gap="sm">
           <Button variant="default" onClick={() => setConfirmOpen(false)}>

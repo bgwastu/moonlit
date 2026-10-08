@@ -59,11 +59,9 @@ export default function MediaResultRow({
       : "";
   const ytId = getYouTubeId(item.id) ?? (/^[\w-]{11}$/.test(item.id) ? item.id : null);
   const thumbSrc = toDisplayCoverUrl(item.thumbnail || undefined, ytId);
-  const cachedThumb = useStableCoverUrl(
-    item.sourceUrl ? thumbSrc : undefined,
-    item.sourceUrl,
-    { cacheOnly: true },
-  );
+  const cachedThumb = useStableCoverUrl(thumbSrc, item.sourceUrl || ytId || item.id, {
+    saved: Boolean(item.sourceUrl),
+  });
 
   return (
     <Paper
@@ -91,7 +89,7 @@ export default function MediaResultRow({
       <Flex gap="sm" align="center">
         <Box pos="relative" style={{ flexShrink: 0 }}>
           <ShimmerImage
-            src={cachedThumb || thumbSrc || undefined}
+            src={cachedThumb || undefined}
             fallback={
               <CoverFallback
                 seed={ytId || item.sourceUrl || item.id}

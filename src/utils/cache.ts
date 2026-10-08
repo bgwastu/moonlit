@@ -1,4 +1,5 @@
 import localforage from "localforage";
+import { createArtworkCache } from "@/lib/artworkCache";
 import { MAX_CACHED_TRACKS } from "@/lib/constants";
 
 const META_KEY = "__moonlit-cache-meta__";
@@ -12,7 +13,9 @@ const coverStore = localforage.createInstance({
   name: "moonlit",
   storeName: "cover-cache",
 });
-const COVER_META_KEY = "__moonlit-cover-cache-meta__";
+const artworkCache = createArtworkCache({ store: coverStore });
+
+export const loadCachedCover = artworkCache.load;
 
 interface CacheMeta {
   order: string[];
@@ -97,66 +100,10 @@ export async function hasCachedMedia(sourceUrl: string): Promise<boolean> {
   }
 }
 
-function coverCacheKey(sourceUrl: string, coverUrl: string): string {
-  // The video id adds proxy recovery information, not a different artwork resource.
-  if (coverUrl.startsWith("/api/cover?")) {
-    const parsed = new URL(coverUrl, "https://moonlit.invalid");
-    parsed.searchParams.delete("v");
-    coverUrl = `${parsed.pathname}${parsed.search}`;
-  }
-  return `${sourceUrl}\n${coverUrl}`;
-}
-
-/** Return a local object URL for a previously loaded track cover. */
-export async function getCachedCoverUrl(
-  sourceUrl: string,
-  coverUrl?: string,
-): Promise<string | null> {
-  if (!sourceUrl) return null;
-  try {
-    const meta = (await coverStore.getItem<CacheMeta>(COVER_META_KEY)) ?? { order: [] };
-    const keys = coverUrl
-      ? [coverCacheKey(sourceUrl, coverUrl)]
-      : meta.order.filter((key) => key.startsWith(`${sourceUrl}\n`));
-    for (const key of keys) {
-      const blob = await coverStore.getItem<Blob>(key);
-      if (!(blob instanceof Blob) || !blob.size) continue;
-      meta.order = [key, ...meta.order.filter((entry) => entry !== key)];
-      await coverStore.setItem(COVER_META_KEY, meta);
-      return URL.createObjectURL(blob);
-    }
-    return null;
-  } catch {
-    return null;
-  }
-}
-
-/** Persist a cover independently from audio so offline replay does not hit the server. */
-export async function setCoverCache(
-  sourceUrl: string,
-  coverUrl: string,
-  blob: Blob,
-): Promise<void> {
-  if (!sourceUrl || !coverUrl || !blob.size) return;
-  try {
-    const key = coverCacheKey(sourceUrl, coverUrl);
-    await coverStore.setItem(key, blob);
-    const meta = (await coverStore.getItem<CacheMeta>(COVER_META_KEY)) ?? { order: [] };
-    meta.order = [key, ...meta.order.filter((entry) => entry !== key)];
-    while (meta.order.length > MAX_CACHED_TRACKS) {
-      const evict = meta.order.pop();
-      if (evict) await coverStore.removeItem(evict);
-    }
-    await coverStore.setItem(COVER_META_KEY, meta);
-  } catch (e) {
-    console.error("Failed to cache cover:", e);
-  }
-}
-
 export async function clearMediaCache(): Promise<void> {
   try {
     await mediaStore.clear();
-    await coverStore.clear();
+    await artworkCache.clear();
   } catch (e) {
     console.error("Failed to clear media cache:", e);
   }
