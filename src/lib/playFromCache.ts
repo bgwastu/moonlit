@@ -9,12 +9,13 @@ function buildMetadata(
   sourceUrl: string,
   metadata?: Partial<Media["metadata"]>,
 ): Media["metadata"] {
-  const id = getYouTubeId(sourceUrl) ?? metadata?.id ?? null;
+  const youtubeId = getYouTubeId(sourceUrl);
+  const id = youtubeId ?? metadata?.id ?? null;
   const sessionMeta = id ? peekSearchMeta(id) : undefined;
   const merged = mergeTrackMetadata(metadata, sessionMeta, { id });
   return {
     ...merged,
-    coverUrl: toDisplayCoverUrl(merged.coverUrl, id ? String(id) : null),
+    coverUrl: toDisplayCoverUrl(merged.coverUrl, youtubeId),
   };
 }
 
@@ -54,7 +55,15 @@ export async function resolvePlayableMedia(
     const blob = await getMedia(sourceUrl);
     if (!blob) return null;
     if (fromHistory) {
-      return { ...fromHistory, fileUrl: URL.createObjectURL(blob) };
+      const saved = { ...fromHistory };
+      delete saved.videoUrl;
+      const fileUrl = URL.createObjectURL(blob);
+      return {
+        ...saved,
+        metadata: buildMetadata(sourceUrl, metadata ?? fromHistory.metadata),
+        fileUrl,
+        ...(blob.type.startsWith("video/") ? { videoUrl: fileUrl } : {}),
+      };
     }
     return {
       fileUrl: URL.createObjectURL(blob),
@@ -87,7 +96,8 @@ export async function resolvePlayableMedia(
 
 /** YouTube watch URL for a history item, if one can be derived. */
 export function historyItemSourceUrl(item: HistoryItem): string | null {
+  if (item.sourceUrl.startsWith("local:")) return null;
   if (item.sourceUrl.startsWith("http")) return item.sourceUrl;
   const id = item.metadata.id;
-  return id ? `https://www.youtube.com/watch?v=${id}` : null;
+  return id && /^[\w-]{11}$/.test(id) ? `https://www.youtube.com/watch?v=${id}` : null;
 }

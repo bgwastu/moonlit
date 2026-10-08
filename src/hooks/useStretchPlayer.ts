@@ -112,7 +112,11 @@ export function useStretchPlayer({
   });
 
   const advancedStretchRef = useRef(advancedStretch);
+  const onPlayerErrorRef = useRef(onPlayerError);
   const initializationId = useRef(0);
+  useEffect(() => {
+    onPlayerErrorRef.current = onPlayerError;
+  }, [onPlayerError]);
   useEffect(() => {
     isPlayingRef.current = isPlaying;
   }, [isPlaying]);
@@ -546,7 +550,7 @@ export function useStretchPlayer({
           setProgress(null);
           console.error("StretchPlayer initialization failed:", error);
           setState("error");
-          onPlayerError?.(error);
+          onPlayerErrorRef.current?.(error);
         }
       }
     };
@@ -563,7 +567,6 @@ export function useStretchPlayer({
     sourceUrl,
     advancedStretch,
     initialPosition,
-    onPlayerError,
     cleanup,
     initFullMode,
     setupNative,

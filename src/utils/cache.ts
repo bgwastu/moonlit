@@ -16,6 +16,12 @@ const coverStore = localforage.createInstance({
 const artworkCache = createArtworkCache({ store: coverStore });
 
 export const loadCachedCover = artworkCache.load;
+export const MEDIA_CACHE_CHANGED_EVENT = "moonlit:media-cache-changed";
+
+function notifyMediaCacheChanged() {
+  if (typeof window !== "undefined")
+    window.dispatchEvent(new Event(MEDIA_CACHE_CHANGED_EVENT));
+}
 
 interface CacheMeta {
   order: string[];
@@ -65,6 +71,7 @@ export async function setMediaCacheWithLimit(key: string, blob: Blob): Promise<v
     }
 
     await saveMeta(meta);
+    notifyMediaCacheChanged();
   } catch (e) {
     console.error("Failed to cache media:", e);
   }
@@ -94,9 +101,22 @@ export async function hasCachedMedia(sourceUrl: string): Promise<boolean> {
   if (!sourceUrl) return false;
   try {
     const value = await mediaStore.getItem(sourceUrl);
-    return value != null && sourceUrl !== META_KEY;
+    return value instanceof Blob && value.size > 0 && sourceUrl !== META_KEY;
   } catch {
     return false;
+  }
+}
+
+/** Only files actually present on this device belong in the local-music library. */
+export async function getAvailableMediaSources(): Promise<string[]> {
+  try {
+    const keys = (await mediaStore.keys()).filter((key) => key !== META_KEY);
+    const available = await Promise.all(
+      keys.map(async (key) => ((await hasCachedMedia(key)) ? key : null)),
+    );
+    return available.filter((key): key is string => key !== null);
+  } catch {
+    return [];
   }
 }
 
@@ -104,6 +124,7 @@ export async function clearMediaCache(): Promise<void> {
   try {
     await mediaStore.clear();
     await artworkCache.clear();
+    notifyMediaCacheChanged();
   } catch (e) {
     console.error("Failed to clear media cache:", e);
   }

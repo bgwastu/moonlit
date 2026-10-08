@@ -268,10 +268,15 @@ export function createArtworkCache({
     async load(
       sourceUrl: string,
       coverUrl: string,
-      { saved = false }: { saved?: boolean } = {},
+      { saved = false, cacheOnly = false }: { saved?: boolean; cacheOnly?: boolean } = {},
     ): Promise<Blob | null> {
       const track = trackIdentity(sourceUrl) || `image:${coverIdentity(coverUrl)}`;
       const epoch = generation;
+      // Local mode may display saved artwork, but must not contact image CDNs.
+      if (cacheOnly && !/^(blob:|data:)/.test(coverUrl)) {
+        const cover = await readCached(track, coverIdentity(coverUrl));
+        return epoch === generation ? cover?.blob || null : null;
+      }
       let request = requests.get(track);
       if (request && saved) request.saved = true;
       let cover = request ? await request.result : null;

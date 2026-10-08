@@ -77,8 +77,9 @@ export function mergePlayerMedia({
   contextMedia: Media | null;
   provisionalMedia: Media | null;
 }): Media | null {
+  const activeSource = url || contextMedia?.sourceUrl;
   const sameSource = (m: Media | null | undefined) =>
-    m && (!url || isSameMediaSource(m.sourceUrl, url)) ? m : null;
+    m && (!activeSource || isSameMediaSource(m.sourceUrl, activeSource)) ? m : null;
   const extracted = sameSource(extractedMedia);
   const context = sameSource(contextMedia);
 

@@ -94,7 +94,10 @@ export async function GET(request: Request) {
       supplied.status === "ok" ? supplied.cookies : undefined,
     );
     const search = await readCapability(credentials.scope, "search");
-    if (search.state === "unknown")
+    if (
+      search.state === "unknown" ||
+      (search.state === "degraded" && search.checkedAt < Date.now() - 60000)
+    )
       schedule(`search:${credentials.scope}`, () => probeSearch(credentials));
     let playback: CapabilityHealth;
     let worker: any;

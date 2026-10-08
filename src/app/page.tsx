@@ -3,12 +3,20 @@
 /* Hallmark · genre: atmospheric · macrostructure: Workbench-lite · design-system: mantine-dark ·
  * home: centered search + history · accent: dynamic (theme.primaryColor)
  */
-import { type CSSProperties, type RefObject, useCallback, useRef, useState } from "react";
+import {
+  type CSSProperties,
+  type RefObject,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { SiGithub, SiYoutubemusic } from "@icons-pack/react-simple-icons";
 import {
   ActionIcon,
   AppShell,
   Box,
+  Button,
   Container,
   Group,
   type MantineTheme,
@@ -17,6 +25,7 @@ import {
   Stack,
   Text,
   TextInput,
+  ThemeIcon,
   UnstyledButton,
   rem,
   rgba,
@@ -32,6 +41,7 @@ import {
   IconDotsVertical,
   IconLink,
   IconMessage,
+  IconMusic,
   IconSearch,
   IconTrash,
   IconUpload,
@@ -47,16 +57,25 @@ import MediaResultRow, { type MediaResultItem } from "@/components/MediaResultRo
 import ResetModal from "@/components/ResetModal";
 import YouTubeStatusChip from "@/components/YouTubeStatusChip";
 import { useAppContext } from "@/context/AppContext";
+import { useYouTubeStatus } from "@/context/YouTubeStatusContext";
 import type { Media } from "@/interfaces";
 import { youtubeErrorTitle } from "@/lib/apiError";
 import { cookieRequestHeaders } from "@/lib/cookies";
 import { stashSearchMeta } from "@/lib/searchMeta";
 import { SEARCH_ACCENT_VAR } from "@/lib/theme";
 import { ensureYouTubeLinkMeta } from "@/lib/youtubeOembed";
+import { YOUTUBE_STATUS_CHANGED_EVENT } from "@/lib/youtubeStatus";
 import { getYouTubeId, isDirectMediaURL, isYoutubeURL } from "@/utils";
 import { setMediaCache } from "@/utils/cache";
 
-const LOCAL_FILE_ACCEPT = ["audio/mpeg", "video/mp4", "audio/wav"];
+const LOCAL_FILE_ACCEPT = [
+  "audio/mpeg",
+  "audio/mp4",
+  "audio/x-m4a",
+  "video/mp4",
+  "audio/wav",
+  "audio/x-wav",
+];
 
 interface YouTubeResult {
   id: string;
@@ -95,7 +114,7 @@ function toMediaItem(result: YouTubeResult): MediaResultItem {
 }
 
 /** Compact secondary upload + fullscreen drag-anywhere. */
-function LocalUpload() {
+function LocalUpload({ prominent = false }: { prominent?: boolean }) {
   const [loading, setLoading] = useState<{ status: boolean; message: string | null }>({
     status: false,
     message: null,
@@ -111,36 +130,49 @@ function LocalUpload() {
     setLoading({ status: true, message: "Loading file..." });
     setFullScreenActive(false);
 
-    const fileId = `local-${Date.now()}`;
-    const sourceUrl = `local:${fileId}:video`;
-    const tags = await convertFileToBuffer(files[0]).then(parse);
-    const metadata: Media["metadata"] =
-      tags !== false
-        ? {
-            id: fileId,
-            title: tags.title ?? files[0].name,
-            author: tags.artist ?? "Unknown",
-            coverUrl: tags.image?.data
-              ? URL.createObjectURL(
-                  new Blob([new Uint8Array(tags.image.data)], { type: tags.image.mime }),
-                )
-              : "",
-          }
-        : { id: fileId, title: files[0].name, author: "Unknown", coverUrl: "" };
+    try {
+      const fileId = `local-${Date.now()}`;
+      const sourceUrl = `local:${fileId}:video`;
+      const tags = await convertFileToBuffer(files[0])
+        .then(parse)
+        .catch(() => false as const);
+      const metadata: Media["metadata"] =
+        tags !== false
+          ? {
+              id: fileId,
+              title: tags.title ?? files[0].name,
+              author: tags.artist ?? "Local file",
+              coverUrl: tags.image?.data
+                ? URL.createObjectURL(
+                    new Blob([new Uint8Array(tags.image.data)], {
+                      type: tags.image.mime,
+                    }),
+                  )
+                : "",
+            }
+          : { id: fileId, title: files[0].name, author: "Local file", coverUrl: "" };
 
-    await setMediaCache(sourceUrl, files[0]);
-    const fileUrl = URL.createObjectURL(files[0]);
-    const isVideo = files[0].type.startsWith("video/") || /\.mp4$/i.test(files[0].name);
-    openPlayer({
-      media: {
-        fileUrl,
-        sourceUrl,
-        metadata,
-        ...(isVideo && { videoUrl: fileUrl }),
-      },
-      expand: true,
-    });
-    setLoading({ status: false, message: null });
+      await setMediaCache(sourceUrl, files[0]);
+      const fileUrl = URL.createObjectURL(files[0]);
+      const isVideo = files[0].type.startsWith("video/") || /\.mp4$/i.test(files[0].name);
+      openPlayer({
+        media: {
+          fileUrl,
+          sourceUrl,
+          metadata,
+          ...(isVideo && { videoUrl: fileUrl }),
+        },
+        expand: true,
+      });
+    } catch {
+      notifications.show({
+        title: "Could not open music",
+        message: "Try another music file.",
+        color: "red",
+      });
+    } finally {
+      setLoading({ status: false, message: null });
+    }
   };
 
   return (
@@ -180,47 +212,86 @@ function LocalUpload() {
         <div />
       </Dropzone>
 
-      <Group gap={isMobile ? "xs" : "sm"} justify="flex-start" wrap="wrap" px={4}>
-        <Text
-          component="button"
-          type="button"
-          size="sm"
-          fw={600}
-          c="dimmed"
-          className="moonlit-focusable"
-          onClick={() => openRef.current?.()}
+      {prominent ? (
+        <Box
+          data-local-upload
           style={{
-            background: "none",
-            border: "none",
-            padding: 0,
-            cursor: "pointer",
-            display: "inline-flex",
-            alignItems: "center",
-            gap: rem(6),
-            transition: "color 150ms ease",
-          }}
-          onMouseEnter={(event) => {
-            event.currentTarget.style.color = theme.colors.gray[2];
-          }}
-          onMouseLeave={(event) => {
-            event.currentTarget.style.color = "";
+            borderRadius: rem(16),
+            padding: rem(24),
+            border: `${rem(1)} solid ${rgba(accent(theme, 4), 0.25)}`,
+            background: `linear-gradient(135deg, ${rgba(accent(theme, 8), 0.24)}, ${rgba(theme.colors.dark[9], 0.7)})`,
           }}
         >
-          <IconUpload size={16} stroke={1.75} />
-          Upload a file
-        </Text>
-        <Text size="sm" c="dimmed" opacity={0.55}>
-          MP3, WAV, MP4 ·{" "}
+          <Stack gap="lg">
+            <Group wrap="nowrap" align="flex-start">
+              <ThemeIcon size={48} radius="md" color={theme.primaryColor} variant="light">
+                <IconMusic size={26} stroke={1.6} />
+              </ThemeIcon>
+              <Box>
+                <Text size="lg" fw={600} c="white">
+                  Open a music file
+                </Text>
+                <Text size="sm" c="dimmed" mt={4}>
+                  Your music, with the same speed, pitch, and reverb controls.
+                </Text>
+              </Box>
+            </Group>
+            <Button
+              size="md"
+              radius="md"
+              leftSection={<IconUpload size={18} />}
+              onClick={() => openRef.current?.()}
+            >
+              Choose music
+            </Button>
+            <Text size="xs" c="dimmed" ta="center">
+              MP3, M4A, WAV, MP4 · Files stay on this device.
+            </Text>
+          </Stack>
+        </Box>
+      ) : (
+        <Group gap={isMobile ? "xs" : "sm"} justify="flex-start" wrap="wrap" px={4}>
           <Text
-            component="span"
-            td="underline"
-            style={{ cursor: "pointer" }}
-            onClick={() => setFullScreenActive(true)}
+            component="button"
+            type="button"
+            size="sm"
+            fw={600}
+            c="dimmed"
+            className="moonlit-focusable"
+            onClick={() => openRef.current?.()}
+            style={{
+              background: "none",
+              border: "none",
+              padding: 0,
+              cursor: "pointer",
+              display: "inline-flex",
+              alignItems: "center",
+              gap: rem(6),
+              transition: "color 150ms ease",
+            }}
+            onMouseEnter={(event) => {
+              event.currentTarget.style.color = theme.colors.gray[2];
+            }}
+            onMouseLeave={(event) => {
+              event.currentTarget.style.color = "";
+            }}
           >
-            drag anywhere
+            <IconUpload size={16} stroke={1.75} />
+            Upload a file
           </Text>
-        </Text>
-      </Group>
+          <Text size="sm" c="dimmed" opacity={0.55}>
+            MP3, M4A, WAV, MP4 ·{" "}
+            <Text
+              component="span"
+              td="underline"
+              style={{ cursor: "pointer" }}
+              onClick={() => setFullScreenActive(true)}
+            >
+              drag anywhere
+            </Text>
+          </Text>
+        </Group>
+      )}
     </>
   );
 }
@@ -235,6 +306,7 @@ function SearchPanel({
   clearSearchRef: RefObject<(() => void) | null>;
 }) {
   const { openPlayer } = useAppContext();
+  const { localOnly } = useYouTubeStatus();
   const theme = useMantineTheme();
   const isMobile = useMediaQuery(`(max-width: ${theme.breakpoints.sm})`) ?? false;
   const [results, setResults] = useState<YouTubeResult[]>([]);
@@ -272,6 +344,14 @@ function SearchPanel({
 
   clearSearchRef.current = resetSearchUi;
 
+  useEffect(() => {
+    if (!localOnly) return;
+    searchAbortRef.current?.abort();
+    searchAbortRef.current = null;
+    const frame = requestAnimationFrame(() => clearSearchRef.current?.());
+    return () => cancelAnimationFrame(frame);
+  }, [localOnly, clearSearchRef]);
+
   function clearInput() {
     searchAbortRef.current?.abort();
     searchAbortRef.current = null;
@@ -286,6 +366,7 @@ function SearchPanel({
 
   const search = useCallback(
     async (value: string, showErrors = true) => {
+      if (localOnly) return;
       searchAbortRef.current?.abort();
       const controller = new AbortController();
       searchAbortRef.current = controller;
@@ -305,6 +386,7 @@ function SearchPanel({
         if (!response.ok) {
           const err = new Error(data.error || "Search failed");
           if (data.code) Object.assign(err, { code: data.code });
+          window.dispatchEvent(new Event(YOUTUBE_STATUS_CHANGED_EVENT));
           throw err;
         }
         if (searchAbortRef.current !== controller) return;
@@ -344,12 +426,12 @@ function SearchPanel({
         }
       }
     },
-    [setSearchActive],
+    [setSearchActive, localOnly],
   );
 
   async function submit(value: string) {
     const clean = value.trim();
-    if (!clean) return;
+    if (!clean || localOnly) return;
 
     if (isDirectMediaURL(clean)) {
       resetSearchUi();
@@ -363,6 +445,7 @@ function SearchPanel({
         const playUrl = `https://www.youtube.com/watch?v=${id}`;
         // Stash oembed titles before open so paste doesn't flash / stick on Unknown.
         await ensureYouTubeLinkMeta(id);
+        if (inputRef.current?.disabled) return;
         resetSearchUi();
         openPlayer({ url: playUrl, expand: true });
       }
@@ -380,6 +463,7 @@ function SearchPanel({
   }
 
   function playResult(result: YouTubeResult) {
+    if (localOnly) return;
     const id = getYouTubeId(result.url) ?? result.id;
     stashSearchMeta(id, {
       title: result.title,
@@ -410,10 +494,17 @@ function SearchPanel({
             leftSectionPointerEvents="none"
             classNames={{ input: "moonlit-search-input" }}
             placeholder="Search YouTube or paste a URL..."
+            aria-label="Search YouTube or paste a URL"
+            disabled={localOnly}
+            description={
+              localOnly
+                ? "YouTube search is unavailable. It will return automatically."
+                : undefined
+            }
             size={isMobile ? "md" : "lg"}
             radius="md"
             autoComplete="off"
-            value={form.values.query}
+            value={localOnly ? "" : form.values.query}
             onChange={(event) => {
               const nextQuery = event.currentTarget.value;
               form.setFieldValue("query", nextQuery);
@@ -442,7 +533,7 @@ function SearchPanel({
             onFocus={() => setInputFocused(true)}
             onBlur={() => setInputFocused(false)}
             rightSection={
-              hasQuery ? (
+              !localOnly && hasQuery ? (
                 <Group gap={4} wrap="nowrap" pr={isMobile ? 4 : 6}>
                   <ActionIcon
                     type="button"
@@ -479,7 +570,7 @@ function SearchPanel({
           />
         </form>
 
-        {showLinkHint ? (
+        {!localOnly && showLinkHint ? (
           <Group gap="sm" wrap="nowrap" mt="xs" px="sm">
             <IconLink size={16} stroke={1.5} color={theme.colors.gray[5]} />
             <Text size="sm" fw={600} c="dimmed">
@@ -487,14 +578,14 @@ function SearchPanel({
             </Text>
           </Group>
         ) : null}
-        {showSearchHint ? (
+        {!localOnly && showSearchHint ? (
           <Text size="sm" fw={600} c="dimmed" mt="xs">
             Press Enter to search
           </Text>
         ) : null}
       </Box>
 
-      {searchActive ? (
+      {!localOnly && searchActive ? (
         <Box mt="md">
           <Stack gap="xs">
             {(showSkeleton || showResultCards) && (
@@ -604,6 +695,7 @@ function AppMenu({
 
 export default function UploadPage() {
   const theme = useMantineTheme();
+  const { localOnly } = useYouTubeStatus();
   const isMobileLayout = useMediaQuery(`(max-width: ${theme.breakpoints.sm})`) ?? false;
 
   const [cookiesOpened, setCookiesOpened] = useState(false);
@@ -682,16 +774,30 @@ export default function UploadPage() {
               </Group>
 
               <Stack gap="md" w="100%" maw={rem(640)}>
+                {localOnly && (
+                  <Stack gap={6}>
+                    <Text size="xl" fw={700} c="white">
+                      Music on your device
+                    </Text>
+                    <Text size="sm" c="dimmed">
+                      Play saved songs or open a music file while YouTube is unavailable.
+                    </Text>
+                  </Stack>
+                )}
+                {localOnly && <LocalUpload prominent />}
                 <SearchPanel
                   searchActive={searchActive}
                   setSearchActive={setSearchActive}
                   clearSearchRef={clearSearchRef}
                 />
 
-                {!searchActive && (
+                {(localOnly || !searchActive) && (
                   <Stack gap="md">
-                    <HistoryList maxHeight={isMobileLayout ? rem(320) : rem(420)} />
-                    <LocalUpload />
+                    <HistoryList
+                      localOnly={localOnly}
+                      maxHeight={isMobileLayout ? rem(320) : rem(420)}
+                    />
+                    {!localOnly && <LocalUpload />}
                   </Stack>
                 )}
               </Stack>

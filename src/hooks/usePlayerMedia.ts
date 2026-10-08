@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { notifications } from "@mantine/notifications";
+import { useYouTubeStatus } from "@/context/YouTubeStatusContext";
 import type { Media } from "@/interfaces";
 import { youtubeErrorTitle } from "@/lib/apiError";
 import { buildProvisionalMedia, mergePlayerMedia } from "@/lib/mergePlayerMedia";
@@ -26,6 +27,7 @@ export function usePlayerMedia({
   onRequestClose,
   onInvalidateAutoplay,
 }: UsePlayerMediaArgs) {
+  const { localOnly } = useYouTubeStatus();
   const [extractedMedia, setExtractedMedia] = useState<Media | null>(null);
   const [streamState, setStreamState] = useState<StreamState>({ status: "idle" });
   const [playbackError, setPlaybackError] = useState<string | null>(null);
@@ -74,7 +76,7 @@ export function usePlayerMedia({
     const updateStreamState = (next: StreamState) => {
       setStreamState((prev) => ({ ...prev, ...next }));
     };
-    streamWithProgress(url, updateStreamState, abortController.signal)
+    streamWithProgress(url, updateStreamState, abortController.signal, { localOnly })
       .then((streamedMedia: Media) => {
         if (abortController.signal.aborted) return;
         // Do not reset audioErrorCount here — extract OK + play fail must not loop.
@@ -98,21 +100,22 @@ export function usePlayerMedia({
         setPlaybackError(null);
         setStreamState({ status: "error", message });
         const hint = code === "RATE_LIMITED" ? " Wait a moment and try again." : "";
-        notifications.show({
-          title:
-            youtubeErrorTitle(code) === "Request failed"
-              ? "Stream failed"
-              : youtubeErrorTitle(code),
-          message: `${message}${hint}`,
-          color: "red",
-          autoClose:
-            code === "RATE_LIMITED" || code === "YOUTUBE_UNAVAILABLE" ? 20000 : 10000,
-        });
+        if (code !== "LOCAL_MEDIA_UNAVAILABLE")
+          notifications.show({
+            title:
+              youtubeErrorTitle(code) === "Request failed"
+                ? "Stream failed"
+                : youtubeErrorTitle(code),
+            message: `${message}${hint}`,
+            color: "red",
+            autoClose:
+              code === "RATE_LIMITED" || code === "YOUTUBE_UNAVAILABLE" ? 20000 : 10000,
+          });
         // Provisional media keeps the player shell mounted; leave it so we don't
         // stick on "Processing the audio…" after extract failures (e.g. TVOD blocks).
         onRequestClose?.();
       });
-  }, [url, onRequestClose]);
+  }, [url, onRequestClose, localOnly]);
 
   const retryExtract = useCallback(() => {
     audioErrorCount.current = 0;

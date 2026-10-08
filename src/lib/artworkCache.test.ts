@@ -290,3 +290,30 @@ test("embedded artwork from a local upload survives revoking its original object
   });
   assert.equal((await reopened.load("local:uploaded-song", ""))?.size, 16);
 });
+
+test("local mode reuses artwork without attempting remote downloads or album upgrades", async () => {
+  const store = new MemoryStore();
+  let calls = 0;
+  const cache = createArtworkCache({
+    store,
+    validate,
+    fetcher: async () => {
+      calls++;
+      return new Response(image());
+    },
+  });
+  assert.equal(await cache.load(source, proxy(thumbnail), { cacheOnly: true }), null);
+  assert.equal(calls, 0);
+  await cache.load(source, proxy(thumbnail), { saved: true });
+  assert.equal(
+    (
+      await cache.load(
+        source,
+        proxy("https://lh3.googleusercontent.com/album=w1200-h1200"),
+        { cacheOnly: true },
+      )
+    )?.size,
+    16,
+  );
+  assert.equal(calls, 1);
+});

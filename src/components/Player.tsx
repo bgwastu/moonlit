@@ -40,6 +40,7 @@ import { PlayerSeekBar } from "@/components/PlayerSeekBar";
 import { PlayerTransportControls } from "@/components/PlayerTransportControls";
 import ShimmerImage from "@/components/ShimmerImage";
 import { type PlayerMode, useAppContext } from "@/context/AppContext";
+import { useYouTubeStatus } from "@/context/YouTubeStatusContext";
 import { useDominantColor } from "@/hooks/useDominantColor";
 import { useLyrics } from "@/hooks/useLyrics";
 import { usePlayerMedia } from "@/hooks/usePlayerMedia";
@@ -184,8 +185,6 @@ export function Player({
   useEffect(() => {
     if (!isHistoryWriteAllowed()) return;
     if (!media?.sourceUrl || !media.fileUrl) return;
-    // Local uploads are session-only — never write them to history
-    if (media.sourceUrl.startsWith("local:")) return;
     const snapshot: HistoryItem = {
       ...media,
       playedAt: Date.now(),
@@ -526,7 +525,9 @@ export function Player({
     savePlaybackPrefs({ advancedStretch: enabled });
   }, []);
 
+  const { localOnly } = useYouTubeStatus();
   const youtubeVideoId = (() => {
+    if (localOnly) return undefined;
     if (!media?.sourceUrl || !isYoutubeURL(media.sourceUrl)) return undefined;
     if (media.isAudioTrackVideo) return undefined;
     const id = getYouTubeId(media.sourceUrl);
@@ -1107,7 +1108,9 @@ export function Player({
 
   if (!media) return null;
 
-  const originalPlatformUrl = getOriginalPlatformUrl(media, currentTime);
+  const originalPlatformUrl = localOnly
+    ? null
+    : getOriginalPlatformUrl(media, currentTime);
 
   return (
     <MantineProvider theme={dynamicTheme} forceColorScheme="dark">

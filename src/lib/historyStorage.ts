@@ -24,10 +24,7 @@ export function loadHistoryFromStorage(): HistoryItem[] {
     if (!stored) return [];
     const parsed = JSON.parse(stored) as HistoryItem[];
     if (!Array.isArray(parsed)) return [];
-    // Drop local uploads — they were never meant to persist
-    return parsed
-      .filter((item) => item?.sourceUrl && !item.sourceUrl.startsWith("local:"))
-      .map(durableHistoryItem);
+    return parsed.filter((item) => item?.sourceUrl).map(durableHistoryItem);
   } catch (e) {
     console.error("Failed to load history:", e);
     return [];

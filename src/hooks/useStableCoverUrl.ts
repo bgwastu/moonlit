@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useYouTubeStatus } from "@/context/YouTubeStatusContext";
 import { loadCachedCover } from "@/utils/cache";
 
 /** Keep validated artwork on screen while loading a replacement for the same track. */
@@ -9,6 +10,7 @@ export function useStableCoverUrl(
   trackKey: string | undefined,
   { saved = true }: { saved?: boolean } = {},
 ): string {
+  const { localOnly } = useYouTubeStatus();
   const [displayUrl, setDisplayUrl] = useState("");
   const [displayTrackKey, setDisplayTrackKey] = useState(trackKey);
   const ownedUrls = useRef(new Set<string>());
@@ -39,7 +41,10 @@ export function useStableCoverUrl(
     const load = async () => {
       if (!next && !trackKey) return;
       try {
-        const blob = await loadCachedCover(trackKey || "", next, { saved });
+        const blob = await loadCachedCover(trackKey || "", next, {
+          saved,
+          cacheOnly: localOnly,
+        });
         if (blob && !cancelled) adopt(URL.createObjectURL(blob));
       } catch {
         // Retain a decoded cached cover, or let the UI display its artwork fallback.
@@ -51,7 +56,7 @@ export function useStableCoverUrl(
     return () => {
       cancelled = true;
     };
-  }, [coverUrl, trackKey, saved]);
+  }, [coverUrl, trackKey, saved, localOnly]);
 
   useEffect(() => {
     const urls = ownedUrls.current;

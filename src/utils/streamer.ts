@@ -172,9 +172,18 @@ export async function streamWithProgress(
   url: string,
   onState: (state: StreamState) => void,
   abortSignal?: AbortSignal,
+  { localOnly = false }: { localOnly?: boolean } = {},
 ): Promise<Media> {
   // ---- Direct media files ----
   if (isDirectMediaURL(url)) {
+    if (localOnly) {
+      const cached = await resolvePlayableMedia({ sourceUrl: url });
+      if (cached) return cached;
+      throw new StreamError(
+        "This song is not saved on this device.",
+        "LOCAL_MEDIA_UNAVAILABLE",
+      );
+    }
     return handleDirectMedia(url, onState, abortSignal);
   }
 
@@ -217,6 +226,12 @@ export async function streamWithProgress(
       metadata,
     };
   }
+
+  if (localOnly)
+    throw new StreamError(
+      "This song is not saved on this device. Open a music file to keep listening.",
+      "LOCAL_MEDIA_UNAVAILABLE",
+    );
 
   onState({ status: "extracting", message: "Extracting stream..." });
 
