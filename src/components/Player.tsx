@@ -199,7 +199,10 @@ export function Player({
     setLyricsSettings(savedState);
   }
   const [lyricsModalOpened, setLyricsModalOpened] = useState(false);
-  const coverUrl = useStableCoverUrl(media?.metadata.coverUrl, sourceUrl);
+  const { url: coverUrl, isLoading: coverLoading } = useStableCoverUrl(
+    media?.metadata.coverUrl,
+    sourceUrl,
+  );
   const dominantColor = useDominantColor(coverUrl || undefined);
   const barColor = useMemo(() => {
     if (!dominantColor) return theme.colors.violet[5];
@@ -935,6 +938,7 @@ export function Player({
                     <ShimmerImage
                       key={sourceUrl || "cover"}
                       src={coverUrl || undefined}
+                      isLoading={coverLoading}
                       fallback={
                         <CoverFallback
                           variant="artwork"
@@ -1346,6 +1350,7 @@ export function Player({
               <ShimmerImage
                 key={sourceUrl || "cover"}
                 src={coverUrl || undefined}
+                isLoading={coverLoading}
                 fallback={
                   <CoverFallback
                     seed={media.metadata.id || sourceUrl}

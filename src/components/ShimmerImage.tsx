@@ -34,6 +34,8 @@ type ShimmerImageProps = {
   hiddenFrom?: MantineBreakpoint;
   fallbackSrc?: string;
   fallback?: ReactNode;
+  /** Artwork may still be loading from the cache before its display URL is ready. */
+  isLoading?: boolean;
   /** Keep the shimmer visible over the bitmap while another resource loads. */
   forceShimmer?: boolean;
   onLoad?: (event: SyntheticEvent<HTMLImageElement>) => void;
@@ -70,6 +72,7 @@ function ShimmerImageResource({
   radius,
   fallbackSrc,
   fallback,
+  isLoading = false,
   forceShimmer = false,
   onLoad,
   onError,
@@ -86,8 +89,9 @@ function ShimmerImageResource({
   const [failed, setFailed] = useState(false);
   const [usingFallback, setUsingFallback] = useState(false);
   const imageSrc = usingFallback ? fallbackSrc : src;
-  const failedCover = !imageSrc || failed;
-  const showShimmer = !failed && (forceShimmer || (Boolean(imageSrc) && !loaded));
+  const failedCover = failed || (!imageSrc && !isLoading);
+  const showShimmer =
+    !failedCover && (forceShimmer || isLoading || (Boolean(imageSrc) && !loaded));
   const borderRadius = resolveRadius(radius, theme);
   const boxW = w ?? width ?? wrapperStyle?.width;
   const boxH = h ?? height ?? wrapperStyle?.height;
@@ -154,7 +158,7 @@ function ShimmerImageResource({
         >
           {fallback ?? <CoverFallback title={alt} />}
         </Box>
-      ) : (
+      ) : imageSrc ? (
         <Image
           key={imageSrc}
           src={imageSrc}
@@ -173,7 +177,7 @@ function ShimmerImageResource({
           onError={handleError}
           {...rest}
         />
-      )}
+      ) : null}
       {showShimmer && (
         <Box
           className="moonlit-shimmer"
