@@ -46,7 +46,7 @@ async function probePlayback(credentials: YoutubeCredentials) {
     job = await workerJson<AudioJob>("/v1/jobs", {
       method: "POST",
       body: JSON.stringify({
-        videoId: "dQw4w9WgXc",
+        videoId: "dQw4w9WgXcQ",
         mode: credentials.mode,
         cookies: credentials.cookies,
         bypassCache: true,
