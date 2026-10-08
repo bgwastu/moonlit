@@ -118,6 +118,10 @@
   z-index: 2;
   white-space: nowrap;
 }
+.panel[data-mobile] .followPrompt {
+  /* Clear the floating controls (36px), their offset (8px), and a 12px gap. */
+  bottom: calc(36px + 8px + 12px);
+}
 .followButton {
   background: rgba(35, 35, 40, 0.8);
   backdrop-filter: blur(12px);
