@@ -309,7 +309,7 @@ export default function LyricsPanel({
             onClick={() => resumeFollow()}
             className={styles.followButton}
           >
-            Back
+            Back to current line
           </Button>
         </div>
       )}
