@@ -1117,6 +1117,13 @@ export function Player({
 
   return (
     <MantineProvider theme={dynamicTheme} forceColorScheme="dark">
+      {/* Keep the audio clock independent of artwork/video layout changes. */}
+      <audio
+        ref={audioRef}
+        key={media.fileUrl}
+        style={{ display: "none" }}
+        preload="metadata"
+      />
       <CustomizePlaybackModal
         opened={modalOpened}
         onClose={closeModal}
@@ -1368,7 +1375,7 @@ export function Player({
                   </Transition>
                 </Box>
 
-                {/* Album art / video + loading overlay + hidden audio element */}
+                {/* Album art / video + loading overlay */}
                 <Box
                   style={{
                     position: "relative",
@@ -1398,12 +1405,6 @@ export function Player({
                         : "opacity 0.3s ease-out, width 0.25s ease-out",
                   }}
                 >
-                  <audio
-                    ref={audioRef}
-                    key={media.fileUrl}
-                    style={{ display: "none" }}
-                    preload="metadata"
-                  />
                   {nativeVideoUrl ? (
                     <video
                       ref={videoRef}

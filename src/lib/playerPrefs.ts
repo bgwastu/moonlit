@@ -39,14 +39,14 @@ const DEFAULT_PLAYBACK_PREFS: GlobalPlaybackPrefs = {
 
 /**
  * Global show-video preference.
- * Missing key ⇒ on (native video shows by default).
+ * Missing key ⇒ off (video is opt-in).
  * Explicit `"0"` ⇒ user disabled; `"1"` ⇒ user enabled.
  */
 export function getShowVideo(): boolean {
   try {
-    return localStorage.getItem(SHOW_VIDEO_KEY) !== "0";
+    return localStorage.getItem(SHOW_VIDEO_KEY) === "1";
   } catch {
-    return true;
+    return false;
   }
 }
 

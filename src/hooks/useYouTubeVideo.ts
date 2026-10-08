@@ -17,6 +17,7 @@ export function useYouTubeVideo(videoId: string | undefined, enabled: boolean) {
   const [attempt, setAttempt] = useState(0);
   const [resource, setResource] = useState<Resource>({ key: "", status: "idle" });
   const cached = useRef<{ key: string; url: string; expiresAt: number } | null>(null);
+  const preparing = useRef<AbortController | null>(null);
   const key = `${videoId || ""}:${credentialsVersion}:${attempt}`;
 
   useEffect(() => {
@@ -25,13 +26,23 @@ export function useYouTubeVideo(videoId: string | undefined, enabled: boolean) {
     return () => window.removeEventListener(COOKIES_CHANGED_EVENT, changed);
   }, []);
 
+  // Preparation belongs to the track and credentials, independently of visibility.
+  useEffect(
+    () => () => {
+      preparing.current?.abort();
+      preparing.current = null;
+    },
+    [key],
+  );
+
   useEffect(() => {
-    if (!videoId || !enabled) return;
+    if (!videoId || !enabled || preparing.current) return;
     if (cached.current?.key === key && cached.current.expiresAt > Date.now()) {
       setResource({ key, status: "ready", url: cached.current.url });
       return;
     }
     const controller = new AbortController();
+    preparing.current = controller;
     setResource({ key, status: "loading", message: "Preparing video…" });
     void prepareMedia(
       `https://www.youtube.com/watch?v=${videoId}`,
@@ -56,8 +67,12 @@ export function useYouTubeVideo(videoId: string | undefined, enabled: boolean) {
             status: "error",
             message: (error as Error).message || "Video is unavailable.",
           });
+      })
+      .finally(() => {
+        if (preparing.current === controller) preparing.current = null;
       });
-    return () => controller.abort();
+    // Hiding a requested video keeps its preparation and progress. Track changes,
+    // offline mode, credentials changes, retries, and unmount still cancel it.
   }, [videoId, enabled, key]);
 
   const retry = useCallback(() => {
