@@ -2,6 +2,14 @@
   "name": "moonlit",
   "version": "0.1.0",
   "private": true,
+  "workspaces": {
+    "packages": [
+      "services/audio"
+    ],
+    "selfContained": [
+      "services/audio"
+    ]
+  },
   "engines": {
     "node": ">=24.0.0"
   },

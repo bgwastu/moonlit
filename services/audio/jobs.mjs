@@ -61,8 +61,6 @@ export class AudioJobs {
     this.readers = new Map();
     this.closing = false;
     this.cacheMutation = Promise.resolve();
-    this.timer = setInterval(() => this.maintenance().catch(() => {}), 5000);
-    this.timer.unref();
   }
 
   assetPath(assetId) {
@@ -382,15 +380,12 @@ export class AudioJobs {
       );
   }
 
-  async maintenance() {
-    this.provider.reapIdle?.();
+  expireLeases() {
+    const cutoff = Date.now() - this.leaseTtlMs;
     for (const [jobId, leases] of this.leases) {
-      for (const [leaseId, at] of leases)
-        if (at < Date.now() - this.leaseTtlMs) leases.delete(leaseId);
+      for (const [leaseId, at] of leases) if (at < cutoff) leases.delete(leaseId);
       if (!leases.size) this.cancelJob(jobId);
     }
-    this.store.pruneJobs();
-    await this.evict();
   }
 
   async cleanStaging() {
@@ -408,7 +403,6 @@ export class AudioJobs {
 
   stop() {
     this.closing = true;
-    clearInterval(this.timer);
     for (const jobId of [...this.queue, ...this.running.keys()]) this.cancelJob(jobId);
   }
 

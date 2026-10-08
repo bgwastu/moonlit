@@ -87,6 +87,22 @@ export async function createAudioService({
   });
   await jobs.cleanStaging();
   await videoJobs.cleanStaging();
+  let lastSweepAt = Date.now();
+  let sweep;
+  const maintenance = async () => {
+    jobs.expireLeases();
+    videoJobs.expireLeases();
+    if (sweep || Date.now() - lastSweepAt < 60000) return;
+    lastSweepAt = Date.now();
+    provider.reapIdle?.();
+    store.pruneJobs();
+    sweep = Promise.allSettled([jobs.evict(), videoJobs.evict()]).finally(() => {
+      sweep = undefined;
+    });
+    await sweep;
+  };
+  const maintenanceTimer = setInterval(() => maintenance().catch(() => {}), 5000);
+  maintenanceTimer.unref();
   const manager = (record) => (record?.kind === "video" ? videoJobs : jobs);
   const authorized = (req) => {
     const supplied = Buffer.from(req.headers.authorization || "");
@@ -116,7 +132,7 @@ export async function createAudioService({
           });
         const credentials = { mode, cookies: mode === "anonymous" ? "" : body.cookies };
         if (url.pathname === "/v1/status") {
-          json(res, youtube.status(credentials));
+          json(res, youtube.status(credentials, body.refresh === true));
         } else {
           if (
             typeof body.query !== "string" ||
@@ -272,6 +288,7 @@ export async function createAudioService({
     async close() {
       if (!closing)
         closing = (async () => {
+          clearInterval(maintenanceTimer);
           server.close();
           jobs.stop();
           videoJobs.stop();
@@ -281,6 +298,7 @@ export async function createAudioService({
             jobs.close({ closeProvider: false }),
             videoJobs.close({ closeProvider: false }),
           ]);
+          await sweep;
           server.closeAllConnections();
           store.close();
         })();

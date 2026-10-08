@@ -27,26 +27,48 @@ export function YouTubeStatusProvider({ children }: { children: React.ReactNode 
   useEffect(() => {
     let stopped = false;
     let controller: AbortController;
-    let pollTimer: ReturnType<typeof setTimeout>;
-    let expiryTimer: ReturnType<typeof setTimeout>;
+    let timer: ReturnType<typeof setTimeout>;
+    let checking = false;
+    let nextPollAt = 0;
     let lastAt = 0;
     let failures = 0;
     let retryAfter = 0;
     let reachable = false;
     let lastStatus: YouTubeStatus = unknownYouTubeStatus();
 
+    const expire = () => {
+      if (lastStatus.expiresAt && lastStatus.expiresAt <= Date.now()) {
+        lastStatus = {
+          ...unknownYouTubeStatus(),
+          retryAfterMs: lastStatus.retryAfterMs,
+        };
+        dispatch({ type: "expired" });
+      }
+    };
     const schedule = () => {
-      clearTimeout(pollTimer);
-      if (!stopped)
-        pollTimer = setTimeout(
-          () => void refresh(),
-          Math.max(lastStatus.retryAfterMs || 10000, retryAfter - Date.now()),
+      clearTimeout(timer);
+      if (stopped) return;
+      expire();
+      const pollAt =
+        checking || document.visibilityState === "hidden"
+          ? Infinity
+          : Math.max(nextPollAt, retryAfter, lastAt + 5000);
+      const at = Math.min(lastStatus.expiresAt || Infinity, pollAt);
+      if (Number.isFinite(at))
+        timer = setTimeout(
+          () => {
+            expire();
+            if (Date.now() >= pollAt) void refresh();
+            else schedule();
+          },
+          Math.max(0, at - Date.now()),
         );
     };
     const refresh = async (force = false) => {
       if (stopped) return;
       if (!navigator.onLine && !reachable && !force) {
         dispatch({ type: "connection", online: false });
+        nextPollAt = Date.now() + 10000;
         schedule();
         return;
       }
@@ -56,7 +78,7 @@ export function YouTubeStatusProvider({ children }: { children: React.ReactNode 
       }
       if (
         !force &&
-        (document.visibilityState === "hidden" || Date.now() - lastAt < 5000)
+        (checking || document.visibilityState === "hidden" || Date.now() - lastAt < 5000)
       ) {
         schedule();
         return;
@@ -65,9 +87,11 @@ export function YouTubeStatusProvider({ children }: { children: React.ReactNode 
       controller?.abort();
       controller = new AbortController();
       const signal = controller.signal;
+      checking = true;
       dispatch({ type: "checking" });
+      schedule();
       try {
-        const response = await fetch("/api/youtube/status", {
+        const response = await fetch(`/api/youtube/status${force ? "?refresh=1" : ""}`, {
           headers: cookieRequestHeaders(),
           cache: "no-store",
           signal: AbortSignal.any([signal, AbortSignal.timeout(12000)]),
@@ -93,21 +117,16 @@ export function YouTubeStatusProvider({ children }: { children: React.ReactNode 
         if (!navigator.onLine) dispatch({ type: "connection", online: true });
         lastStatus = next;
         dispatch({ type: "status", status: next, now: Date.now() });
-        clearTimeout(expiryTimer);
-        expiryTimer = setTimeout(
-          () => {
-            lastStatus = unknownYouTubeStatus();
-            dispatch({ type: "expired" });
-            void refresh();
-          },
-          Math.max(5000, next.expiresAt - Date.now()),
-        );
       } catch {
         if (stopped || signal.aborted) return;
         lastStatus = unknownYouTubeStatus();
         dispatch({ type: "unreachable", confirmed: ++failures >= 2 });
       } finally {
-        if (!stopped && !signal.aborted) schedule();
+        if (!stopped && !signal.aborted) {
+          checking = false;
+          nextPollAt = Date.now() + (lastStatus.retryAfterMs || 10000);
+          schedule();
+        }
       }
     };
     const changed = () => void refresh(true);
@@ -119,7 +138,9 @@ export function YouTubeStatusProvider({ children }: { children: React.ReactNode 
     const disconnected = () => {
       reachable = false;
       controller?.abort();
-      clearTimeout(expiryTimer);
+      checking = false;
+      lastStatus = unknownYouTubeStatus();
+      nextPollAt = Date.now() + 10000;
       dispatch({ type: "connection", online: false });
       schedule();
     };
@@ -135,8 +156,7 @@ export function YouTubeStatusProvider({ children }: { children: React.ReactNode 
     return () => {
       stopped = true;
       controller?.abort();
-      clearTimeout(pollTimer);
-      clearTimeout(expiryTimer);
+      clearTimeout(timer);
       window.removeEventListener("online", connected);
       window.removeEventListener("offline", disconnected);
       window.removeEventListener("focus", visible);

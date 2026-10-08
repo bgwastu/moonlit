@@ -8,13 +8,9 @@ RUN apk add --no-cache libc6-compat
 WORKDIR /app
 
 COPY package.json bun.lock ./
+COPY services/audio/package.json ./services/audio/package.json
 RUN --mount=type=cache,target=/root/.bun/install/cache \
-    bun install --frozen-lockfile
-
-FROM node:24-alpine AS audio-deps
-WORKDIR /app/services/audio
-COPY services/audio/package.json services/audio/package-lock.json ./
-RUN --mount=type=cache,target=/root/.npm npm ci --omit=dev --ignore-scripts
+    bun install --frozen-lockfile --linker=hoisted --ignore-scripts
 
 # Rebuild the source code only when needed
 FROM base AS builder
@@ -48,7 +44,7 @@ RUN chown -R nextjs:nodejs .next data
 # Copy build output
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
-COPY --from=audio-deps --chown=nextjs:nodejs /app/services/audio/node_modules ./services/audio/node_modules
+COPY --from=deps --chown=nextjs:nodejs /app/services/audio/node_modules ./services/audio/node_modules
 COPY --chown=nextjs:nodejs services/audio/*.mjs services/audio/package.json services/audio/THIRD_PARTY_NOTICES.md ./services/audio/
 COPY --chown=nextjs:nodejs scripts/start.mjs ./scripts/start.mjs
 

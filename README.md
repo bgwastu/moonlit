@@ -71,11 +71,10 @@ docker run -d \
 
 ## Native host (no Docker)
 
-Prerequisites: Bun, Node.js 24+, ffmpeg and ffprobe, npm.
+Prerequisites: Bun 1.4.2+, Node.js 24+, ffmpeg and ffprobe.
 
 ```bash
 bun install
-npm ci --prefix services/audio --omit=dev --ignore-scripts
 bun run build
 NODE_ENV=production bun run start
 ```

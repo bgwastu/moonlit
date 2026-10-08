@@ -4,6 +4,7 @@ import { DatabaseSync } from "node:sqlite";
 
 export class AudioStore {
   constructor(directory) {
+    this.liveJobs = new Map();
     mkdirSync(directory, { recursive: true });
     this.db = new DatabaseSync(path.join(directory, "audio.sqlite"));
     this.db.exec(`
@@ -45,6 +46,12 @@ export class AudioStore {
   }
 
   putJob(job) {
+    const previous = this.liveJobs.get(job.id);
+    // Pollers see every progress update; only state transitions need restart recovery.
+    if (previous?.state === job.state) {
+      this.liveJobs.set(job.id, job);
+      return;
+    }
     this.db
       .prepare("INSERT OR REPLACE INTO jobs VALUES (?, ?, ?, ?, ?, ?, ?)")
       .run(
@@ -56,20 +63,24 @@ export class AudioStore {
         job.updatedAt,
         JSON.stringify(job),
       );
+    this.liveJobs.set(job.id, job);
   }
 
   getJob(id) {
+    if (this.liveJobs.has(id)) return this.liveJobs.get(id);
     const row = this.db.prepare("SELECT data FROM jobs WHERE id = ?").get(id);
-    return row ? JSON.parse(row.data) : null;
+    const job = row ? JSON.parse(row.data) : null;
+    if (job) this.liveJobs.set(id, job);
+    return job;
   }
 
   pendingJob(cacheKey) {
     const row = this.db
       .prepare(
-        "SELECT data FROM jobs WHERE cache_key = ? AND state IN ('queued','resolving','downloading','validating') LIMIT 1",
+        "SELECT id FROM jobs WHERE cache_key = ? AND state IN ('queued','resolving','downloading','validating') LIMIT 1",
       )
       .get(cacheKey);
-    return row ? JSON.parse(row.data) : null;
+    return row ? this.getJob(row.id) : null;
   }
 
   getAsset(id) {
@@ -111,11 +122,15 @@ export class AudioStore {
   }
 
   pruneJobs() {
+    const cutoff = Date.now() - 86400000;
+    for (const [id, job] of this.liveJobs)
+      if (job.updatedAt < cutoff && ["ready", "failed", "cancelled"].includes(job.state))
+        this.liveJobs.delete(id);
     this.db
       .prepare(
         "DELETE FROM jobs WHERE updated_at < ? AND state IN ('ready','failed','cancelled')",
       )
-      .run(Date.now() - 86400000);
+      .run(cutoff);
   }
 
   health(scope) {

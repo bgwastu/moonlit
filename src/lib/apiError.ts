@@ -38,42 +38,6 @@ export async function parseApiErrorBody(res: Response): Promise<ApiErrorBody> {
   };
 }
 
-function isNetworkMessage(message: string): boolean {
-  const lower = message.toLowerCase();
-  return (
-    lower.includes("fetch failed") ||
-    lower.includes("network") ||
-    lower.includes("econnrefused") ||
-    lower.includes("etimedout") ||
-    lower.includes("timeout") ||
-    lower.includes("unavailable") ||
-    lower.includes("socket")
-  );
-}
-
-function isBotBlockMessage(message: string): boolean {
-  const lower = message.toLowerCase();
-  return lower.includes("not a bot");
-}
-
-export function youtubeErrorCode(
-  message: string,
-  httpStatus?: number,
-): string | undefined {
-  if (httpStatus === 429) return "RATE_LIMITED";
-  if (isBotBlockMessage(message)) return "YOUTUBE_BLOCKED";
-  if (/status code 400|invalid argument/i.test(message)) return "YOUTUBE_CLIENT_ERROR";
-  if (
-    /video.*(unavailable|not available)|private video|removed|not available in your country/i.test(
-      message,
-    )
-  )
-    return "CONTENT_UNAVAILABLE";
-  if (isNetworkMessage(message)) return "YOUTUBE_UNAVAILABLE";
-  if (message.toLowerCase().includes("no streaming data")) return "STREAM_UNAVAILABLE";
-  return undefined;
-}
-
 export function youtubeErrorTitle(code?: string): string {
   switch (code) {
     case "RATE_LIMITED":

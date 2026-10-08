@@ -73,9 +73,6 @@ export function getShowVideo() {
 export function setShowVideo(enabled: boolean) {
   write(SHOW_VIDEO_KEY, enabled ? 1 : 0);
 }
-export function clearShowVideoPref() {
-  remove(SHOW_VIDEO_KEY);
-}
 export function getPlaybackPrefs(): GlobalPlaybackPrefs {
   const { showRomaji, ...stored } = read<
     Partial<GlobalPlaybackPrefs> & { showRomaji?: boolean }
@@ -88,9 +85,6 @@ export function getPlaybackPrefs(): GlobalPlaybackPrefs {
 }
 export function savePlaybackPrefs(partial: Partial<GlobalPlaybackPrefs>) {
   write(PLAYBACK_PREFS_KEY, { ...getPlaybackPrefs(), ...partial });
-}
-export function clearPlaybackPrefs() {
-  remove(PLAYBACK_PREFS_KEY);
 }
 
 function durableMetadata(
@@ -161,13 +155,11 @@ export function saveLastSession(session: LastSession) {
       metadata: durableMetadata(session.metadata, session.sourceUrl),
     });
 }
-export function patchLastSession(
-  sourceUrl: string,
-  partial: Partial<Omit<LastSession, "sourceUrl">>,
-) {
+export function savePlaybackPosition(sourceUrl: string, positionSeconds: number) {
+  if (!Number.isFinite(positionSeconds) || positionSeconds < 0) return;
   const existing = loadLastSession();
-  if (existing?.sourceUrl === sourceUrl)
-    saveLastSession({ ...existing, ...partial, sourceUrl, savedAt: Date.now() });
+  if (existing?.sourceUrl === sourceUrl && existing.positionSeconds !== positionSeconds)
+    saveLastSession({ ...existing, positionSeconds, savedAt: Date.now() });
 }
 export function clearLastSession() {
   remove(SESSION_KEY);
@@ -233,13 +225,26 @@ function notifyMediaCacheChanged() {
 
 interface CacheMeta {
   order: string[];
+  sizes: Record<string, number>;
+}
+
+let mediaWork: Promise<unknown> = Promise.resolve();
+function withMediaStore<T>(work: () => Promise<T>): Promise<T> {
+  const result = mediaWork.then(async (): Promise<T> => {
+    if (typeof navigator !== "undefined" && navigator.locks)
+      return await navigator.locks.request("moonlit-media-storage", work);
+    return work();
+  });
+  mediaWork = result.catch(() => {});
+  return result;
 }
 
 async function getMeta(): Promise<CacheMeta> {
   try {
-    return (await mediaStore.getItem<CacheMeta>(META_KEY)) ?? { order: [] };
+    const stored = await mediaStore.getItem<Partial<CacheMeta>>(META_KEY);
+    return { order: stored?.order || [], sizes: stored?.sizes || {} };
   } catch {
-    return { order: [] };
+    return { order: [], sizes: {} };
   }
 }
 
@@ -252,9 +257,10 @@ async function saveMeta(meta: CacheMeta): Promise<void> {
 }
 
 export async function getMedia(key: string): Promise<Blob | null> {
+  if (!key || key === META_KEY) return null;
   try {
     const value = await mediaStore.getItem<Blob>(key);
-    return value ?? null;
+    return value instanceof Blob && value.size > 0 ? value : null;
   } catch (e) {
     console.error("Failed to get media from cache:", e);
     return null;
@@ -262,54 +268,57 @@ export async function getMedia(key: string): Promise<Blob | null> {
 }
 
 export async function setMediaCache(key: string, blob: Blob): Promise<void> {
-  await setMediaCacheWithLimit(key, blob);
-}
-
-export async function setMediaCacheWithLimit(key: string, blob: Blob): Promise<void> {
+  if (!key || key === META_KEY || !blob.size) return;
   try {
-    await mediaStore.setItem(key, blob);
-    const meta = await getMeta();
-    meta.order = [key, ...meta.order.filter((entry) => entry !== key)];
+    await withMediaStore(async () => {
+      await mediaStore.setItem(key, blob);
+      const meta = await getMeta();
+      meta.order = [key, ...meta.order.filter((entry) => entry !== key)];
+      meta.sizes[key] = blob.size;
 
-    while (meta.order.length > MAX_CACHED_TRACKS) {
-      const evict = meta.order.pop();
-      if (evict && evict !== META_KEY) {
-        await mediaStore.removeItem(evict);
+      while (meta.order.length > MAX_CACHED_TRACKS) {
+        const evict = meta.order.pop();
+        if (evict && evict !== META_KEY) {
+          await mediaStore.removeItem(evict);
+          delete meta.sizes[evict];
+        }
       }
-    }
 
-    await saveMeta(meta);
+      await saveMeta(meta);
+    });
     notifyMediaCacheChanged();
   } catch (e) {
     console.error("Failed to cache media:", e);
   }
 }
 
-async function touchMediaCache(key: string): Promise<void> {
-  try {
-    const exists = await mediaStore.getItem(key);
-    if (!exists) return;
-    const meta = await getMeta();
-    meta.order = [key, ...meta.order.filter((entry) => entry !== key)];
-    await saveMeta(meta);
-  } catch (e) {
-    console.error("Failed to touch media cache:", e);
-  }
-}
-
 export async function getCachedMediaUrl(sourceUrl: string): Promise<string | null> {
-  const blob = await getMedia(sourceUrl);
-  if (!blob) return null;
-  await touchMediaCache(sourceUrl);
-  return URL.createObjectURL(blob);
+  return withMediaStore(async () => {
+    const blob = await getMedia(sourceUrl);
+    if (!blob) return null;
+    const meta = await getMeta();
+    if (meta.order[0] !== sourceUrl || meta.sizes[sourceUrl] !== blob.size) {
+      meta.order = [sourceUrl, ...meta.order.filter((key) => key !== sourceUrl)];
+      meta.sizes[sourceUrl] = blob.size;
+      await saveMeta(meta);
+    }
+    return URL.createObjectURL(blob);
+  });
 }
 
 /** True when IndexedDB already holds audio for this source (offline replay). */
 export async function hasCachedMedia(sourceUrl: string): Promise<boolean> {
-  if (!sourceUrl) return false;
+  if (!sourceUrl || sourceUrl === META_KEY) return false;
   try {
-    const value = await mediaStore.getItem(sourceUrl);
-    return value instanceof Blob && value.size > 0 && sourceUrl !== META_KEY;
+    return await withMediaStore(async () => {
+      if (!(await mediaStore.keys()).includes(sourceUrl)) return false;
+      const meta = await getMeta();
+      if (meta.sizes[sourceUrl] === undefined) {
+        meta.sizes[sourceUrl] = (await getMedia(sourceUrl))?.size || 0;
+        await saveMeta(meta);
+      }
+      return meta.sizes[sourceUrl] > 0;
+    });
   } catch {
     return false;
   }
@@ -318,11 +327,19 @@ export async function hasCachedMedia(sourceUrl: string): Promise<boolean> {
 /** Only files actually present on this device belong in the local-music library. */
 export async function getAvailableMediaSources(): Promise<string[]> {
   try {
-    const keys = (await mediaStore.keys()).filter((key) => key !== META_KEY);
-    const available = await Promise.all(
-      keys.map(async (key) => ((await hasCachedMedia(key)) ? key : null)),
-    );
-    return available.filter((key): key is string => key !== null);
+    return await withMediaStore(async () => {
+      const keys = (await mediaStore.keys()).filter((key) => key !== META_KEY);
+      const meta = await getMeta();
+      let migrated = false;
+      // Read older blobs once to build the inventory, then only read keys and sizes.
+      for (const key of keys) {
+        if (meta.sizes[key] !== undefined) continue;
+        meta.sizes[key] = (await getMedia(key))?.size || 0;
+        migrated = true;
+      }
+      if (migrated) await saveMeta(meta);
+      return keys.filter((key) => meta.sizes[key] > 0);
+    });
   } catch {
     return [];
   }
@@ -330,7 +347,7 @@ export async function getAvailableMediaSources(): Promise<string[]> {
 
 export async function clearMediaCache(): Promise<void> {
   try {
-    await mediaStore.clear();
+    await withMediaStore(() => mediaStore.clear());
     await artworkCache.clear();
     notifyMediaCacheChanged();
   } catch (e) {

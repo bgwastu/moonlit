@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { getDecodedAudio, setDecodedAudio } from "@/lib/decodedAudioCache";
 import { fetchAudioFile } from "@/lib/fetchAudioFile";
 import { loadSignalsmithStretch } from "@/lib/signalsmith";
-import { hasCachedMedia, setMediaCacheWithLimit } from "@/lib/storage";
+import { hasCachedMedia, setMediaCache } from "@/lib/storage";
 import {
   type PlayerRuntime,
   generateImpulseResponse,
@@ -284,11 +284,8 @@ export function useStretchPlayer({
           signal,
         );
         throwIfInactive();
-        if (sourceUrl.startsWith("http://") || sourceUrl.startsWith("https://")) {
-          await setMediaCacheWithLimit(
-            sourceUrl,
-            new Blob([arrayBuffer], { type: "audio/mp4" }),
-          );
+        if (/^https?:\/\//.test(sourceUrl) && !(await hasCachedMedia(sourceUrl))) {
+          await setMediaCache(sourceUrl, new Blob([arrayBuffer], { type: "audio/mp4" }));
         }
         setProgress({ phase: "processing", percent: 70 });
         audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
@@ -514,10 +511,7 @@ export function useStretchPlayer({
               if (await hasCachedMedia(sourceUrl)) return;
               try {
                 const buf = await fetchAudioFile(fileUrl);
-                await setMediaCacheWithLimit(
-                  sourceUrl,
-                  new Blob([buf], { type: "audio/mp4" }),
-                );
+                await setMediaCache(sourceUrl, new Blob([buf], { type: "audio/mp4" }));
               } catch {
                 // Best-effort; playback already works via fileUrl.
               }

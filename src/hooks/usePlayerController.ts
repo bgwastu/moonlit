@@ -16,7 +16,7 @@ import {
   type GlobalPlaybackPrefs,
   getPlaybackPrefs,
   getShowVideo,
-  patchLastSession,
+  savePlaybackPosition,
   savePlaybackPrefs,
   setShowVideo,
 } from "@/lib/storage";
@@ -273,17 +273,18 @@ export function usePlayerController({
     });
   }, [media, sourceUrl, setHistory, isHistoryWriteAllowed]);
 
-  // Read the live engine clock at a fixed interval and at exit, without per-frame storage writes.
+  // Save during playback, on paused seeks, and when leaving the player.
+  const pausedPosition = engine.isPlaying ? null : engine.currentTime;
   useEffect(() => {
     if (!sourceUrl || sourceUrl.startsWith("local:") || !isReady) return;
     const save = () => {
-      if (isHistoryWriteAllowed())
-        patchLastSession(sourceUrl, { positionSeconds: getPlaybackTime() });
+      if (isHistoryWriteAllowed()) savePlaybackPosition(sourceUrl, getPlaybackTime());
     };
     const hidden = () => {
       if (document.hidden) save();
     };
-    const timer = setInterval(save, 5000);
+    save();
+    const timer = engine.isPlaying ? setInterval(save, 5000) : undefined;
     window.addEventListener("beforeunload", save);
     document.addEventListener("visibilitychange", hidden);
     return () => {
@@ -292,7 +293,14 @@ export function usePlayerController({
       window.removeEventListener("beforeunload", save);
       document.removeEventListener("visibilitychange", hidden);
     };
-  }, [sourceUrl, isReady, getPlaybackTime, isHistoryWriteAllowed]);
+  }, [
+    sourceUrl,
+    isReady,
+    engine.isPlaying,
+    pausedPosition,
+    getPlaybackTime,
+    isHistoryWriteAllowed,
+  ]);
 
   useEffect(() => {
     if (!engine.isPlaying) return;

@@ -10,7 +10,10 @@ export async function GET(request: Request) {
     const credentials = await requestYoutubeCredentials(request);
     const status = await workerJson<YouTubeStatus>("/v1/status", {
       method: "POST",
-      body: JSON.stringify(credentials),
+      body: JSON.stringify({
+        ...credentials,
+        refresh: new URL(request.url).searchParams.get("refresh") === "1",
+      }),
       signal: request.signal,
     });
     return Response.json(status, { headers: { "Cache-Control": "no-store" } });

@@ -5,6 +5,8 @@ import { credentialScope } from "./jobs.mjs";
 
 const HEALTH_TTL = 600000;
 const RETRY_DELAY = 60000;
+// Active use refreshes evidence. Idle probes can wait after evidence expires.
+const ROUTINE_PROBE_DELAY = 1800000;
 
 /** One owner for search caching, capability evidence and recovery probes. */
 export class YouTubeService {
@@ -75,6 +77,9 @@ export class YouTubeService {
       ...health,
       state: expiresAt > Date.now() ? health.state : "unknown",
       expiresAt,
+      probeAfter:
+        health.checkedAt +
+        (health.state === "healthy" ? ROUTINE_PROBE_DELAY : RETRY_DELAY),
     };
   }
 
@@ -110,7 +115,8 @@ export class YouTubeService {
     }
   }
 
-  status(credentials) {
+  status(credentials, refresh = false) {
+    const now = Date.now();
     const scope = credentialScope(credentials.mode, credentials.cookies);
     const search = this.capability(scope, "search");
     const playback = this.capability(scope, "playback");
@@ -119,10 +125,7 @@ export class YouTubeService {
       ["playback", playback],
     ]) {
       if (kind === "playback" && credentials.mode === "user") continue;
-      if (
-        health.state === "unknown" ||
-        (health.state === "degraded" && health.checkedAt < Date.now() - RETRY_DELAY)
-      )
+      if (health.probeAfter <= now || (refresh && health.state === "unknown"))
         this.schedule(kind + ":" + scope, () =>
           kind === "search"
             ? this.search(credentials, "lofi hip hop", {
@@ -141,6 +144,12 @@ export class YouTubeService {
         : states.includes("degraded")
           ? "degraded"
           : "unknown";
+    const probing = ["search:", "playback:"].some(
+      (prefix) => this.probes.get(prefix + scope)?.pending,
+    );
+    const retryAfterMs =
+      probing || ["degraded", "offline"].includes(state) ? 10000 : 60000;
+    const expiresAt = Math.min(search.expiresAt, playback.expiresAt);
     return {
       state,
       online: state === "healthy",
@@ -149,13 +158,10 @@ export class YouTubeService {
       cookieSource: credentials.mode === "anonymous" ? "none" : credentials.mode,
       capabilities: { search, playback },
       checkedAt: Math.min(search.checkedAt, playback.checkedAt),
-      expiresAt: Math.max(
-        Date.now() + 5000,
-        Math.min(search.expiresAt, playback.expiresAt),
-      ),
+      expiresAt: expiresAt > now ? expiresAt : now + retryAfterMs,
       ...(playback.error || search.error || {}),
       ...(playback.lastItemError ? { lastItemError: playback.lastItemError } : {}),
-      retryAfterMs: state === "healthy" ? 30000 : 10000,
+      retryAfterMs,
     };
   }
 
