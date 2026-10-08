@@ -5,24 +5,33 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useReducer,
   useRef,
   useState,
 } from "react";
 import { MantineThemeOverride } from "@mantine/core";
 import { HistoryItem, Media } from "@/interfaces";
 import { MAX_HISTORY_ITEMS } from "@/lib/constants";
+import { resolvePlayableMedia } from "@/lib/playFromCache";
+import { playerPathForMedia, softReplaceUrl } from "@/lib/playerNavigation";
+import {
+  type OpenPlayerOptions,
+  type PlayerMode,
+  buildProvisionalMedia,
+  emptyPlayerSession,
+  playerSessionReducer,
+} from "@/lib/playerSession";
+import { isKnownMetaValue, mergeTrackMetadata, stashSearchMeta } from "@/lib/searchMeta";
 import {
   clearHistoryStorage,
   loadHistoryFromStorage,
   saveHistoryToStorage,
-} from "@/lib/historyStorage";
-import { clearLastSession, loadLastSession, saveLastSession } from "@/lib/lastSession";
-import { buildProvisionalMedia } from "@/lib/mergePlayerMedia";
-import { resolvePlayableMedia } from "@/lib/playFromCache";
-import { playerPathForMedia, softReplaceUrl } from "@/lib/playerNavigation";
-import { isKnownMetaValue, mergeTrackMetadata, stashSearchMeta } from "@/lib/searchMeta";
+} from "@/lib/storage";
+import { clearLastSession, loadLastSession, saveLastSession } from "@/lib/storage";
+import { clearMediaCache } from "@/lib/storage";
 import { appTheme } from "@/lib/theme";
-import { clearMediaCache } from "@/utils/cache";
+
+export type { OpenPlayerOptions, PlayerMode } from "@/lib/playerSession";
 
 /** Captured once on the client before PlayerRouteBridge can replace to `/`. */
 let capturedEntryPath: string | null = null;
@@ -33,23 +42,6 @@ function getAppEntryPath(): string {
     capturedEntryPath = window.location.pathname;
   }
   return capturedEntryPath;
-}
-
-export type PlayerMode = "hidden" | "expanded" | "mini";
-
-export interface OpenPlayerOptions {
-  url?: string | null;
-  media?: Media | null;
-  /** Defaults to true — new tracks auto-expand. */
-  expand?: boolean;
-  /** Soft-replace the URL to the player/watch path (default true when expanding). */
-  syncUrl?: boolean;
-  /** Defaults to true — session restore sets false so the mini bar stays paused. */
-  autoPlay?: boolean;
-  /** Resume playback head (seconds). Used by session restore. */
-  resumePosition?: number;
-  /** When false, do not resume history writes (session restore). Default true. */
-  recordHistory?: boolean;
 }
 
 interface AppContextValue {
@@ -64,6 +56,7 @@ interface AppContextValue {
   playerAutoPlay: boolean;
   /** Seconds to seek to when the current open becomes ready (session restore). */
   playerResumeAt: number;
+  playerRevision: number;
   openPlayer: (options?: OpenPlayerOptions) => void;
   collapsePlayer: () => void;
   expandPlayer: () => void;
@@ -86,11 +79,15 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   // Capture deep-link path before PlayerRouteBridge can replace to `/`.
   getAppEntryPath();
 
-  const [media, setMediaState] = useState<Media | null>(null);
-  const [playerMode, setPlayerMode] = useState<PlayerMode>("hidden");
-  const [playerUrl, setPlayerUrl] = useState<string | null>(null);
-  const [playerAutoPlay, setPlayerAutoPlay] = useState(false);
-  const [playerResumeAt, setPlayerResumeAt] = useState(0);
+  const [session, dispatchPlayer] = useReducer(playerSessionReducer, emptyPlayerSession);
+  const {
+    media,
+    mode: playerMode,
+    url: playerUrl,
+    autoPlay: playerAutoPlay,
+    resumeAt: playerResumeAt,
+    revision: playerRevision,
+  } = session;
   const [history, setHistoryState] = useState<HistoryItem[]>([]);
   const [theme, setTheme] = useState<MantineThemeOverride>(appTheme);
   const [isHydrated, setIsHydrated] = useState(false);
@@ -100,7 +97,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const skipHistoryWritesRef = useRef(false);
   /** Bumped by user opens so an in-flight session restore cannot overwrite them. */
   const sessionRestoreGenRef = useRef(0);
-  const openingFromSessionRestoreRef = useRef(false);
 
   useEffect(() => {
     mediaRef.current = media;
@@ -144,44 +140,16 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const setMedia: React.Dispatch<React.SetStateAction<Media | null>> = useCallback(
     (action) => {
-      setMediaState(action);
+      dispatchPlayer({ type: "media", update: action });
     },
     [],
   );
 
   const openPlayer = useCallback((options: OpenPlayerOptions = {}) => {
-    if (!openingFromSessionRestoreRef.current) {
-      sessionRestoreGenRef.current += 1;
-    }
-    openingFromSessionRestoreRef.current = false;
-
-    if (options.recordHistory === false) {
-      skipHistoryWritesRef.current = true;
-    } else {
-      skipHistoryWritesRef.current = false;
-    }
+    sessionRestoreGenRef.current += 1;
+    skipHistoryWritesRef.current = options.recordHistory === false;
     const expand = options.expand !== false;
-    setPlayerAutoPlay(options.autoPlay !== false);
-    setPlayerResumeAt(
-      typeof options.resumePosition === "number" &&
-        Number.isFinite(options.resumePosition)
-        ? Math.max(0, options.resumePosition)
-        : 0,
-    );
-    if (options.media !== undefined) {
-      setMediaState(options.media);
-    }
-    if (options.url !== undefined) {
-      setPlayerUrl(options.url);
-      if (options.url && options.media === undefined) {
-        setMediaState(null);
-      }
-    } else if (options.media) {
-      setPlayerUrl(null);
-    }
-
-    setPlayerMode(expand ? "expanded" : "mini");
-
+    dispatchPlayer({ type: "open", options });
     const syncUrl = options.syncUrl ?? expand;
     if (syncUrl) {
       if (expand) {
@@ -193,25 +161,20 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const collapsePlayer = useCallback(() => {
-    setPlayerMode((prev) => (prev === "hidden" ? prev : "mini"));
+    dispatchPlayer({ type: "collapse" });
     softReplaceUrl("/");
   }, []);
 
   const expandPlayer = useCallback(() => {
     // Session restore opens mini + paused (autoPlay false). Expanding is an
     // intentional listen action — start playback once the player is ready.
-    setPlayerAutoPlay(true);
-    setPlayerMode((prev) => (prev === "hidden" ? prev : "expanded"));
+    dispatchPlayer({ type: "expand" });
     softReplaceUrl(playerPathForMedia(playerUrlRef.current, mediaRef.current));
   }, []);
 
   const closePlayer = useCallback(() => {
     sessionRestoreGenRef.current += 1;
-    setPlayerMode("hidden");
-    setPlayerUrl(null);
-    setPlayerAutoPlay(false);
-    setPlayerResumeAt(0);
-    setMediaState(null);
+    dispatchPlayer({ type: "close" });
     clearLastSession();
     softReplaceUrl("/");
   }, []);
@@ -248,7 +211,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         if (restoreGen !== sessionRestoreGenRef.current) return;
         if (playerUrlRef.current || mediaRef.current) return;
 
-        openingFromSessionRestoreRef.current = true;
         if (cached) {
           openPlayer({
             url: session.sourceUrl,
@@ -316,6 +278,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         playerUrl,
         playerAutoPlay,
         playerResumeAt,
+        playerRevision,
         openPlayer,
         collapsePlayer,
         expandPlayer,

@@ -2,13 +2,13 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { getDecodedAudio, setDecodedAudio } from "@/lib/decodedAudioCache";
 import { fetchAudioFile } from "@/lib/fetchAudioFile";
 import { loadSignalsmithStretch } from "@/lib/signalsmith";
+import { hasCachedMedia, setMediaCacheWithLimit } from "@/lib/storage";
 import {
   type PlayerRuntime,
   generateImpulseResponse,
   startStretchTick,
   syncMediaSession,
 } from "@/lib/stretchRuntime";
-import { hasCachedMedia, setMediaCacheWithLimit } from "@/utils/cache";
 
 type StretchPlayerState = "loading" | "ready" | "error";
 

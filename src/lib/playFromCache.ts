@@ -1,9 +1,9 @@
 import type { HistoryItem, Media } from "@/interfaces";
-import { toDisplayCoverUrl } from "@/lib/mergePlayerMedia";
+import { toDisplayCoverUrl } from "@/lib/playerSession";
 import { mergeTrackMetadata, peekSearchMeta } from "@/lib/searchMeta";
+import { getCachedMediaUrl, getMedia } from "@/lib/storage";
 import { isMarkedAudioTrackVideo, markAudioTrackVideo } from "@/lib/trackFlags";
 import { getYouTubeId } from "@/utils";
-import { getCachedMediaUrl, getMedia } from "@/utils/cache";
 
 function buildMetadata(
   sourceUrl: string,

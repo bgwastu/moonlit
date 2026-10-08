@@ -1,5 +1,4 @@
 import { Media } from "@/interfaces";
-import { loadHistoryFromStorage } from "@/lib/historyStorage";
 import { type PreparedMedia, StreamError, prepareMedia } from "@/lib/mediaPreparation";
 import { resolvePlayableMedia } from "@/lib/playFromCache";
 import {
@@ -8,6 +7,7 @@ import {
   peekSearchMeta,
   stashSearchMeta,
 } from "@/lib/searchMeta";
+import { loadHistoryFromStorage } from "@/lib/storage";
 import { isMarkedAudioTrackVideo, markAudioTrackVideo } from "@/lib/trackFlags";
 import { YOUTUBE_STATUS_CHANGED_EVENT } from "@/lib/youtubeStatus";
 import { getYouTubeId, isDirectMediaURL, isYoutubeURL } from "@/utils";
@@ -118,7 +118,7 @@ export async function streamWithProgress(
   });
 
   // Audio cache hit: skip extraction. Optional video has a separate cache.
-  // Recover titles from history / oembed when stash was empty (pasted links).
+  // Recover titles from history when stash was empty (pasted links).
   if (cached) {
     const atv = Boolean(cached.isAudioTrackVideo) || isMarkedAudioTrackVideo(id);
     const coverUrl =

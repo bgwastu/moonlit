@@ -58,3 +58,17 @@ export function createDynamicTheme(
 export function getSemitonesFromRate(rate: number): number {
   return 12 * Math.log2(rate);
 }
+
+export function getModeFromRate(
+  rate: number,
+  semitones = 0,
+): "slowed" | "normal" | "speedup" | "custom" {
+  if (Math.abs(rate - 1) < 0.01 && Math.abs(semitones) < 0.1) return "normal";
+  const targetSemitones = getSemitonesFromRate(rate);
+  const isSynced = Math.abs(semitones - targetSemitones) < 0.1;
+  if (isSynced) {
+    if (Math.abs(rate - 0.8) < 0.01) return "slowed";
+    if (Math.abs(rate - 1.25) < 0.01) return "speedup";
+  }
+  return "custom";
+}

@@ -62,11 +62,10 @@ import type { Media } from "@/interfaces";
 import { youtubeErrorTitle } from "@/lib/apiError";
 import { cookieRequestHeaders } from "@/lib/cookies";
 import { stashSearchMeta } from "@/lib/searchMeta";
+import { setMediaCache } from "@/lib/storage";
 import { SEARCH_ACCENT_VAR } from "@/lib/theme";
-import { ensureYouTubeLinkMeta } from "@/lib/youtubeOembed";
 import { YOUTUBE_STATUS_CHANGED_EVENT } from "@/lib/youtubeStatus";
 import { getYouTubeId, isDirectMediaURL, isYoutubeURL } from "@/utils";
-import { setMediaCache } from "@/utils/cache";
 
 const LOCAL_FILE_ACCEPT = [
   "audio/mpeg",
@@ -443,8 +442,6 @@ function SearchPanel({
       const id = getYouTubeId(clean);
       if (id) {
         const playUrl = `https://www.youtube.com/watch?v=${id}`;
-        // Stash oembed titles before open so paste doesn't flash / stick on Unknown.
-        await ensureYouTubeLinkMeta(id);
         if (inputRef.current?.disabled) return;
         resetSearchUi();
         openPlayer({ url: playUrl, expand: true });

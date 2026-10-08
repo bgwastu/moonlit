@@ -41,38 +41,19 @@ import { PlayerSeekBar } from "@/components/PlayerSeekBar";
 import { PlayerTransportControls } from "@/components/PlayerTransportControls";
 import ShimmerImage from "@/components/ShimmerImage";
 import { type PlayerMode, useAppContext } from "@/context/AppContext";
-import { useYouTubeStatus } from "@/context/YouTubeStatusContext";
 import { useDominantColor } from "@/hooks/useDominantColor";
 import { useLyrics } from "@/hooks/useLyrics";
-import { usePlayerMedia } from "@/hooks/usePlayerMedia";
+import { usePlayerController } from "@/hooks/usePlayerController";
 import { usePlayerSheetGestures } from "@/hooks/usePlayerSheetGestures";
 import { usePlayerTapGestures } from "@/hooks/usePlayerTapGestures";
 import { useRomanization } from "@/hooks/useRomanization";
 import { useStableCoverUrl } from "@/hooks/useStableCoverUrl";
-import { useStretchPlayer } from "@/hooks/useStretchPlayer";
-import { useSyncedVideo } from "@/hooks/useSyncedVideo";
-import { useYouTubeVideo } from "@/hooks/useYouTubeVideo";
-import { HistoryItem, LyricsSettings, Media } from "@/interfaces";
-import { MAX_HISTORY_ITEMS } from "@/lib/constants";
-import { patchLastSession } from "@/lib/lastSession";
+import { LyricsSettings } from "@/interfaces";
 import { stripVideoTitleFiller } from "@/lib/lyrics";
-import {
-  getPlaybackPrefs,
-  getShowVideo,
-  savePlaybackPrefs,
-  setShowVideo,
-} from "@/lib/playerPrefs";
 import { getMissingRomanizationLines } from "@/lib/romanization";
-import { mergeTrackMetadata } from "@/lib/searchMeta";
+import { getLyricsSettings, saveLyricsSettings } from "@/lib/storage";
 import { appTheme } from "@/lib/theme";
-import { isMarkedAudioTrackVideo } from "@/lib/trackFlags";
-import { getModeFromRate, getVideoState, saveVideoState } from "@/lib/videoState";
-import { getYouTubeId, isYoutubeURL } from "@/utils";
-import {
-  createDynamicTheme,
-  getOriginalPlatformUrl,
-  getSemitonesFromRate,
-} from "@/utils/player";
+import { createDynamicTheme, getOriginalPlatformUrl } from "@/utils/player";
 import CustomizePlaybackModal from "./CustomizePlaybackModal";
 import DownloadModal from "./DownloadModal";
 import { ErrorScreen } from "./ErrorScreen";
@@ -115,43 +96,71 @@ export function Player({
 }) {
   const theme = useMantineTheme();
   const isMobile = useMediaQuery("(max-width: 1024px)");
-  const {
-    media: contextMedia,
-    setMedia,
-    setHistory,
-    setTheme,
-    isHistoryWriteAllowed,
-  } = useAppContext();
+  const { setTheme } = useAppContext();
   const isMini = mode === "mini";
-
-  const autoPlayedRef = useRef(false);
-  const autoPlayGenRef = useRef(0);
-  const invalidateAutoplay = useCallback(() => {
-    autoPlayedRef.current = false;
-    autoPlayGenRef.current += 1;
-  }, []);
-
   const {
     media,
+    sourceUrl,
+    localOnly,
     streamState,
     playbackError,
     isExtracting,
     isMediaReady,
     retryExtract,
     retryPlayback,
-    handleAudioError,
-  } = usePlayerMedia({
-    url,
-    contextMedia,
-    setMedia,
-    onRequestClose,
-    onInvalidateAutoplay: invalidateAutoplay,
-  });
-
-  // Reset autoplay gate whenever the playable file changes
-  useEffect(() => {
-    invalidateAutoplay();
-  }, [media?.fileUrl, invalidateAutoplay]);
+    audioRef,
+    state: stretchState,
+    isPlaying,
+    currentTime,
+    duration,
+    rate,
+    getPlaybackTime,
+    semitones,
+    reverbAmount,
+    volume,
+    progress,
+    isNativeFallback,
+    play,
+    pause,
+    togglePlayback,
+    buffered,
+    isWaiting,
+    setVolume,
+    setReverbAmount,
+    seek,
+    isLoading,
+    isReady,
+    isEnded,
+    playbackMode,
+    isRepeat,
+    advancedStretch,
+    showLyrics,
+    showRomanization,
+    showVideo,
+    handleRateChange,
+    handleSemitonesChange,
+    selectPlaybackMode,
+    handleReset,
+    setIsRepeat,
+    setShowLyrics,
+    setShowRomanization,
+    handleAdvancedStretchChange,
+    toggleVideo,
+    youtubeVideo,
+    youtubeVideoId,
+    hasVideoStream,
+    showingVideo,
+    nativeVideoUrl,
+    localVideoAttempt,
+    retryVideo,
+    videoError,
+    showVideoCover,
+    videoRef,
+    isVideoReady,
+    videoEl,
+  } = usePlayerController({ url, autoPlay, resumePosition, isMini, onRequestClose });
+  const isMuted = volume === 0;
+  const previousVolumeRef = useRef(volume);
 
   const bottomBarRef = useRef<HTMLDivElement>(null);
   const [barHeight, setBarHeight] = useState(148);
@@ -181,89 +190,13 @@ export function Player({
     };
   }, [isMini, barHeight]);
 
-  // Persist history once media is playable (keeps fileUrl for same-session offline reuse;
-  // durable offline after reload comes from IndexedDB via resolvePlayableMedia).
-  useEffect(() => {
-    if (!isHistoryWriteAllowed()) return;
-    if (!media?.sourceUrl || !media.fileUrl) return;
-    const snapshot: HistoryItem = {
-      ...media,
-      playedAt: Date.now(),
-      metadata: { ...media.metadata },
-    };
-    setHistory((prev) => {
-      const existingIdx = prev.findIndex((item) => item.sourceUrl === snapshot.sourceUrl);
-      const existing = existingIdx >= 0 ? prev[existingIdx] : null;
-      const mergedMeta = mergeTrackMetadata(snapshot.metadata, existing?.metadata);
-      const coverUrl = mergedMeta.coverUrl || existing?.metadata.coverUrl || "";
-      const nextItem: HistoryItem = {
-        ...snapshot,
-        playedAt: existing?.playedAt ?? Date.now(),
-        metadata: {
-          ...mergedMeta,
-          coverUrl,
-        },
-      };
-
-      if (
-        existing &&
-        existing.fileUrl === nextItem.fileUrl &&
-        existing.metadata.coverUrl === coverUrl &&
-        existing.metadata.title === nextItem.metadata.title
-      ) {
-        return prev;
-      }
-
-      if (!existing || existing.fileUrl !== nextItem.fileUrl) {
-        nextItem.playedAt = Date.now();
-        const filtered = prev.filter((item) => item.sourceUrl !== snapshot.sourceUrl);
-        return [nextItem, ...filtered].slice(0, MAX_HISTORY_ITEMS);
-      }
-
-      const next = [...prev];
-      next[existingIdx] = nextItem;
-      return next;
-    });
-  }, [media, setHistory, isHistoryWriteAllowed]);
-
-  // Use sourceUrl from media state
-  const sourceUrl = media?.sourceUrl ?? url ?? "";
-
-  // Global playback prefs (mode/rate/volume are session-wide, not per track)
-  const globalPrefs = useMemo(() => getPlaybackPrefs(), []);
-
-  // Per-track state is only for lyrics
-  const savedState = useMemo(() => getVideoState(sourceUrl), [sourceUrl]);
-
-  const [playbackMode, setPlaybackMode] = useState<PlaybackMode>(globalPrefs.mode);
-  const initialStartAt = resumePosition > 0 ? resumePosition : 0;
-  const [stateLoaded, setStateLoaded] = useState(false);
-  const [isRepeat, setIsRepeat] = useState(globalPrefs.isRepeat);
-
-  // Per-mode rates kept in memory + global prefs
-  const [slowedRate, setSlowedRate] = useState(globalPrefs.slowedRate);
-  const [normalRate, setNormalRate] = useState(globalPrefs.normalRate);
-  const [speedupRate, setSpeedupRate] = useState(globalPrefs.speedupRate);
-  const [customRate, setCustomRate] = useState(globalPrefs.customRate);
-  const [customSemitones, setCustomSemitones] = useState(globalPrefs.customSemitones);
-
-  // Volume UI state (actual volume is managed by useStretchPlayer)
-  const [isMuted, setIsMuted] = useState(false);
-  const previousVolumeRef = useRef(globalPrefs.volume);
-
-  const [advancedStretch, setAdvancedStretch] = useState(globalPrefs.advancedStretch);
-
-  const [showLyrics, setShowLyrics] = useState(globalPrefs.showLyrics);
-  const [showRomanization, setShowRomanization] = useState(globalPrefs.showRomanization);
-  const [showVideo, setShowVideoState] = useState(() => getShowVideo());
-  const [lyricsSettings, setLyricsSettings] = useState<LyricsSettings | null>(
-    savedState?.lyrics ?? null,
-  );
+  const savedState = useMemo(() => getLyricsSettings(sourceUrl), [sourceUrl]);
+  const [lyricsSettings, setLyricsSettings] = useState<LyricsSettings | null>(savedState);
   const [lyricsSettingsUrl, setLyricsSettingsUrl] = useState(sourceUrl);
   // Keep lyrics settings aligned with the current track synchronously (no one-frame leak)
   if (sourceUrl !== lyricsSettingsUrl) {
     setLyricsSettingsUrl(sourceUrl);
-    setLyricsSettings(savedState?.lyrics ?? null);
+    setLyricsSettings(savedState);
   }
   const [lyricsModalOpened, setLyricsModalOpened] = useState(false);
   const coverUrl = useStableCoverUrl(media?.metadata.coverUrl, sourceUrl);
@@ -304,91 +237,6 @@ export function Player({
     }, 1200);
   }, []);
 
-  // Initialize state loaded flag
-  useEffect(() => {
-    const id = requestAnimationFrame(() => setStateLoaded(true));
-    return () => cancelAnimationFrame(id);
-  }, []);
-
-  // Unified player (audio + DSP processing)
-  const {
-    audioRef,
-    state: stretchState,
-    isPlaying,
-    currentTime,
-    duration,
-    rate,
-    getPlaybackTime,
-    semitones,
-    reverbAmount,
-    volume,
-    progress,
-    isNativeFallback,
-    // Controls
-    play,
-    pause,
-    togglePlayback,
-    setRate,
-    setSemitones,
-    setReverbAmount,
-    buffered,
-    isWaiting,
-    setVolume,
-    seek,
-  } = useStretchPlayer({
-    fileUrl: media?.fileUrl || "",
-    sourceUrl,
-    advancedStretch,
-    initialRate: globalPrefs.rate,
-    initialSemitones: globalPrefs.semitones,
-    initialReverbAmount: globalPrefs.reverbAmount,
-    initialVolume: globalPrefs.volume,
-    initialPosition: stateLoaded ? initialStartAt : 0,
-    isRepeat,
-    onError: handleAudioError,
-  });
-
-  // Engine reload (ready→loading→ready) with the same fileUrl must retry autoplay.
-  useEffect(() => {
-    if (stretchState === "loading") {
-      autoPlayedRef.current = false;
-      autoPlayGenRef.current += 1;
-    }
-  }, [stretchState]);
-
-  // Session restore opens paused (autoPlay false); a later user open must retry.
-  const prevAutoPlayRef = useRef(autoPlay);
-  useEffect(() => {
-    if (autoPlay && !prevAutoPlayRef.current) {
-      autoPlayedRef.current = false;
-      autoPlayGenRef.current += 1;
-    }
-    prevAutoPlayRef.current = autoPlay;
-  }, [autoPlay]);
-
-  // Try autoplay when playable media is ready (key off fileUrl so provisional media can't steal the flag).
-  // Generation + optimistic latch prevent overlapping play() while still clearing on cleanup/failure.
-  useEffect(() => {
-    if (!autoPlay) return;
-    if (!media?.fileUrl || stretchState !== "ready" || autoPlayedRef.current) return;
-    const gen = ++autoPlayGenRef.current;
-    autoPlayedRef.current = true;
-    const id = setTimeout(() => {
-      void (async () => {
-        const ok = await play();
-        if (autoPlayGenRef.current !== gen) return;
-        autoPlayedRef.current = ok;
-      })();
-    }, 100);
-    return () => {
-      clearTimeout(id);
-      if (autoPlayGenRef.current === gen) {
-        autoPlayedRef.current = false;
-        autoPlayGenRef.current += 1;
-      }
-    };
-  }, [autoPlay, media?.fileUrl, stretchState, play]);
-
   const applyLyricsSettings = useCallback(
     (
       d: {
@@ -409,7 +257,7 @@ export function Player({
         offset: 0,
       };
       setLyricsSettings(newSettings);
-      saveVideoState(sourceUrl, { lyrics: newSettings });
+      saveLyricsSettings(sourceUrl, newSettings);
       extra?.();
     },
     [sourceUrl],
@@ -452,142 +300,20 @@ export function Player({
     (offset: number) => {
       setLyricsSettings((prev) => {
         const updated = prev ? { ...prev, offset } : null;
-        saveVideoState(sourceUrl, { lyrics: updated });
+        saveLyricsSettings(sourceUrl, updated);
         return updated;
       });
     },
     [sourceUrl],
   );
 
-  const isLoading = stretchState === "loading" || isWaiting;
-  const isReady = stretchState === "ready";
-  const isEnded =
-    stretchState === "ready" &&
-    currentTime >= duration - 0.05 &&
-    duration > 0 &&
-    !isWaiting &&
-    !isPlaying &&
-    !isRepeat;
-
-  const lastSyncedFileRef = useRef<string | null>(null);
-
-  const applyPlaybackModeToEngine = useCallback(() => {
-    let targetRate: number;
-    let targetSemitones: number;
-    switch (playbackMode) {
-      case "slowed":
-        targetRate = slowedRate;
-        targetSemitones = getSemitonesFromRate(slowedRate);
-        break;
-      case "speedup":
-        targetRate = speedupRate;
-        targetSemitones = getSemitonesFromRate(speedupRate);
-        break;
-      case "custom":
-        targetRate = customRate;
-        targetSemitones = customSemitones;
-        break;
-      default:
-        targetRate = normalRate;
-        targetSemitones = 0;
-    }
-    setRate(targetRate);
-    setSemitones(targetSemitones);
-  }, [
-    playbackMode,
-    slowedRate,
-    normalRate,
-    speedupRate,
-    customRate,
-    customSemitones,
-    setRate,
-    setSemitones,
-  ]);
-
-  // Re-apply the selected mode after a new track finishes loading — the stretch
-  // pipeline reinitializes on fileUrl changes and can otherwise keep rate at 1.
-  useEffect(() => {
-    if (!media?.fileUrl) {
-      lastSyncedFileRef.current = null;
-      return;
-    }
-    if (!isReady) return;
-    if (lastSyncedFileRef.current === media.fileUrl) return;
-    lastSyncedFileRef.current = media.fileUrl;
-    applyPlaybackModeToEngine();
-  }, [media?.fileUrl, isReady, applyPlaybackModeToEngine]);
-
-  useEffect(() => {
-    lastSyncedFileRef.current = null;
-  }, [advancedStretch]);
-
-  const handleAdvancedStretchChange = useCallback((enabled: boolean) => {
-    setAdvancedStretch(enabled);
-    savePlaybackPrefs({ advancedStretch: enabled });
-  }, []);
-
-  const { localOnly } = useYouTubeStatus();
-  const youtubeVideoId = (() => {
-    if (localOnly) return undefined;
-    if (!media?.sourceUrl || !isYoutubeURL(media.sourceUrl)) return undefined;
-    if (media.isAudioTrackVideo) return undefined;
-    const id = getYouTubeId(media.sourceUrl);
-    if (!id || isMarkedAudioTrackVideo(id)) return undefined;
-    return id;
-  })();
-
-  /** Local file video (blob / same-origin) — not a proxied YouTube stream. */
-  const localVideoUrl =
-    media?.videoUrl && !media.videoUrl.startsWith("/api/stream/")
-      ? media.videoUrl
-      : undefined;
-
   const handleToggleShowVideo = useCallback(() => {
-    const canShow = Boolean(youtubeVideoId || localVideoUrl);
-    if (!canShow) {
+    if (!hasVideoStream) {
       showToast("Video not available for this track");
       return;
     }
-    const next = !showVideo;
-    setShowVideoState(next);
-    setShowVideo(next);
-  }, [youtubeVideoId, localVideoUrl, showVideo, showToast]);
-
-  const hasVideoStream = Boolean(youtubeVideoId || localVideoUrl);
-  const showingVideo = Boolean(showVideo && hasVideoStream);
-  const youtubeVideo = useYouTubeVideo(
-    youtubeVideoId,
-    showingVideo && isReady && !isMini,
-  );
-  const nativeVideoUrl = youtubeVideoId
-    ? youtubeVideo.status === "ready"
-      ? youtubeVideo.url
-      : undefined
-    : localVideoUrl;
-  const [localVideoAttempt, setLocalVideoAttempt] = useState(0);
-  const {
-    videoRef,
-    isVideoReady,
-    videoEl,
-    error: nativeVideoError,
-  } = useSyncedVideo({
-    src: nativeVideoUrl,
-    active: showingVideo && !isMini,
-    isPlaying,
-    getPlaybackTime,
-    rate,
-    onError: youtubeVideoId ? youtubeVideo.onPlaybackError : undefined,
-  });
-  const videoError = showingVideo
-    ? youtubeVideo.status === "error"
-      ? youtubeVideo.message
-      : nativeVideoError
-    : undefined;
-  const showVideoCover = !showingVideo || !isVideoReady;
-  const retryVideo = () => {
-    if (youtubeVideoId) youtubeVideo.retry();
-    else setLocalVideoAttempt((attempt) => attempt + 1);
-  };
+    toggleVideo();
+  }, [hasVideoStream, toggleVideo, showToast]);
   const washCanvasRef = useRef<HTMLCanvasElement>(null);
 
   // Paint a low-res moving wash from native video frames.
@@ -619,31 +345,6 @@ export function Player({
     raf = requestAnimationFrame(draw);
     return () => cancelAnimationFrame(raf);
   }, [showingVideo, videoEl, isMini]);
-
-  const handleReset = useCallback(() => {
-    setRate(1);
-    setSemitones(0);
-    setReverbAmount(0);
-    setVolume(1);
-    setPlaybackMode("normal");
-    setSlowedRate(0.8);
-    setNormalRate(1);
-    setSpeedupRate(1.25);
-    setCustomRate(1);
-    setCustomSemitones(0);
-    savePlaybackPrefs({
-      mode: "normal",
-      rate: 1,
-      semitones: 0,
-      reverbAmount: 0,
-      volume: 1,
-      slowedRate: 0.8,
-      normalRate: 1,
-      speedupRate: 1.25,
-      customRate: 1,
-      customSemitones: 0,
-    });
-  }, [setRate, setSemitones, setReverbAmount, setVolume]);
 
   function toastContent(icon: React.ReactNode, text: React.ReactNode) {
     return (
@@ -720,146 +421,6 @@ export function Player({
     };
   }, [media, coverUrl, play, pause, handleBackward, handleForward, seekFromUser]);
 
-  // Persist global playback prefs (not per-track)
-  const lastSaveRef = useRef<number>(0);
-  useEffect(() => {
-    if (!stateLoaded || !isReady) return;
-    const now = Date.now();
-    if (now - lastSaveRef.current < 5000) return;
-    lastSaveRef.current = now;
-    savePlaybackPrefs({
-      mode: playbackMode,
-      rate,
-      semitones,
-      reverbAmount,
-      isRepeat,
-      volume,
-      advancedStretch,
-      showLyrics,
-      slowedRate,
-      normalRate,
-      speedupRate,
-      customRate,
-      customSemitones,
-    });
-  }, [
-    rate,
-    semitones,
-    reverbAmount,
-    isRepeat,
-    volume,
-    stateLoaded,
-    isReady,
-    advancedStretch,
-    showLyrics,
-    playbackMode,
-    slowedRate,
-    normalRate,
-    speedupRate,
-    customRate,
-    customSemitones,
-  ]);
-
-  // Wake Lock API: keep screen on during playback
-  const wakeLockRef = useRef<WakeLockSentinel | null>(null);
-  useEffect(() => {
-    const acquireWakeLock = async () => {
-      try {
-        if (wakeLockRef.current) return;
-        wakeLockRef.current = await navigator.wakeLock.request("screen");
-      } catch {}
-    };
-    const releaseWakeLock = async () => {
-      try {
-        await wakeLockRef.current?.release();
-      } catch {}
-      wakeLockRef.current = null;
-    };
-
-    if (isPlaying && stateLoaded) acquireWakeLock();
-    else releaseWakeLock();
-
-    return () => {
-      releaseWakeLock();
-    };
-  }, [isPlaying, stateLoaded]);
-
-  useEffect(() => {
-    const saveState = () => {
-      if (!stateLoaded) return;
-      savePlaybackPrefs({
-        mode: playbackMode,
-        rate,
-        semitones,
-        reverbAmount,
-        isRepeat,
-        volume,
-        advancedStretch,
-        showLyrics,
-        slowedRate,
-        normalRate,
-        speedupRate,
-        customRate,
-        customSemitones,
-      });
-      if (sourceUrl) {
-        saveVideoState(sourceUrl, {
-          rate,
-          semitones,
-          reverbAmount,
-          isRepeat,
-          volume,
-          showLyrics,
-          advancedStretch,
-          lyrics: lyricsSettings,
-        });
-        if (!sourceUrl.startsWith("local:") && isHistoryWriteAllowed()) {
-          patchLastSession(sourceUrl, { positionSeconds: currentTime });
-        }
-      }
-    };
-    const handler = () => {
-      if (document.hidden) saveState();
-    };
-    window.addEventListener("beforeunload", saveState);
-    document.addEventListener("visibilitychange", handler);
-    return () => {
-      saveState();
-      window.removeEventListener("beforeunload", saveState);
-      document.removeEventListener("visibilitychange", handler);
-    };
-  }, [
-    rate,
-    semitones,
-    reverbAmount,
-    isRepeat,
-    volume,
-    sourceUrl,
-    stateLoaded,
-    showLyrics,
-    advancedStretch,
-    playbackMode,
-    slowedRate,
-    normalRate,
-    speedupRate,
-    customRate,
-    customSemitones,
-    lyricsSettings,
-    currentTime,
-    isHistoryWriteAllowed,
-  ]);
-
-  // Throttled progress persistence while the track is active
-  useEffect(() => {
-    if (!isHistoryWriteAllowed()) return;
-    if (!sourceUrl || sourceUrl.startsWith("local:") || !stateLoaded) return;
-    if (!Number.isFinite(currentTime) || currentTime < 0) return;
-    const id = window.setTimeout(() => {
-      patchLastSession(sourceUrl, { positionSeconds: currentTime });
-    }, 1500);
-    return () => window.clearTimeout(id);
-  }, [sourceUrl, currentTime, stateLoaded, isHistoryWriteAllowed]);
-
   // Modal controls
   const [modalOpened, { open: openModal, close: closeModal }] = useDisclosure(false);
   const [downloadModalOpened, { open: openDownloadModal, close: closeDownloadModal }] =
@@ -887,71 +448,17 @@ export function Player({
     }
   }, [isEnded, isPlaying, togglePlayback, seek, play, showToast]);
 
-  const handleRateChange = useCallback(
-    (newRate: number) => {
-      setRate(newRate);
-      if (playbackMode === "custom") {
-        setCustomRate(newRate);
-        return;
-      }
-      // Save rate per current mode
-      const mode = getModeFromRate(newRate, semitones);
-      if (mode === "slowed") setSlowedRate(newRate);
-      else if (mode === "normal") setNormalRate(newRate);
-      else if (mode === "speedup") setSpeedupRate(newRate);
-      else setCustomRate(newRate);
-      setPlaybackMode(mode);
-    },
-    [setRate, semitones, playbackMode],
-  );
-
-  const handleSemitonesChange = useCallback(
-    (newSemitones: number) => {
-      setSemitones(newSemitones);
-      if (playbackMode === "custom") setCustomSemitones(newSemitones);
-    },
-    [setSemitones, playbackMode],
-  );
-
   const handlePlaybackModeChange = useCallback(
     (mode: PlaybackMode) => {
-      setPlaybackMode(mode);
-      let newRate: number;
-      let newSemitones: number;
-
-      if (mode === "slowed") {
-        newRate = slowedRate;
-        newSemitones = getSemitonesFromRate(newRate);
-      } else if (mode === "normal") {
-        newRate = normalRate;
-        newSemitones = 0;
-      } else if (mode === "speedup") {
-        newRate = speedupRate;
-        newSemitones = getSemitonesFromRate(newRate);
-      } else {
-        newRate = customRate;
-        newSemitones = customSemitones;
-      }
-
-      setRate(newRate);
-      setSemitones(newSemitones);
+      const newRate = selectPlaybackMode(mode);
       showToast(
         toastContent(
           PLAYBACK_MODE_ICONS[mode],
-          `${PLAYBACK_MODE_LABELS[mode]} (${newRate.toFixed(2)}x)`,
+          PLAYBACK_MODE_LABELS[mode] + " (" + newRate.toFixed(2) + "x)",
         ),
       );
     },
-    [
-      slowedRate,
-      normalRate,
-      speedupRate,
-      customRate,
-      customSemitones,
-      setRate,
-      setSemitones,
-      showToast,
-    ],
+    [selectPlaybackMode, showToast],
   );
 
   const toggleLoop = useCallback(() => {
@@ -962,19 +469,17 @@ export function Player({
         !isRepeat ? "Repeat On" : "Repeat Off",
       ),
     );
-  }, [isRepeat, showToast]);
+  }, [isRepeat, showToast, setIsRepeat]);
 
   // Volume handlers
   const handleMuteToggle = useCallback(() => {
     if (isMuted || volume === 0) {
       const newVol = previousVolumeRef.current > 0 ? previousVolumeRef.current : 1;
       setVolume(newVol);
-      setIsMuted(false);
       showToast(toastContent(<IconVolume3 size={24} />, "Unmuted"));
     } else {
       previousVolumeRef.current = volume;
       setVolume(0);
-      setIsMuted(true);
       showToast(toastContent(<IconVolumeOff size={24} />, "Muted"));
     }
   }, [isMuted, volume, setVolume, showToast]);
@@ -982,7 +487,6 @@ export function Player({
   const handleVolumeChange = useCallback(
     (newVolume: number) => {
       setVolume(newVolume);
-      setIsMuted(newVolume === 0);
     },
     [setVolume],
   );
@@ -1031,15 +535,9 @@ export function Player({
     enabled: !isMini,
   });
 
-  const handleToggleShowLyrics = useCallback((next: boolean) => {
-    setShowLyrics(next);
-    savePlaybackPrefs({ showLyrics: next });
-  }, []);
+  const handleToggleShowLyrics = setShowLyrics;
 
-  const handleToggleShowRomanization = useCallback((next: boolean) => {
-    setShowRomanization(next);
-    savePlaybackPrefs({ showRomanization: next });
-  }, []);
+  const handleToggleShowRomanization = setShowRomanization;
 
   const { dragY, lyricsDrag, isDragging, stageRef } = usePlayerSheetGestures({
     enabled: Boolean(isMobile && !isMini),

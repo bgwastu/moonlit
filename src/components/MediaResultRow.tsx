@@ -5,7 +5,7 @@ import { Badge, Box, Flex, Paper, Text, rgba, useMantineTheme } from "@mantine/c
 import CoverFallback from "@/components/CoverFallback";
 import ShimmerImage from "@/components/ShimmerImage";
 import { useStableCoverUrl } from "@/hooks/useStableCoverUrl";
-import { toDisplayCoverUrl } from "@/lib/mergePlayerMedia";
+import { toDisplayCoverUrl } from "@/lib/playerSession";
 import { SEARCH_ACCENT_VAR } from "@/lib/theme";
 import { getYouTubeId } from "@/utils";
 

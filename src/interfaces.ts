@@ -27,17 +27,3 @@ export interface LyricsSettings {
   albumName?: string | null;
   offset: number; // in seconds, +/- to shift timing
 }
-
-export interface State {
-  rate: number;
-  semitones: number;
-  reverbAmount: number;
-  isRepeat: boolean;
-  volume: number;
-  lastUpdated: number;
-  lyrics?: LyricsSettings | null;
-  /** Whether lyrics should be shown */
-  showLyrics?: boolean;
-  /** Whether advanced stretch mode (signalsmith-stretch pipeline) is enabled */
-  advancedStretch?: boolean;
-}

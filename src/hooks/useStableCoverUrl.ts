@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useYouTubeStatus } from "@/context/YouTubeStatusContext";
-import { loadCachedCover } from "@/utils/cache";
+import { loadCachedCover } from "@/lib/storage";
 
 /** Keep validated artwork on screen while loading a replacement for the same track. */
 export function useStableCoverUrl(

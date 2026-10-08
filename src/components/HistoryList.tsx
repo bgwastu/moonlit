@@ -17,11 +17,11 @@ import { IconHistory, IconTrash } from "@tabler/icons-react";
 import MediaResultRow from "@/components/MediaResultRow";
 import { useAppContext } from "@/context/AppContext";
 import type { HistoryItem } from "@/interfaces";
-import { buildProvisionalMedia } from "@/lib/mergePlayerMedia";
 import { historyItemSourceUrl, resolvePlayableMedia } from "@/lib/playFromCache";
+import { buildProvisionalMedia } from "@/lib/playerSession";
 import { stashSearchMeta } from "@/lib/searchMeta";
+import { MEDIA_CACHE_CHANGED_EVENT, getAvailableMediaSources } from "@/lib/storage";
 import { getYouTubeId, timeAgo } from "@/utils";
-import { MEDIA_CACHE_CHANGED_EVENT, getAvailableMediaSources } from "@/utils/cache";
 
 interface HistoryListProps {
   onPlay?: () => void;
