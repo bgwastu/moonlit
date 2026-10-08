@@ -40,10 +40,7 @@ export function YouTubeStatusProvider({ children }: { children: React.ReactNode 
       if (!stopped)
         pollTimer = setTimeout(
           () => void refresh(),
-          Math.max(
-            lastStatus.state === "healthy" ? 30000 : 10000,
-            retryAfter - Date.now(),
-          ),
+          Math.max(lastStatus.retryAfterMs || 10000, retryAfter - Date.now()),
         );
     };
     const refresh = async (force = false) => {

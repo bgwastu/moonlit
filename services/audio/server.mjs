@@ -15,6 +15,7 @@ import { AudioJobs, credentialScope } from "./jobs.mjs";
 import { SabrProvider } from "./provider.mjs";
 import { parseByteRange } from "./ranges.mjs";
 import { AudioStore } from "./store.mjs";
+import { YouTubeService } from "./youtube.mjs";
 
 export function readWorkerSecret(dataDir) {
   if (process.env.AUDIO_WORKER_SECRET) return process.env.AUDIO_WORKER_SECRET;
@@ -71,6 +72,7 @@ export async function createAudioService({
 }) {
   const store = new AudioStore(directory);
   const jobs = new AudioJobs({ store, provider, directory, ...options });
+  const youtube = new YouTubeService({ store, provider, jobs });
   // Optional video has its own capacity and cache; it cannot evict saved audio.
   const videoJobs = new AudioJobs({
     store,
@@ -98,6 +100,42 @@ export async function createAudioService({
     }
     const url = new URL(req.url, "http://localhost");
     try {
+      if (req.method === "POST" && ["/v1/search", "/v1/status"].includes(url.pathname)) {
+        const body = await readJson(req);
+        const mode = body.mode || "anonymous";
+        if (
+          !["anonymous", "user", "system"].includes(mode) ||
+          (mode !== "anonymous" &&
+            (typeof body.cookies !== "string" ||
+              !body.cookies ||
+              /[\r\n]/.test(body.cookies)))
+        )
+          throw new AudioError("INVALID_COOKIES", "Invalid YouTube account cookies.", {
+            status: 400,
+            affectsHealth: false,
+          });
+        const credentials = { mode, cookies: mode === "anonymous" ? "" : body.cookies };
+        if (url.pathname === "/v1/status") {
+          json(res, youtube.status(credentials));
+        } else {
+          if (
+            typeof body.query !== "string" ||
+            !body.query.trim() ||
+            body.query.length > 1000
+          )
+            throw new AudioError("INVALID_REQUEST", "Invalid search query.", {
+              status: 400,
+              affectsHealth: false,
+            });
+          json(
+            res,
+            await youtube.search(credentials, body.query.trim(), {
+              includeVideos: body.includeVideos === true,
+            }),
+          );
+        }
+        return;
+      }
       if (req.method === "POST" && url.pathname === "/v1/jobs") {
         const body = await readJson(req);
         const mode = body.mode || "anonymous";
@@ -237,6 +275,7 @@ export async function createAudioService({
           server.close();
           jobs.stop();
           videoJobs.stop();
+          await youtube.close();
           await provider.close();
           await Promise.all([
             jobs.close({ closeProvider: false }),

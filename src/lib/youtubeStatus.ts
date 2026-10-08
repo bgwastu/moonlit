@@ -4,6 +4,7 @@ export type YouTubeStatus = {
   state: "healthy" | "degraded" | "offline" | "unknown";
   online: boolean;
   expiresAt: number;
+  retryAfterMs?: number;
   searchOk?: boolean;
   extractOk?: boolean;
   cookieSource?: "none" | "user" | "system";

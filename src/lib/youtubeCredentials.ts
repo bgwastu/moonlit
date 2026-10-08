@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
+import { readRequestCookiesResult, sanitizeUserCookies } from "@/lib/cookies";
 import { youtubeCookieHeader } from "../../services/audio/credentials.mjs";
 
 export type YoutubeCredentials = {
@@ -8,6 +9,23 @@ export type YoutubeCredentials = {
   cookies?: string;
   scope: string;
 };
+
+export async function requestYoutubeCredentials(request: Request, bodyCookies?: unknown) {
+  const supplied = readRequestCookiesResult(request);
+  const cookies =
+    supplied.status === "ok" ? supplied.cookies : sanitizeUserCookies(bodyCookies);
+  if (supplied.status === "invalid" || (bodyCookies && !cookies))
+    throw Object.assign(
+      new Error(
+        supplied.status === "invalid" ? supplied.error : "Invalid YouTube cookies.",
+      ),
+      {
+        code: "INVALID_COOKIES",
+        status: 400,
+      },
+    );
+  return resolveYoutubeCredentials(cookies);
+}
 
 export async function resolveYoutubeCredentials(
   userCookies?: string,

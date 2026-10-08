@@ -86,6 +86,14 @@ export class SabrProvider {
   }
 
   download(spec, progress, signal) {
+    return this.request({ ...spec, type: "download" }, progress, signal);
+  }
+
+  search(spec, signal) {
+    return this.request({ ...spec, type: "search" }, () => {}, signal);
+  }
+
+  request(spec, progress, signal) {
     signal.throwIfAborted();
     const group = this.group(spec.scope, spec.cookies);
     return new Promise((resolve, reject) => {
@@ -93,17 +101,21 @@ export class SabrProvider {
         const pending = group.pending.get(spec.id);
         if (pending) pending.aborted = true;
         if (group.initialized) group.worker.send({ type: "cancel", id: spec.id });
+        if (pending && spec.type === "search") {
+          group.pending.delete(spec.id);
+          pending.cleanup();
+          pending.reject(signal.reason);
+        }
       };
       signal.addEventListener("abort", abort, { once: true });
       group.pending.set(spec.id, {
         resolve,
         reject,
         progress,
-        message: { ...spec, cookies: undefined, type: "download" },
+        message: { ...spec, cookies: undefined },
         cleanup: () => signal.removeEventListener("abort", abort),
       });
-      if (group.initialized)
-        group.worker.send({ ...spec, cookies: undefined, type: "download" });
+      if (group.initialized) group.worker.send({ ...spec, cookies: undefined });
     });
   }
 

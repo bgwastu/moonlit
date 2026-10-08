@@ -36,8 +36,7 @@ function start(script, args = []) {
     if (!stopping) stop(code || 1);
   });
 }
-if (process.env.AUDIO_PROVIDER !== "legacy" && !process.env.AUDIO_WORKER_URL)
-  start(path.resolve("services/audio/server.mjs"));
+if (!process.env.AUDIO_WORKER_URL) start(path.resolve("services/audio/server.mjs"));
 if (dev) start(path.resolve("node_modules/next/dist/bin/next"), ["dev"]);
 else if (existsSync("server.js")) start(path.resolve("server.js"));
 else start(path.resolve("node_modules/next/dist/bin/next"), ["start"]);

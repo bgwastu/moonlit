@@ -6,6 +6,7 @@ import { finished } from "node:stream/promises";
 import { ProxyAgent, setGlobalDispatcher } from "undici";
 import { Constants, Innertube, Log, Parser, Platform, Player } from "youtubei.js";
 import { AudioError, checkPlayability, publicError } from "./errors.mjs";
+import { searchYouTube } from "./search.mjs";
 import { createTokenMinter } from "./tokens.mjs";
 import { selectVideoFormat } from "./video-format.mjs";
 import { watchPlayer } from "./watch.mjs";
@@ -43,6 +44,7 @@ const fetchImpl = (input, init = {}) => {
 globalThis.fetch = fetchImpl;
 let session;
 let initializing;
+let searchSession;
 const active = new Map();
 
 async function getSession(refresh = false) {
@@ -302,24 +304,38 @@ parentPort.on("message", async (message) => {
     active.get(message.id)?.abort();
     return;
   }
-  if (message.type !== "download") return;
+  if (!["download", "search"].includes(message.type)) return;
   const controller = new AbortController();
   active.set(message.id, controller);
   try {
     let result;
-    try {
-      result = await download(message, controller);
-    } catch (error) {
-      const failure = publicError(error);
-      if (!failure.retryable || controller.signal.aborted) throw error;
-      parentPort.postMessage({
-        type: "progress",
-        id: message.id,
-        state: "resolving",
-        retrying: true,
-        code: failure.code,
+    if (message.type === "search") {
+      searchSession ||= Innertube.create({
+        enable_session_cache: false,
+        generate_session_locally: true,
+        retrieve_player: false,
+        fetch: fetchImpl,
+        ...(workerData.cookies ? { cookie: workerData.cookies } : {}),
+      }).catch((error) => {
+        searchSession = undefined;
+        throw error;
       });
-      result = await download(message, controller, true);
+      result = await searchYouTube(await searchSession, message, controller.signal);
+    } else {
+      try {
+        result = await download(message, controller);
+      } catch (error) {
+        const failure = publicError(error);
+        if (!failure.retryable || controller.signal.aborted) throw error;
+        parentPort.postMessage({
+          type: "progress",
+          id: message.id,
+          state: "resolving",
+          retrying: true,
+          code: failure.code,
+        });
+        result = await download(message, controller, true);
+      }
     }
     parentPort.postMessage({ type: "ready", id: message.id, result });
   } catch (error) {

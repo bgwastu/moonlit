@@ -125,7 +125,7 @@ export class AudioStore {
       : { state: "unknown", checkedAt: 0, lastSuccessAt: 0, lastFailureAt: 0 };
   }
 
-  outcome(scope, error, { cached = false } = {}) {
+  outcome(scope, error, { cached = false, retainFailures = true } = {}) {
     const previous = this.health(scope);
     const now = Date.now();
     let next;
@@ -138,7 +138,9 @@ export class AudioStore {
         checkedAt: now,
         lastSuccessAt: now,
         error: null,
-        recentFailures: (previous.recentFailures || []).filter((at) => at > now - 300000),
+        recentFailures: retainFailures
+          ? (previous.recentFailures || []).filter((at) => at > now - 300000)
+          : [],
       };
       if (next.recentFailures.length) next.state = "degraded";
     } else if (error.affectsHealth !== false) {

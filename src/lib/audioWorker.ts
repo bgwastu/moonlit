@@ -4,9 +4,7 @@ import path from "node:path";
 import { Agent, fetch as directFetch } from "undici";
 import type { YoutubeCredentials } from "@/lib/youtubeCredentials";
 
-const direct = new Agent({ headersTimeout: 10000, bodyTimeout: 0 });
-export const audioProvider = () =>
-  process.env.AUDIO_PROVIDER === "legacy" ? "legacy" : "sabr";
+const direct = new Agent({ headersTimeout: 45000, bodyTimeout: 0 });
 
 function secret() {
   if (process.env.AUDIO_WORKER_SECRET) return process.env.AUDIO_WORKER_SECRET;
@@ -69,6 +67,7 @@ export async function workerRequest(
     headers?: Record<string, string>;
     signal?: AbortSignal;
     media?: boolean;
+    timeoutMs?: number;
   } = {},
 ) {
   try {
@@ -86,8 +85,8 @@ export async function workerRequest(
         signal: init.media
           ? init.signal
           : init.signal
-            ? AbortSignal.any([init.signal, AbortSignal.timeout(10000)])
-            : AbortSignal.timeout(10000),
+            ? AbortSignal.any([init.signal, AbortSignal.timeout(init.timeoutMs || 10000)])
+            : AbortSignal.timeout(init.timeoutMs || 10000),
       },
     );
     return res;
@@ -114,7 +113,8 @@ export async function workerJson<T>(
   return body as T;
 }
 
-export const createAudioJob = (
+export const createMediaJob = (
+  kind: "audio" | "video",
   videoId: string,
   credentials: YoutubeCredentials,
   signal?: AbortSignal,
@@ -123,30 +123,9 @@ export const createAudioJob = (
     method: "POST",
     body: JSON.stringify({
       videoId,
+      kind,
       mode: credentials.mode,
       cookies: credentials.cookies,
     }),
     signal,
-  });
-
-export const createVideoJob = (
-  videoId: string,
-  credentials: YoutubeCredentials,
-  signal?: AbortSignal,
-) =>
-  workerJson<AudioJob>("/v1/jobs", {
-    method: "POST",
-    body: JSON.stringify({
-      kind: "video",
-      videoId,
-      mode: credentials.mode,
-      cookies: credentials.cookies,
-    }),
-    signal,
-  });
-
-export const audioHealth = (credentials: YoutubeCredentials) =>
-  workerJson<any>("/v1/health", {
-    method: "POST",
-    body: JSON.stringify({ mode: credentials.mode, cookies: credentials.cookies }),
   });

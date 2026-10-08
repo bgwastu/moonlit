@@ -43,7 +43,6 @@ Optional environment variables:
 | `ADMIN_PASSWORD`             | Enables the admin cookie management page at `/admin`                                                         |
 | `PROXY_URL`                  | HTTP CONNECT proxy for outbound YouTube requests (`http://` or `https://`)                                   |
 | `YOUTUBE_CREDENTIAL_MODE`    | `anonymous` by default; set `system` to explicitly use `/app/data/cookies.txt` with a compatible web session |
-| `AUDIO_PROVIDER`             | `sabr` by default; `legacy` selects the previous direct-URL provider for rollback                            |
 | `AUDIO_CACHE_BYTES`          | Server audio cache quota in bytes; defaults to 2 GiB                                                         |
 | `AUDIO_CACHE_TTL_HOURS`      | Server audio cache lifetime; defaults to 24 hours                                                            |
 | `AUDIO_CONCURRENCY`          | Simultaneous audio downloads; defaults to 2                                                                  |
