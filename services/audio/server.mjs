@@ -66,11 +66,26 @@ export async function createAudioService({
   directory,
   secret,
   provider = new SabrProvider(),
+  videoOptions = {},
   ...options
 }) {
   const store = new AudioStore(directory);
   const jobs = new AudioJobs({ store, provider, directory, ...options });
+  // Optional video has its own capacity and cache; it cannot evict saved audio.
+  const videoJobs = new AudioJobs({
+    store,
+    provider,
+    directory,
+    kind: "video",
+    concurrency: 1,
+    queueLimit: 8,
+    maxBytes: 192 * 1024 ** 2,
+    cacheBytes: 1024 ** 3,
+    ...videoOptions,
+  });
   await jobs.cleanStaging();
+  await videoJobs.cleanStaging();
+  const manager = (record) => (record?.kind === "video" ? videoJobs : jobs);
   const authorized = (req) => {
     const supplied = Buffer.from(req.headers.authorization || "");
     const expected = Buffer.from(`Bearer ${secret}`);
@@ -86,9 +101,11 @@ export async function createAudioService({
       if (req.method === "POST" && url.pathname === "/v1/jobs") {
         const body = await readJson(req);
         const mode = body.mode || "anonymous";
+        const kind = body.kind || "audio";
         if (
           !/^[\w-]{11}$/.test(body.videoId || "") ||
           !["anonymous", "user", "system"].includes(mode) ||
+          !["audio", "video"].includes(kind) ||
           (mode !== "anonymous" && (!body.cookies || /[\r\n]/.test(body.cookies)))
         ) {
           throw new AudioError("INVALID_REQUEST", "Invalid video or credential mode.", {
@@ -96,7 +113,7 @@ export async function createAudioService({
             affectsHealth: false,
           });
         }
-        const job = jobs.create(
+        const job = manager({ kind }).create(
           body.videoId,
           mode,
           mode === "anonymous" ? "" : body.cookies,
@@ -107,7 +124,10 @@ export async function createAudioService({
       }
       const jobMatch = /^\/v1\/jobs\/([a-f0-9]{32})$/.exec(url.pathname);
       if (jobMatch && req.method === "GET") {
-        const job = jobs.get(jobMatch[1], url.searchParams.get("lease"));
+        const job = manager(store.getJob(jobMatch[1])).get(
+          jobMatch[1],
+          url.searchParams.get("lease"),
+        );
         json(
           res,
           job || { error: "Job not found", code: "AUDIO_EXPIRED" },
@@ -116,7 +136,10 @@ export async function createAudioService({
         return;
       }
       if (jobMatch && req.method === "DELETE") {
-        jobs.cancel(jobMatch[1], url.searchParams.get("lease"));
+        manager(store.getJob(jobMatch[1])).cancel(
+          jobMatch[1],
+          url.searchParams.get("lease"),
+        );
         json(res, { cancelled: true });
         return;
       }
@@ -132,6 +155,7 @@ export async function createAudioService({
           expiresAt: health.checkedAt + 600000,
           queued: jobs.queue.length,
           active: jobs.running.size,
+          video: { queued: videoJobs.queue.length, active: videoJobs.running.size },
           provider: "sabr",
           versions: { youtubei: "18.1.0", googlevideo: "4.1.1", bgutils: "4.0.3" },
         });
@@ -143,16 +167,17 @@ export async function createAudioService({
         if (!asset) {
           json(
             res,
-            { error: "Audio expired. Please reload this track.", code: "AUDIO_EXPIRED" },
+            { error: "Media expired. Please reload this track.", code: "MEDIA_EXPIRED" },
             410,
           );
           return;
         }
-        const file = jobs.assetPath(asset.id);
+        const assetJobs = manager(asset);
+        const file = assetJobs.assetPath(asset.id);
         if (statSync(file).size !== asset.size)
           throw new AudioError(
-            "AUDIO_INCOMPLETE",
-            "Cached audio is incomplete. Please reload this track.",
+            "MEDIA_INCOMPLETE",
+            "Cached media is incomplete. Please reload this track.",
           );
         const range = parseByteRange(req.headers.range, asset.size);
         if (!range) {
@@ -163,7 +188,7 @@ export async function createAudioService({
         asset.accessedAt = Date.now();
         store.putAsset(asset);
         res.writeHead(range.status, {
-          "Content-Type": "audio/mp4",
+          "Content-Type": asset.contentType || "audio/mp4",
           "Accept-Ranges": "bytes",
           "Content-Length": range.end - range.start + 1,
           "Cache-Control": "private, no-store",
@@ -175,16 +200,16 @@ export async function createAudioService({
           res.end();
           return;
         }
-        jobs.readers.set(asset.id, (jobs.readers.get(asset.id) || 0) + 1);
+        assetJobs.readers.set(asset.id, (assetJobs.readers.get(asset.id) || 0) + 1);
         try {
           await pipeline(
             createReadStream(file, { start: range.start, end: range.end }),
             res,
           );
         } finally {
-          const remaining = jobs.readers.get(asset.id) - 1;
-          if (remaining) jobs.readers.set(asset.id, remaining);
-          else jobs.readers.delete(asset.id);
+          const remaining = assetJobs.readers.get(asset.id) - 1;
+          if (remaining) assetJobs.readers.set(asset.id, remaining);
+          else assetJobs.readers.delete(asset.id);
         }
         return;
       }
@@ -200,15 +225,27 @@ export async function createAudioService({
   });
   server.requestTimeout = 30000;
   server.headersTimeout = 10000;
+  let closing;
   return {
     server,
     jobs,
+    videoJobs,
     store,
     async close() {
-      server.close();
-      await jobs.close();
-      server.closeAllConnections();
-      store.close();
+      if (!closing)
+        closing = (async () => {
+          server.close();
+          jobs.stop();
+          videoJobs.stop();
+          await provider.close();
+          await Promise.all([
+            jobs.close({ closeProvider: false }),
+            videoJobs.close({ closeProvider: false }),
+          ]);
+          server.closeAllConnections();
+          store.close();
+        })();
+      return closing;
     },
   };
 }
@@ -222,6 +259,13 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     cacheBytes: Number(process.env.AUDIO_CACHE_BYTES || 2 * 1024 ** 3),
     cacheTtlMs: Number(process.env.AUDIO_CACHE_TTL_HOURS || 24) * 3600000,
     maxDuration: Number(process.env.AUDIO_MAX_DURATION_SECONDS || 7200),
+    videoOptions: {
+      concurrency: Number(process.env.VIDEO_CONCURRENCY || 1),
+      cacheBytes: Number(process.env.VIDEO_CACHE_BYTES || 1024 ** 3),
+      cacheTtlMs: Number(process.env.VIDEO_CACHE_TTL_HOURS || 24) * 3600000,
+      maxBytes: Number(process.env.VIDEO_MAX_BYTES || 192 * 1024 ** 2),
+      maxDuration: Number(process.env.VIDEO_MAX_DURATION_SECONDS || 7200),
+    },
   });
   service.server.listen(
     Number(process.env.AUDIO_WORKER_PORT || 3010),

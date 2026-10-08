@@ -19,7 +19,7 @@ function buildMetadata(
   };
 }
 
-/** Drop expired proxy video URLs — YouTube video uses embed; local files keep blob URLs. */
+/** YouTube video is prepared on demand; local files keep their playable blob URLs. */
 function withoutStaleProxyVideo(media: Media): Media {
   const { videoUrl, ...rest } = media;
   if (videoUrl && !videoUrl.startsWith("/api/stream/")) {

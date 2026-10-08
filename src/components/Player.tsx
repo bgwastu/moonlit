@@ -27,6 +27,7 @@ import {
   IconPlayerPlayFilled,
   IconPlayerTrackNextFilled,
   IconPlayerTrackPrevFilled,
+  IconRefresh,
   IconRepeat,
   IconRewindBackward5,
   IconRewindForward5,
@@ -50,7 +51,7 @@ import { useRomanization } from "@/hooks/useRomanization";
 import { useStableCoverUrl } from "@/hooks/useStableCoverUrl";
 import { useStretchPlayer } from "@/hooks/useStretchPlayer";
 import { useSyncedVideo } from "@/hooks/useSyncedVideo";
-import { useSyncedYouTubeEmbed } from "@/hooks/useSyncedYouTubeEmbed";
+import { useYouTubeVideo } from "@/hooks/useYouTubeVideo";
 import { HistoryItem, LyricsSettings, Media } from "@/interfaces";
 import { MAX_HISTORY_ITEMS } from "@/lib/constants";
 import { patchLastSession } from "@/lib/lastSession";
@@ -552,44 +553,46 @@ export function Player({
     setShowVideo(next);
   }, [youtubeVideoId, localVideoUrl, showVideo, showToast]);
 
-  /** YouTube embed or local file video (not ATV / not proxied YT stream). */
   const hasVideoStream = Boolean(youtubeVideoId || localVideoUrl);
-  /** User wants video and this track can show it. */
   const showingVideo = Boolean(showVideo && hasVideoStream);
-  const showingYouTubeEmbed = Boolean(showingVideo && youtubeVideoId);
-  const showingLocalVideo = Boolean(showingVideo && localVideoUrl && !youtubeVideoId);
-
+  const youtubeVideo = useYouTubeVideo(
+    youtubeVideoId,
+    showingVideo && isReady && !isMini,
+  );
+  const nativeVideoUrl = youtubeVideoId
+    ? youtubeVideo.status === "ready"
+      ? youtubeVideo.url
+      : undefined
+    : localVideoUrl;
+  const [localVideoAttempt, setLocalVideoAttempt] = useState(0);
   const {
     videoRef,
-    isVideoReady: localVideoReady,
+    isVideoReady,
     videoEl,
+    error: nativeVideoError,
   } = useSyncedVideo({
-    src: localVideoUrl,
-    active: showingLocalVideo,
+    src: nativeVideoUrl,
+    active: showingVideo && !isMini,
     isPlaying,
-    currentTime,
+    getPlaybackTime,
     rate,
+    onError: youtubeVideoId ? youtubeVideo.onPlaybackError : undefined,
   });
-  const { containerRef: embedContainerRef, isVideoReady: embedReady } =
-    useSyncedYouTubeEmbed({
-      // Only load the iframe when Show video is on — saves YT CDN bandwidth.
-      videoId: showingYouTubeEmbed ? youtubeVideoId : undefined,
-      active: showingYouTubeEmbed,
-      isPlaying,
-      currentTime,
-      rate,
-    });
-  const isVideoReady = showingYouTubeEmbed
-    ? embedReady
-    : showingLocalVideo
-      ? localVideoReady
-      : false;
+  const videoError = showingVideo
+    ? youtubeVideo.status === "error"
+      ? youtubeVideo.message
+      : nativeVideoError
+    : undefined;
   const showVideoCover = !showingVideo || !isVideoReady;
+  const retryVideo = () => {
+    if (youtubeVideoId) youtubeVideo.retry();
+    else setLocalVideoAttempt((attempt) => attempt + 1);
+  };
   const washCanvasRef = useRef<HTMLCanvasElement>(null);
 
-  // Paint a low-res moving wash from local <video> frames (iframe pixels aren't readable).
+  // Paint a low-res moving wash from native video frames.
   useEffect(() => {
-    if (!showingLocalVideo || isMini || !videoEl || !washCanvasRef.current) return;
+    if (!showingVideo || isMini || !videoEl || !washCanvasRef.current) return;
     const canvas = washCanvasRef.current;
     const ctx = canvas.getContext("2d", { alpha: false });
     if (!ctx) return;
@@ -615,7 +618,7 @@ export function Player({
     };
     raf = requestAnimationFrame(draw);
     return () => cancelAnimationFrame(raf);
-  }, [showingLocalVideo, videoEl, isMini]);
+  }, [showingVideo, videoEl, isMini]);
 
   const handleReset = useCallback(() => {
     setRate(1);
@@ -1191,8 +1194,8 @@ export function Player({
           touchAction: isMobile ? "none" : undefined,
         }}
       >
-        {/* Blurred wash — local video frames when available; YouTube embed uses cover */}
-        {showingLocalVideo ? (
+        {/* Blurred wash from native video frames or artwork. */}
+        {showingVideo ? (
           <>
             <canvas
               ref={washCanvasRef}
@@ -1401,37 +1404,18 @@ export function Player({
                     style={{ display: "none" }}
                     preload="metadata"
                   />
-                  {/* YouTube: muted embed (no video proxy). Local files: <video>. */}
-                  {showingYouTubeEmbed && youtubeVideoId ? (
-                    <div
-                      ref={embedContainerRef}
-                      key={youtubeVideoId}
-                      // overflow + pointer-events help crop YT hover chrome (title/share/logo)
-                      style={{
-                        position: "absolute",
-                        inset: 0,
-                        width: "100%",
-                        height: "100%",
-                        borderRadius: theme.radius.md,
-                        overflow: "hidden",
-                        pointerEvents: "none",
-                        background: "rgba(0,0,0,0.35)",
-                        opacity: isVideoReady ? 1 : 0,
-                        filter: stretchState === "loading" ? "blur(8px)" : "none",
-                        transition: "opacity 0.2s ease-out, filter 0.3s ease-out",
-                        isolation: "isolate",
-                      }}
-                    />
-                  ) : null}
-                  {localVideoUrl ? (
+                  {nativeVideoUrl ? (
                     <video
                       ref={videoRef}
-                      key={localVideoUrl}
-                      src={localVideoUrl}
+                      key={`${nativeVideoUrl}:${localVideoAttempt}`}
+                      src={nativeVideoUrl}
                       muted
                       playsInline
-                      preload={showingLocalVideo ? "auto" : "metadata"}
+                      disablePictureInPicture
+                      disableRemotePlayback
+                      preload={showingVideo && !isMini ? "auto" : "none"}
                       poster={coverUrl || undefined}
+                      aria-label="Music video"
                       style={{
                         position: "absolute",
                         inset: 0,
@@ -1442,7 +1426,7 @@ export function Player({
                         userSelect: "none",
                         pointerEvents: "none",
                         background: "rgba(0,0,0,0.35)",
-                        opacity: showingLocalVideo && isVideoReady ? 1 : 0,
+                        opacity: showingVideo && isVideoReady ? 1 : 0,
                         filter: stretchState === "loading" ? "blur(8px)" : "none",
                         transition: "opacity 0.2s ease-out, filter 0.3s ease-out",
                       }}
@@ -1473,6 +1457,45 @@ export function Player({
                       }}
                       alt={media.metadata.title}
                     />
+                  ) : null}
+                  {showingVideo && (videoError || youtubeVideo.status === "loading") ? (
+                    <Flex
+                      role="status"
+                      align="center"
+                      justify="center"
+                      gap="xs"
+                      style={{
+                        position: "absolute",
+                        bottom: 12,
+                        left: 12,
+                        right: 12,
+                        padding: "8px 12px",
+                        borderRadius: theme.radius.md,
+                        background: "rgba(0,0,0,0.7)",
+                        color: "white",
+                        backdropFilter: "blur(12px)",
+                      }}
+                    >
+                      {videoError ? null : <Loader size="xs" color="white" />}
+                      <Text size="xs">
+                        {videoError
+                          ? "Video unavailable. Keep listening with artwork."
+                          : youtubeVideo.message}
+                      </Text>
+                      {videoError ? (
+                        <Button
+                          size="compact-xs"
+                          variant="light"
+                          color="gray"
+                          leftSection={<IconRefresh size={14} />}
+                          onClick={retryVideo}
+                          aria-label="Retry video"
+                          style={{ flexShrink: 0 }}
+                        >
+                          Retry
+                        </Button>
+                      ) : null}
+                    </Flex>
                   ) : null}
                   {/* Buffering spinner — centered on album art, no background */}
                   {isWaiting && (

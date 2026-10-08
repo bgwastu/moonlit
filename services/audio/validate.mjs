@@ -89,3 +89,95 @@ export async function validateAudio(inputPath, outputPath, expectedDuration, sig
     );
   }
 }
+
+export async function validateVideo(inputPath, outputPath, expectedDuration, signal) {
+  signal.throwIfAborted();
+  const options = { signal, timeout: 45000, maxBuffer: 256 * 1024 };
+  try {
+    const probe = await run(
+      "ffprobe",
+      [
+        "-v",
+        "error",
+        "-show_entries",
+        "stream=codec_name,codec_type,width,height,pix_fmt:format=duration",
+        "-of",
+        "json",
+        inputPath,
+      ],
+      options,
+    );
+    const video = JSON.parse(probe.stdout).streams?.find(
+      (stream) => stream.codec_type === "video",
+    );
+    if (
+      video?.codec_name !== "h264" ||
+      !video.width ||
+      !video.height ||
+      video.height > 480 ||
+      video.pix_fmt !== "yuv420p"
+    )
+      throw new Error("Unsupported native video");
+    await run(
+      "ffmpeg",
+      [
+        "-nostdin",
+        "-v",
+        "error",
+        "-xerror",
+        "-y",
+        "-i",
+        inputPath,
+        "-map",
+        "0:v:0",
+        "-an",
+        "-c:v",
+        "copy",
+        "-movflags",
+        "+faststart",
+        "-f",
+        "mp4",
+        outputPath,
+      ],
+      options,
+    );
+    const decoded = await run(
+      "ffmpeg",
+      [
+        "-nostdin",
+        "-v",
+        "error",
+        "-xerror",
+        "-i",
+        outputPath,
+        "-map",
+        "0:v:0",
+        "-progress",
+        "pipe:1",
+        "-f",
+        "null",
+        "-",
+      ],
+      options,
+    );
+    const times = [...decoded.stdout.matchAll(/^out_time_us=(\d+)$/gm)];
+    const duration = Number(times.at(-1)?.[1]) / 1e6;
+    if (
+      !duration ||
+      Math.abs(duration - expectedDuration) > Math.max(1.5, expectedDuration * 0.015)
+    )
+      throw new Error("Incomplete video duration");
+    return duration;
+  } catch (error) {
+    if (signal.aborted) throw signal.reason;
+    throw new AudioError(
+      "VIDEO_INCOMPLETE",
+      "Video could not be prepared. You can keep listening with artwork.",
+      {
+        retryable: error.code !== "ENOENT",
+        affectsHealth: false,
+        status: error.code === "ENOENT" ? 503 : 502,
+      },
+    );
+  }
+}

@@ -70,6 +70,9 @@ export function usePlayerTapGestures(
 
       if (targetEl === el) return true;
 
+      // Interactive controls inside an artwork/video tap zone must not toggle audio.
+      if (targetEl.closest("button, a, [role='button'], [data-no-tap]")) return false;
+
       if (
         targetEl.tagName === "VIDEO" ||
         targetEl.tagName === "CANVAS" ||
@@ -79,10 +82,6 @@ export function usePlayerTapGestures(
       }
 
       if (el.contains(targetEl)) {
-        const isInteractive =
-          targetEl.closest("button, a, [role='button'], [data-no-tap]") !== null;
-        if (isInteractive) return false;
-
         let parent = targetEl.parentElement;
         let depth = 0;
         while (parent && depth < 5) {

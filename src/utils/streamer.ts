@@ -1,7 +1,6 @@
 import { Media } from "@/interfaces";
-import { parseApiErrorBody } from "@/lib/apiError";
-import { cookieRequestHeaders, getCookiesToUse } from "@/lib/cookies";
 import { loadHistoryFromStorage } from "@/lib/historyStorage";
+import { type PreparedMedia, StreamError, prepareMedia } from "@/lib/mediaPreparation";
 import { resolvePlayableMedia } from "@/lib/playFromCache";
 import {
   isKnownMetaValue,
@@ -13,19 +12,11 @@ import { isMarkedAudioTrackVideo, markAudioTrackVideo } from "@/lib/trackFlags";
 import { YOUTUBE_STATUS_CHANGED_EVENT } from "@/lib/youtubeStatus";
 import { getYouTubeId, isDirectMediaURL, isYoutubeURL } from "@/utils";
 
+export { StreamError } from "@/lib/mediaPreparation";
+
 export interface StreamState {
   status: "idle" | "extracting" | "ready" | "error";
   message?: string;
-}
-
-export class StreamError extends Error {
-  code?: string;
-
-  constructor(message: string, code?: string) {
-    super(message);
-    this.name = "StreamError";
-    this.code = code;
-  }
 }
 
 function buildMetadata(
@@ -42,93 +33,18 @@ function buildMetadata(
   };
 }
 
-type ExtractPayload = {
-  token: string;
-  isAudioTrackVideo?: boolean;
-  metadata?: {
-    title?: string;
-    author?: string;
-    artist?: string;
-    album?: string;
-    coverUrl?: string;
-  };
-};
+type ExtractPayload = PreparedMedia;
 
 async function extractYouTube(
   url: string,
   abortSignal?: AbortSignal,
   onState?: (state: StreamState) => void,
 ): Promise<ExtractPayload> {
-  const { cookies } = getCookiesToUse();
-  let res = await fetch("/api/stream/extract", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...cookieRequestHeaders(),
-    },
-    body: JSON.stringify({ url, cookies }),
-    signal: abortSignal,
-  });
-
-  let job:
-    | { jobId: string; leaseId?: string; state: string; percent?: number }
-    | undefined;
-  const cancel = () => {
-    if (job)
-      fetch(`/api/stream/jobs/${job.jobId}?lease=${job.leaseId || ""}`, {
-        method: "DELETE",
-        keepalive: true,
-      }).catch(() => {});
-  };
-  abortSignal?.addEventListener("abort", cancel, { once: true });
   try {
-    const deadline = Date.now() + 200000;
-    while (res.status === 202) {
-      const next = await res.json();
-      job = { ...next, leaseId: next.leaseId || job?.leaseId };
-      if (!/^[a-f0-9]{32}$/.test(job.jobId))
-        throw new StreamError("The audio service returned an invalid job.");
-      abortSignal?.throwIfAborted();
-      if (Date.now() > deadline)
-        throw new StreamError(
-          "Audio preparation took too long. Please try again.",
-          "AUDIO_TIMEOUT",
-        );
-      const message =
-        job.state === "downloading"
-          ? `Downloading audio${job.percent ? ` (${job.percent}%)` : ""}…`
-          : job.state === "validating"
-            ? "Checking audio…"
-            : "Preparing audio…";
-      onState?.({ status: "extracting", message });
-      await new Promise<void>((resolve, reject) => {
-        const timer = window.setTimeout(done, 500);
-        function done() {
-          abortSignal?.removeEventListener("abort", stopped);
-          resolve();
-        }
-        function stopped() {
-          window.clearTimeout(timer);
-          abortSignal?.removeEventListener("abort", stopped);
-          reject(abortSignal.reason);
-        }
-        abortSignal?.addEventListener("abort", stopped, { once: true });
-      });
-      res = await fetch(`/api/stream/jobs/${job.jobId}?lease=${job.leaseId || ""}`, {
-        signal: abortSignal,
-        cache: "no-store",
-      });
-    }
-    if (!res.ok) {
-      const body = await parseApiErrorBody(res);
-      throw new StreamError(body.error || `Extract failed (${res.status})`, body.code);
-    }
-    return (await res.json()) as ExtractPayload;
-  } catch (error) {
-    cancel();
-    throw error;
+    return await prepareMedia(url, "audio", abortSignal, (message) =>
+      onState?.({ status: "extracting", message }),
+    );
   } finally {
-    abortSignal?.removeEventListener("abort", cancel);
     window.dispatchEvent(new Event(YOUTUBE_STATUS_CHANGED_EVENT));
   }
 }
@@ -166,7 +82,7 @@ function mediaFromExtract(
  *   - Direct media files (local, same-origin, or remote .mp3/.m4a/etc.)
  *   - YouTube URLs (via the /api/stream/extract endpoint)
  *
- * YouTube video visuals use a client-side embed — we only extract audio.
+ * Video is prepared separately, only when the player requests it.
  */
 export async function streamWithProgress(
   url: string,
@@ -201,7 +117,7 @@ export async function streamWithProgress(
     metadata: mergeTrackMetadata(priorMeta, historyMeta, id ? { id } : undefined),
   });
 
-  // Audio cache hit: skip extract. Show video uses YouTube embed by video id.
+  // Audio cache hit: skip extraction. Optional video has a separate cache.
   // Recover titles from history / oembed when stash was empty (pasted links).
   if (cached) {
     const atv = Boolean(cached.isAudioTrackVideo) || isMarkedAudioTrackVideo(id);

@@ -74,7 +74,7 @@ export default function HistoryList({
       fromHistory: item,
     });
     if (cached) {
-      // Pass url for YouTube so embed id resolves; IDB stays audio-only.
+      // Pass the YouTube URL for optional video; IDB stores the audio separately.
       // Normalize sourceUrl to playUrl so shell identity stays aligned with the open URL.
       openPlayer({
         media: { ...cached, sourceUrl: playUrl },

@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, statSync } from "node:fs";
 import { readdir, rename, rm } from "node:fs/promises";
 import path from "node:path";
 import { AudioError, publicError } from "./errors.mjs";
-import { validateAudio } from "./validate.mjs";
+import { validateAudio, validateVideo } from "./validate.mjs";
 
 const id = () => randomBytes(16).toString("hex");
 const pendingStates = new Set(["queued", "resolving", "downloading", "validating"]);
@@ -19,6 +19,7 @@ export class AudioJobs {
     store,
     provider,
     directory,
+    kind = "audio",
     concurrency = 2,
     queueLimit = 24,
     maxBytes = 128 * 1024 * 1024,
@@ -27,12 +28,13 @@ export class AudioJobs {
     cacheTtlMs = 86400000,
     jobTimeoutMs = 180000,
     leaseTtlMs = 60000,
-    validate = validateAudio,
+    validate = kind === "video" ? validateVideo : validateAudio,
   }) {
     Object.assign(this, {
       store,
       provider,
       directory,
+      kind,
       concurrency,
       queueLimit,
       maxBytes,
@@ -43,8 +45,13 @@ export class AudioJobs {
       leaseTtlMs,
       validate,
     });
-    this.assetsDir = path.join(directory, "assets");
-    this.stagingDir = path.join(directory, "staging");
+    this.extension = kind === "video" ? "mp4" : "m4a";
+    this.contentType = kind === "video" ? "video/mp4" : "audio/mp4";
+    this.assetsDir = path.join(directory, kind === "video" ? "video-assets" : "assets");
+    this.stagingDir = path.join(
+      directory,
+      kind === "video" ? "video-staging" : "staging",
+    );
     mkdirSync(this.assetsDir, { recursive: true });
     mkdirSync(this.stagingDir, { recursive: true });
     this.running = new Map();
@@ -59,17 +66,24 @@ export class AudioJobs {
   }
 
   assetPath(assetId) {
-    return path.join(this.assetsDir, `${assetId}.m4a`);
+    return path.join(this.assetsDir, `${assetId}.${this.extension}`);
   }
 
   create(videoId, mode = "anonymous", cookies = "", { bypassCache = false } = {}) {
     if (this.closing)
-      throw new AudioError("AUDIO_BUSY", "The audio service is restarting.", {
-        status: 503,
-        affectsHealth: false,
-      });
+      throw new AudioError(
+        `${this.kind.toUpperCase()}_BUSY`,
+        "The playback service is restarting.",
+        {
+          status: 503,
+          affectsHealth: false,
+        },
+      );
     const scope = credentialScope(mode, cookies);
-    const cacheKey = createHash("sha256").update(`${scope}:${videoId}`).digest("hex");
+    // Preserve existing audio keys and assets across upgrades.
+    const cacheKey = createHash("sha256")
+      .update(`${this.kind === "video" ? "video:" : ""}${scope}:${videoId}`)
+      .digest("hex");
     const cached = !bypassCache && this.store.cachedAsset(cacheKey);
     if (
       cached &&
@@ -81,6 +95,7 @@ export class AudioJobs {
       this.store.putAsset(cached);
       const job = {
         id: id(),
+        kind: this.kind,
         videoId,
         scope,
         cacheKey,
@@ -91,7 +106,7 @@ export class AudioJobs {
       };
       this.store.putJob(job);
       console.log(
-        JSON.stringify({ event: "audio_cache_hit", videoId, bytes: cached.size }),
+        JSON.stringify({ event: `${this.kind}_cache_hit`, videoId, bytes: cached.size }),
       );
       return this.publicJob(job);
     }
@@ -99,12 +114,13 @@ export class AudioJobs {
     if (!job) {
       if (this.queue.length + this.running.size >= this.queueLimit)
         throw new AudioError(
-          "AUDIO_BUSY",
-          "The audio service is busy. Please try again shortly.",
+          `${this.kind.toUpperCase()}_BUSY`,
+          "The playback service is busy. Please try again shortly.",
           { status: 503, affectsHealth: false },
         );
       job = {
         id: id(),
+        kind: this.kind,
         videoId,
         scope,
         cacheKey,
@@ -127,6 +143,7 @@ export class AudioJobs {
     if (!job) return null;
     return {
       jobId: job.id,
+      kind: job.kind || "audio",
       videoId: job.videoId,
       state: job.state,
       percent: job.percent || 0,
@@ -139,7 +156,7 @@ export class AudioJobs {
               id: job.asset.id,
               size: job.asset.size,
               duration: job.asset.duration,
-              contentType: "audio/mp4",
+              contentType: job.asset.contentType || "audio/mp4",
               metadata: job.asset.metadata,
             },
           }
@@ -199,8 +216,8 @@ export class AudioJobs {
       () =>
         controller.abort(
           new AudioError(
-            "AUDIO_TIMEOUT",
-            "Audio preparation took too long. Please try again.",
+            this.kind === "video" ? "VIDEO_TIMEOUT" : "AUDIO_TIMEOUT",
+            `${this.kind === "video" ? "Video" : "Audio"} preparation took too long. Please try again.`,
             { status: 504, retryable: true },
           ),
         ),
@@ -215,6 +232,7 @@ export class AudioJobs {
       const result = await this.provider.download(
         {
           id: job.id,
+          kind: this.kind,
           videoId: job.videoId,
           scope: job.scope,
           cookies,
@@ -229,7 +247,7 @@ export class AudioJobs {
             retries++;
             console.log(
               JSON.stringify({
-                event: "audio_retry",
+                event: `${this.kind}_retry`,
                 videoId: job.videoId,
                 code: progress.code,
               }),
@@ -255,11 +273,13 @@ export class AudioJobs {
       if (!size || size > this.maxBytes)
         throw new AudioError(
           "TRACK_TOO_LARGE",
-          "The processed audio exceeded the cache limit.",
+          `The processed ${this.kind} exceeded the cache limit.`,
           { status: 422, affectsHealth: false },
         );
       const asset = {
         id: id(),
+        kind: this.kind,
+        contentType: this.contentType,
         cacheKey: job.cacheKey,
         size,
         duration,
@@ -281,10 +301,10 @@ export class AudioJobs {
         percent: 100,
         updatedAt: Date.now(),
       });
-      this.store.outcome(job.scope, null);
+      if (this.kind === "audio") this.store.outcome(job.scope, null);
       console.log(
         JSON.stringify({
-          event: "audio_ready",
+          event: `${this.kind}_ready`,
           videoId: job.videoId,
           bytes: size,
           elapsedMs: Date.now() - startedAt,
@@ -296,17 +316,21 @@ export class AudioJobs {
       const failure = publicError(
         controller.signal.aborted ? controller.signal.reason : error,
       );
+      if (this.kind === "video") failure.affectsHealth = false;
       this.store.putJob({
         ...job,
         state: failure.code === "CANCELLED" ? "cancelled" : "failed",
         updatedAt: Date.now(),
         error: failure,
       });
-      this.store.outcome(job.scope, failure);
-      if (published) await rm(this.assetPath(published.id), { force: true });
+      if (this.kind === "audio") this.store.outcome(job.scope, failure);
+      if (published) {
+        await rm(this.assetPath(published.id), { force: true });
+        this.store.removeAsset(published.id);
+      }
       console.log(
         JSON.stringify({
-          event: "audio_failed",
+          event: `${this.kind}_failed`,
           videoId: job.videoId,
           code: failure.code,
           elapsedMs: Date.now() - startedAt,
@@ -338,7 +362,9 @@ export class AudioJobs {
   }
 
   async evictInternal(required = 0) {
-    const assets = this.store.assets();
+    const assets = this.store
+      .assets()
+      .filter((asset) => (asset.kind || "audio") === this.kind);
     let size = assets.reduce((sum, asset) => sum + asset.size, 0);
     for (const asset of assets) {
       const expired = asset.createdAt < Date.now() - this.cacheTtlMs;
@@ -350,8 +376,8 @@ export class AudioJobs {
     }
     if (size + required > this.cacheBytes)
       throw new AudioError(
-        "AUDIO_CACHE_FULL",
-        "The audio cache is busy. Please try again shortly.",
+        `${this.kind.toUpperCase()}_CACHE_FULL`,
+        `The ${this.kind} cache is busy. Please try again shortly.`,
         { status: 503, affectsHealth: false },
       );
   }
@@ -370,16 +396,25 @@ export class AudioJobs {
   async cleanStaging() {
     for (const file of await readdir(this.stagingDir))
       await rm(path.join(this.stagingDir, file), { force: true });
-    const known = new Set(this.store.assets().map((asset) => `${asset.id}.m4a`));
+    const known = new Set(
+      this.store
+        .assets()
+        .filter((asset) => (asset.kind || "audio") === this.kind)
+        .map((asset) => `${asset.id}.${this.extension}`),
+    );
     for (const file of await readdir(this.assetsDir))
       if (!known.has(file)) await rm(path.join(this.assetsDir, file), { force: true });
   }
 
-  async close() {
+  stop() {
     this.closing = true;
     clearInterval(this.timer);
     for (const jobId of [...this.queue, ...this.running.keys()]) this.cancelJob(jobId);
-    await this.provider.close();
+  }
+
+  async close({ closeProvider = true } = {}) {
+    this.stop();
+    if (closeProvider) await this.provider.close();
     // Provider termination settles active downloads; let their cleanup finish.
     while (this.running.size) await new Promise((resolve) => setTimeout(resolve, 10));
   }

@@ -2,245 +2,158 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
-const SOFT_DRIFT_S = 0.35;
-const HARD_SEEK_S = 1.0;
-const SEEK_TIMEOUT_MS = 2500;
-
 export interface UseSyncedVideoOptions {
-  /** Stream URL — when set, the video element is expected to be mounted. */
   src: string | undefined;
-  /** When false, video stays mounted but is not driven. */
   active: boolean;
   isPlaying: boolean;
-  currentTime: number;
+  /** Read the audio/DSP clock directly, independently of throttled UI updates. */
+  getPlaybackTime: () => number;
   rate: number;
+  onError?: () => void;
 }
 
-export interface UseSyncedVideoResult {
-  videoRef: (node: HTMLVideoElement | null) => void;
-  /** True once we have a paintable frame near the audio clock. */
-  isVideoReady: boolean;
-  /** Live video element when mounted (for backdrop canvas, etc.). */
-  videoEl: HTMLVideoElement | null;
-}
-
-/**
- * Keep a muted video element locked to an external audio/stretch clock.
- * Coalesces seeks and never re-enters currentTime while seeking (avoids freeze
- * loops on range-proxied streams).
- */
-export function useSyncedVideo({
-  src,
-  active,
-  isPlaying,
-  currentTime,
-  rate,
-}: UseSyncedVideoOptions): UseSyncedVideoResult {
-  const videoNodeRef = useRef<HTMLVideoElement | null>(null);
+/** Match native video to the live audio clock without rounding rates or pausing to seek. */
+export function useSyncedVideo(options: UseSyncedVideoOptions) {
+  const { src, active } = options;
+  const videoNode = useRef<HTMLVideoElement | null>(null);
   const [videoEl, setVideoEl] = useState<HTMLVideoElement | null>(null);
-  const [nodeVersion, setNodeVersion] = useState(0);
-
   const videoRef = useCallback((node: HTMLVideoElement | null) => {
-    videoNodeRef.current = node;
+    videoNode.current = node;
     setVideoEl(node);
-    setNodeVersion((v) => v + 1);
   }, []);
-
-  const [trackedSrc, setTrackedSrc] = useState(src);
-  const [frameReady, setFrameReady] = useState(false);
-  // Reset readiness when the stream URL changes (React-approved render adjustment).
-  if (src !== trackedSrc) {
-    setTrackedSrc(src);
-    setFrameReady(false);
-  }
-
-  const activeRef = useRef(active);
-  const playingRef = useRef(isPlaying);
-  const timeRef = useRef(currentTime);
-  const pendingSeekRef = useRef<number | null>(null);
-  const seekTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const syncApiRef = useRef<{
-    seekTo: (t: number) => void;
-    applyPlayState: () => void;
-  } | null>(null);
-
+  const live = useRef(options);
+  const [frame, setFrame] = useState<{ src?: string; ready: boolean; error?: string }>({
+    ready: false,
+  });
   useEffect(() => {
-    activeRef.current = active;
-    playingRef.current = isPlaying;
-    timeRef.current = currentTime;
+    live.current = options;
   });
 
-  // Bind listeners to the live element whenever src / node changes.
   useEffect(() => {
-    const video = videoNodeRef.current;
-    if (!src || !video) {
-      syncApiRef.current = null;
+    const video = videoNode.current;
+    if (!video || !src) return;
+    if (!active) {
+      video.pause();
       return;
     }
+    let raf = 0;
+    let disposed = false;
+    let failed = false;
+    let framed = false;
+    let initial = true;
+    let playPending = false;
+    let lastSeek = -Infinity;
+    let previous: { audio: number; now: number } | undefined;
+    const reset = requestAnimationFrame(() => setFrame({ src, ready: false }));
+    video.muted = true;
 
-    const clearSeekTimeout = () => {
-      if (seekTimeoutRef.current) {
-        clearTimeout(seekTimeoutRef.current);
-        seekTimeoutRef.current = null;
-      }
-    };
-
-    const markReadyIfFramed = () => {
-      if (video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
-        setFrameReady(true);
-      }
-    };
-
-    const applyPlayState = () => {
-      if (!activeRef.current) {
-        if (!video.paused) video.pause();
-        return;
-      }
-      if (video.seeking || pendingSeekRef.current !== null) return;
-
-      if (playingRef.current) {
-        if (video.paused) void video.play().catch(() => {});
-      } else if (!video.paused) {
-        video.pause();
-      }
-    };
-
-    const seekTo = (t: number) => {
-      if (!activeRef.current || !Number.isFinite(t)) return;
-
-      if (video.readyState < HTMLMediaElement.HAVE_METADATA) {
-        pendingSeekRef.current = t;
-        return;
-      }
-
-      if (video.seeking) {
-        pendingSeekRef.current = t;
-        return;
-      }
-
-      const drift = Math.abs(video.currentTime - t);
-      if (
-        drift <= SOFT_DRIFT_S &&
-        video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA
-      ) {
-        markReadyIfFramed();
-        applyPlayState();
-        return;
-      }
-
-      if (drift > HARD_SEEK_S && !video.paused) {
-        video.pause();
-      }
-
-      pendingSeekRef.current = null;
-      // Keep the last painted frame visible during seeks — clearing readiness
-      // flashes the cover art for a moment and looks jarring.
-
-      clearSeekTimeout();
-      seekTimeoutRef.current = setTimeout(() => {
-        pendingSeekRef.current = null;
-        markReadyIfFramed();
-        applyPlayState();
-      }, SEEK_TIMEOUT_MS);
-
-      try {
-        video.currentTime = Math.max(0, t);
-      } catch {
-        clearSeekTimeout();
-        applyPlayState();
-      }
-    };
-
-    const finishSeek = () => {
-      clearSeekTimeout();
-      markReadyIfFramed();
-
-      const next = pendingSeekRef.current;
-      pendingSeekRef.current = null;
-      if (next !== null && Math.abs(video.currentTime - next) > SOFT_DRIFT_S) {
-        seekTo(next);
-        return;
-      }
-      applyPlayState();
-    };
-
-    syncApiRef.current = { seekTo, applyPlayState };
-    pendingSeekRef.current = null;
-
-    const onSeeked = () => finishSeek();
-    const onLoadedData = () => {
-      markReadyIfFramed();
-      const pending = pendingSeekRef.current;
-      seekTo(pending ?? timeRef.current);
-    };
-    const onCanPlay = () => {
-      markReadyIfFramed();
-      applyPlayState();
-    };
     const onError = () => {
-      clearSeekTimeout();
-      pendingSeekRef.current = null;
-      setFrameReady(false);
+      if (disposed || failed) return;
+      failed = true;
+      setFrame({
+        src,
+        ready: false,
+        error: "Video could not be played. You can keep listening with artwork.",
+      });
+      live.current.onError?.();
     };
-
-    video.muted = true;
-    video.addEventListener("seeked", onSeeked);
-    video.addEventListener("loadeddata", onLoadedData);
-    video.addEventListener("canplay", onCanPlay);
     video.addEventListener("error", onError);
-
-    if (activeRef.current && video.readyState >= HTMLMediaElement.HAVE_METADATA) {
-      seekTo(timeRef.current);
-    }
-
-    return () => {
-      clearSeekTimeout();
-      syncApiRef.current = null;
-      video.removeEventListener("seeked", onSeeked);
-      video.removeEventListener("loadeddata", onLoadedData);
-      video.removeEventListener("canplay", onCanPlay);
-      video.removeEventListener("error", onError);
+    if (video.error) onError();
+    const sync = (now: number) => {
+      if (disposed || failed) return;
+      const { isPlaying, rate, getPlaybackTime } = live.current;
+      const audioTime = getPlaybackTime();
+      if (
+        Number.isFinite(audioTime) &&
+        video.readyState >= HTMLMediaElement.HAVE_METADATA
+      ) {
+        const target = Math.max(
+          0,
+          Math.min(
+            audioTime,
+            Number.isFinite(video.duration)
+              ? Math.max(0, video.duration - 0.04)
+              : audioTime,
+          ),
+        );
+        const drift = target - video.currentTime;
+        const jump =
+          previous &&
+          Math.abs(
+            audioTime -
+              previous.audio -
+              (isPlaying ? ((now - previous.now) / 1000) * rate : 0),
+          ) > 0.5;
+        if (
+          !video.seeking &&
+          video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA &&
+          now - lastSeek > 900 &&
+          Math.abs(drift) > 0.06 &&
+          (initial ||
+            jump ||
+            !isPlaying ||
+            (Math.abs(drift) > 1.25 &&
+              video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA))
+        ) {
+          // Align on startup, an actual seek, or a large discontinuity. Keep the last frame painted.
+          try {
+            video.currentTime = target;
+            lastSeek = now;
+          } catch {
+            /* Metadata may be changing. */
+          }
+        }
+        if (video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) initial = false;
+        previous = { audio: audioTime, now };
+        // Gently remove small drift; arbitrary rates such as 0.83 stay continuous.
+        const correction =
+          isPlaying && Math.abs(drift) > 0.04
+            ? Math.max(-0.05, Math.min(0.05, drift * 0.2))
+            : 0;
+        const desiredRate = Math.max(0.25, Math.min(4, rate * (1 + correction)));
+        if (Math.abs(video.playbackRate - desiredRate) > 0.002)
+          video.playbackRate = desiredRate;
+        const ended =
+          Number.isFinite(video.duration) && audioTime >= video.duration - 0.04;
+        if (!isPlaying || ended) {
+          if (!video.paused) video.pause();
+        } else if (video.paused && !playPending && !video.seeking) {
+          playPending = true;
+          void video
+            .play()
+            .catch((error) => {
+              if (!disposed && error.name !== "AbortError") onError();
+            })
+            .finally(() => {
+              playPending = false;
+            });
+        }
+        if (
+          !framed &&
+          !video.seeking &&
+          video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA &&
+          Math.abs(drift) < 0.25
+        ) {
+          framed = true;
+          setFrame({ src, ready: true });
+        }
+      }
+      raf = requestAnimationFrame(sync);
     };
-  }, [src, nodeVersion]);
-
-  // Deactivate: pause only (keep last frame ready so toggle-on is instant).
-  useEffect(() => {
-    if (active) return;
-    pendingSeekRef.current = null;
-    if (seekTimeoutRef.current) {
-      clearTimeout(seekTimeoutRef.current);
-      seekTimeoutRef.current = null;
-    }
-    const video = videoNodeRef.current;
-    if (video && !video.paused) video.pause();
-  }, [active, nodeVersion]);
-
-  // Drive clock / rate / play from React state.
-  useEffect(() => {
-    const video = videoNodeRef.current;
-    const api = syncApiRef.current;
-    if (!video || !api || !active) return;
-
-    video.muted = true;
-    if (Math.abs(video.playbackRate - rate) > 0.01) {
-      video.playbackRate = rate;
-    }
-
-    const drift = Math.abs(video.currentTime - currentTime);
-    if (drift > SOFT_DRIFT_S) {
-      api.seekTo(currentTime);
-      return;
-    }
-
-    if (video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
-      setFrameReady(true);
-    }
-    api.applyPlayState();
-  }, [active, isPlaying, currentTime, rate, nodeVersion]);
+    raf = requestAnimationFrame(sync);
+    return () => {
+      disposed = true;
+      cancelAnimationFrame(reset);
+      cancelAnimationFrame(raf);
+      video.removeEventListener("error", onError);
+      video.pause();
+    };
+  }, [src, active, videoEl]);
 
   return {
     videoRef,
-    isVideoReady: Boolean(src && frameReady),
     videoEl,
+    isVideoReady: Boolean(src && frame.src === src && frame.ready),
+    error: frame.src === src ? frame.error : undefined,
   };
 }

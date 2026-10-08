@@ -72,7 +72,7 @@ export async function POST(req: Request) {
       expiresAt,
     });
 
-    // Video is shown via YouTube embed on the client — no video proxy token.
+    // Optional native video is prepared through its own endpoint.
     return NextResponse.json({
       token,
       metadata: {

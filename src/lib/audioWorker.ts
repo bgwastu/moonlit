@@ -26,6 +26,7 @@ function secret() {
 
 export type AudioJob = {
   jobId: string;
+  kind?: "audio" | "video";
   leaseId?: string;
   videoId: string;
   state:
@@ -121,6 +122,22 @@ export const createAudioJob = (
   workerJson<AudioJob>("/v1/jobs", {
     method: "POST",
     body: JSON.stringify({
+      videoId,
+      mode: credentials.mode,
+      cookies: credentials.cookies,
+    }),
+    signal,
+  });
+
+export const createVideoJob = (
+  videoId: string,
+  credentials: YoutubeCredentials,
+  signal?: AbortSignal,
+) =>
+  workerJson<AudioJob>("/v1/jobs", {
+    method: "POST",
+    body: JSON.stringify({
+      kind: "video",
       videoId,
       mode: credentials.mode,
       cookies: credentials.cookies,

@@ -48,7 +48,7 @@ export interface StreamInfo {
   sourceUrl: string;
   /**
    * YouTube Music audio-track video (ATV / static art).
-   * Hide Show video — use cover art; embed would not be a real MV.
+   * Hide Show video and use cover art for these static uploads.
    */
   isAudioTrackVideo?: boolean;
 }

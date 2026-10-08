@@ -1,9 +1,9 @@
 export interface Media {
   fileUrl: string;
   sourceUrl: string;
-  /** Local file blob/URL for muted on-screen video (optional). YouTube uses embed. */
+  /** Local file video; optional YouTube video is prepared separately by the player. */
   videoUrl?: string;
-  /** YouTube Music ATV (static art) — hide Show video; no real MV embed. */
+  /** YouTube Music ATV (static art) — hide Show video. */
   isAudioTrackVideo?: boolean;
   metadata: {
     id: string | null;

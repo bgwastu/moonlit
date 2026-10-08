@@ -4,7 +4,7 @@ import { TOKEN_TTL_MS, createStreamToken, pruneExpired } from "@/lib/streamToken
 
 export function audioJobResponse(job: AudioJob): Response {
   if (job.state === "failed" || job.state === "cancelled") {
-    return Response.json(job.error || { error: "Audio preparation failed." }, {
+    return Response.json(job.error || { error: "Media preparation failed." }, {
       status: job.error?.status || 502,
       headers: { "Cache-Control": "no-store" },
     });

@@ -39,7 +39,7 @@ const DEFAULT_PLAYBACK_PREFS: GlobalPlaybackPrefs = {
 
 /**
  * Global show-video preference.
- * Missing key ⇒ on (YouTube embeds / local file video show by default).
+ * Missing key ⇒ on (native video shows by default).
  * Explicit `"0"` ⇒ user disabled; `"1"` ⇒ user enabled.
  */
 export function getShowVideo(): boolean {

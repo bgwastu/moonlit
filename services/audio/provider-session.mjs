@@ -7,6 +7,7 @@ import { ProxyAgent, setGlobalDispatcher } from "undici";
 import { Constants, Innertube, Log, Parser, Platform, Player } from "youtubei.js";
 import { AudioError, checkPlayability, publicError } from "./errors.mjs";
 import { createTokenMinter } from "./tokens.mjs";
+import { selectVideoFormat } from "./video-format.mjs";
 import { watchPlayer } from "./watch.mjs";
 
 const workerData = await new Promise((resolve) => process.once("message", resolve));
@@ -143,6 +144,7 @@ async function download(message, controller, refresh = false) {
       { retryable: true },
     );
   const formats = info.streaming_data.adaptive_formats.map(buildSabrFormat);
+  const isVideo = message.kind === "video";
   const preferred = formats.filter(
     (f) =>
       f.mimeType?.startsWith("audio/") && !f.isDrc && !f.isAutoDubbed && !f.isDescriptive,
@@ -151,12 +153,15 @@ async function download(message, controller, refresh = false) {
     preferred.find((f) => f.itag === 140) ||
     preferred.find((f) => f.mimeType.includes("mp4")) ||
     preferred[0];
-  if (!audio)
+  const selected = isVideo
+    ? selectVideoFormat(formats, message.maxBytes, duration)
+    : audio;
+  if (!selected)
     throw new AudioError(
       "STREAM_UNAVAILABLE",
       "YouTube did not provide an audio format.",
     );
-  if (audio.contentLength > message.maxBytes)
+  if (selected.contentLength > message.maxBytes)
     throw new AudioError("TRACK_TOO_LARGE", "This track is too large to process.", {
       status: 422,
       affectsHealth: false,
@@ -222,14 +227,18 @@ async function download(message, controller, refresh = false) {
   let bytes = 0;
   let lastUpdate = 0;
   try {
-    const { audioStream } = await sabr.start({
-      audioFormat: audio,
+    const { audioStream, videoStream } = await sabr.start({
+      ...(isVideo
+        ? { videoFormat: selected, preferH264: true }
+        : { audioFormat: selected }),
       preferMP4: true,
-      enabledTrackTypes: EnabledTrackTypes.AUDIO_ONLY,
+      enabledTrackTypes: isVideo
+        ? EnabledTrackTypes.VIDEO_ONLY
+        : EnabledTrackTypes.AUDIO_ONLY,
       maxRetries: 1,
       stallDetectionMs: 5000,
     });
-    for await (const chunk of audioStream) {
+    for await (const chunk of isVideo ? videoStream : audioStream) {
       controller.signal.throwIfAborted();
       bytes += chunk.length;
       if (bytes > message.maxBytes)
@@ -242,10 +251,12 @@ async function download(message, controller, refresh = false) {
         progress({
           state: "downloading",
           bytes,
-          totalBytes: audio.contentLength || 0,
+          totalBytes: selected.contentLength || 0,
           percent: Math.min(
             95,
-            audio.contentLength ? Math.round((bytes / audio.contentLength) * 95) : 0,
+            selected.contentLength
+              ? Math.round((bytes / selected.contentLength) * 95)
+              : 0,
           ),
         });
         lastUpdate = Date.now();
@@ -254,15 +265,19 @@ async function download(message, controller, refresh = false) {
     output.end();
     await outputDone;
     if (!bytes)
-      throw new AudioError("STREAM_UNAVAILABLE", "YouTube returned empty audio.", {
-        retryable: true,
-      });
+      throw new AudioError(
+        "STREAM_UNAVAILABLE",
+        `YouTube returned empty ${isVideo ? "video" : "audio"}.`,
+        {
+          retryable: true,
+        },
+      );
     const details = raw.videoDetails;
     const thumbs = details.thumbnail?.thumbnails || [];
     return {
       bytes,
       duration,
-      mimeType: audio.mimeType,
+      mimeType: selected.mimeType,
       metadata: {
         title: details.title || "Unknown",
         author: details.author || "Unknown",
