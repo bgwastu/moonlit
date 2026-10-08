@@ -13,6 +13,7 @@
     "build": "next build",
     "start": "node scripts/start.mjs",
     "test:audio": "node --test services/audio/test/*.test.mjs",
+    "test:cover": "bun test src/lib/coverUrl.test.ts src/lib/artworkPersistence.test.ts src/app/api/cover/route.test.ts",
     "lint": "eslint .",
     "prepare": "husky"
   },

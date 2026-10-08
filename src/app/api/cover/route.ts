@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { upgradeCoverUrl, ytimgViFallbackUrls } from "@/lib/coverUrl";
+import { coverFallbackUrls } from "@/lib/coverUrl";
 
 /** YouTube / Google image CDNs only — blocks open SSRF via ?url=. */
 const ALLOWED_COVER_HOST_SUFFIXES = [
@@ -49,60 +49,111 @@ function getCoverRequests() {
   return (coverRuntime.__moonlitCoverRequests ??= new Map());
 }
 
-async function fetchCoverBlob(imageUrl: string): Promise<Response | null> {
+async function fetchCoverBlob(
+  imageUrl: string,
+  signal: AbortSignal,
+): Promise<Response | null> {
   const res = await fetch(imageUrl, {
     headers: { "User-Agent": COVER_UA },
     redirect: "manual",
+    signal,
   });
 
-  if (res.status >= 300 && res.status < 400) {
+  if (!res.ok) {
+    await res.body?.cancel();
     return null;
   }
-  if (!res.ok) return null;
+  if (
+    !/^image\/(jpeg|png|webp|avif|gif)(?:;|$)/i.test(
+      res.headers.get("content-type") || "",
+    )
+  ) {
+    await res.body?.cancel();
+    return null;
+  }
   return res;
 }
 
 async function loadCover(
   imageUrl: string,
+  videoId?: string | null,
 ): Promise<{ blob: Blob; contentType: string } | null> {
-  const preferred = upgradeCoverUrl(imageUrl);
-  const candidates = Array.from(
-    new Set([preferred, ...ytimgViFallbackUrls(preferred), imageUrl]),
-  ).filter(isAllowedCoverUrl);
+  const candidates = coverFallbackUrls(imageUrl, videoId).filter(isAllowedCoverUrl);
+  const deadline = AbortSignal.timeout(12000);
 
   for (const candidate of candidates) {
-    const res = await fetchCoverBlob(candidate);
-    if (!res) continue;
+    if (deadline.aborted) break;
+    try {
+      const res = await fetchCoverBlob(
+        candidate,
+        AbortSignal.any([deadline, AbortSignal.timeout(3500)]),
+      );
+      if (!res) continue;
 
-    const blob = await res.blob();
-    // YouTube sometimes returns a tiny placeholder JPEG for missing maxres.
-    if (blob.size > 0 && blob.size < 2000 && /ytimg\.com/i.test(candidate)) {
-      continue;
+      const blob = await res.blob();
+      if (!blob.size) continue;
+      // YouTube sometimes returns a tiny placeholder JPEG for missing maxres.
+      if (blob.size < 2000 && /ytimg\.com/i.test(candidate)) continue;
+      const contentType = await imageContentType(blob);
+      if (!contentType) continue;
+
+      return {
+        blob,
+        contentType,
+      };
+    } catch {
+      // A failed or timed-out CDN candidate must not prevent lower-resolution recovery.
     }
-
-    return {
-      blob,
-      contentType: res.headers.get("content-type") || "image/jpeg",
-    };
   }
 
   return null;
 }
 
+/** An image MIME header alone is not enough to cache an upstream response. */
+async function imageContentType(blob: Blob): Promise<string | null> {
+  const bytes = new Uint8Array(await blob.slice(0, 32).arrayBuffer());
+  if (bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return "image/jpeg";
+  const ascii = new TextDecoder().decode(bytes);
+  if (
+    bytes[0] === 0x89 &&
+    ascii.slice(1, 4) === "PNG" &&
+    bytes[4] === 13 &&
+    bytes[5] === 10 &&
+    bytes[6] === 26 &&
+    bytes[7] === 10
+  )
+    return "image/png";
+  if (ascii.startsWith("GIF87a") || ascii.startsWith("GIF89a")) return "image/gif";
+  if (ascii.startsWith("RIFF") && ascii.slice(8, 12) === "WEBP") return "image/webp";
+  if (ascii.slice(4, 8) === "ftyp" && /avif|avis/.test(ascii.slice(8)))
+    return "image/avif";
+  return null;
+}
+
+function coverError(message: string, status: number) {
+  return new NextResponse(message, {
+    status,
+    headers: { "Cache-Control": "no-store" },
+  });
+}
+
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const imageUrl = searchParams.get("url");
+  const videoId = searchParams.get("v");
 
   if (!imageUrl) {
-    return new NextResponse("Missing url", { status: 400 });
+    return coverError("Missing url", 400);
   }
   if (!isAllowedCoverUrl(imageUrl)) {
-    return new NextResponse("URL not allowed", { status: 400 });
+    return coverError("URL not allowed", 400);
   }
+  if (videoId && !/^[\w-]{11}$/.test(videoId)) return coverError("Invalid video id", 400);
 
   try {
     const now = Date.now();
-    const cached = getCoverCache().get(imageUrl);
+    const cacheKey = `${imageUrl}\n${videoId || ""}`;
+    const cached = getCoverCache().get(cacheKey);
     if (cached && cached.expiresAt > now) {
       return new NextResponse(cached.blob, {
         headers: {
@@ -114,24 +165,24 @@ export async function GET(request: Request) {
     }
 
     const requests = getCoverRequests();
-    let request = requests.get(imageUrl);
+    let request = requests.get(cacheKey);
     if (!request) {
-      request = loadCover(imageUrl);
-      requests.set(imageUrl, request);
+      request = loadCover(imageUrl, videoId);
+      requests.set(cacheKey, request);
       void request.then(
-        () => requests.delete(imageUrl),
-        () => requests.delete(imageUrl),
+        () => requests.delete(cacheKey),
+        () => requests.delete(cacheKey),
       );
     }
 
     const result = await request;
     if (!result) {
       console.error("[Moonlit] cover upstream miss", imageUrl);
-      return new NextResponse("Failed to fetch", { status: 404 });
+      return coverError("Failed to fetch", 404);
     }
 
     const coverCache = getCoverCache();
-    coverCache.set(imageUrl, { ...result, expiresAt: now + 86_400_000 });
+    coverCache.set(cacheKey, { ...result, expiresAt: now + 86_400_000 });
     while (coverCache.size > 128) {
       const oldest = coverCache.keys().next().value;
       if (oldest === undefined) break;
@@ -146,6 +197,6 @@ export async function GET(request: Request) {
     });
   } catch (e) {
     console.error("[Moonlit] cover fetch error:", e);
-    return new NextResponse("Failed to fetch", { status: 502 });
+    return coverError("Failed to fetch", 502);
   }
 }

@@ -1,18 +1,10 @@
 "use client";
 
 import type { CSSProperties } from "react";
-import {
-  Badge,
-  Box,
-  Center,
-  Flex,
-  Paper,
-  Text,
-  rgba,
-  useMantineTheme,
-} from "@mantine/core";
-import { IconMusic } from "@tabler/icons-react";
+import { Badge, Box, Flex, Paper, Text, rgba, useMantineTheme } from "@mantine/core";
+import CoverFallback from "@/components/CoverFallback";
 import ShimmerImage from "@/components/ShimmerImage";
+import { useStableCoverUrl } from "@/hooks/useStableCoverUrl";
 import { toDisplayCoverUrl } from "@/lib/mergePlayerMedia";
 import { SEARCH_ACCENT_VAR } from "@/lib/theme";
 import { getYouTubeId } from "@/utils";
@@ -22,6 +14,8 @@ export interface MediaResultItem {
   title: string;
   author: string;
   thumbnail: string;
+  /** Present for saved songs so their on-device artwork can be used offline. */
+  sourceUrl?: string;
   lengthSeconds?: number;
   isLive?: boolean;
   /** Right-side meta (e.g. relative time for history). */
@@ -65,6 +59,11 @@ export default function MediaResultRow({
       : "";
   const ytId = getYouTubeId(item.id) ?? (/^[\w-]{11}$/.test(item.id) ? item.id : null);
   const thumbSrc = toDisplayCoverUrl(item.thumbnail || undefined, ytId);
+  const cachedThumb = useStableCoverUrl(
+    item.sourceUrl ? thumbSrc : undefined,
+    item.sourceUrl,
+    { cacheOnly: true },
+  );
 
   return (
     <Paper
@@ -91,26 +90,22 @@ export default function MediaResultRow({
     >
       <Flex gap="sm" align="center">
         <Box pos="relative" style={{ flexShrink: 0 }}>
-          {thumbSrc ? (
-            <ShimmerImage
-              src={thumbSrc}
-              alt=""
-              w={thumbW}
-              h={thumbH}
-              radius="sm"
-              fit="cover"
-              wrapperStyle={{ width: thumbW, height: thumbH }}
-            />
-          ) : (
-            <Center
-              w={thumbW}
-              h={thumbH}
-              bg={rgba(theme.colors.dark[6], 0.6)}
-              style={{ borderRadius: theme.radius.sm }}
-            >
-              <IconMusic size={22} />
-            </Center>
-          )}
+          <ShimmerImage
+            src={cachedThumb || thumbSrc || undefined}
+            fallback={
+              <CoverFallback
+                seed={ytId || item.sourceUrl || item.id}
+                title={item.title}
+                artist={item.author}
+              />
+            }
+            alt=""
+            w={thumbW}
+            h={thumbH}
+            radius="sm"
+            fit="cover"
+            wrapperStyle={{ width: thumbW, height: thumbH }}
+          />
           {durationLabel ? (
             <Badge
               pos="absolute"

@@ -1,5 +1,5 @@
 import type { Media } from "@/interfaces";
-import { isWeakYtimgCoverUrl, upgradeCoverUrl } from "@/lib/coverUrl";
+import { durableCoverUrl, isWeakYtimgCoverUrl, upgradeCoverUrl } from "@/lib/coverUrl";
 
 const STORAGE_PREFIX = "moonlit-search-meta:";
 
@@ -30,7 +30,7 @@ export function stashSearchMeta(id: string, meta: Partial<Media["metadata"]>): v
   if (!meta.coverUrl && prev?.coverUrl) {
     next.coverUrl = prev.coverUrl;
   }
-  if (next.coverUrl) next.coverUrl = upgradeCoverUrl(next.coverUrl);
+  if (next.coverUrl) next.coverUrl = upgradeCoverUrl(durableCoverUrl(next.coverUrl, id));
   memoryCache.set(id, next);
   if (typeof window === "undefined") return;
   try {
@@ -46,7 +46,7 @@ export function peekSearchMeta(id: string): Partial<Media["metadata"]> | undefin
   const fromSession = readSessionStorage(id);
   if (fromSession) {
     if (fromSession.coverUrl) {
-      fromSession.coverUrl = upgradeCoverUrl(fromSession.coverUrl);
+      fromSession.coverUrl = upgradeCoverUrl(durableCoverUrl(fromSession.coverUrl, id));
     }
     memoryCache.set(id, { ...memoryCache.get(id), ...fromSession });
     return fromSession;

@@ -1,6 +1,21 @@
 /** Preferred edge length for Google album-art CDN URLs. */
 const GOOGLE_COVER_SIZE = 1200;
 
+export function youtubeCoverUrl(videoId: string | undefined | null): string {
+  return videoId && /^[\w-]{11}$/.test(videoId)
+    ? `https://i.ytimg.com/vi/${videoId}/maxresdefault.jpg`
+    : "";
+}
+
+/** Object URLs belong to one document and must never become saved artwork metadata. */
+export function durableCoverUrl(
+  raw: string | undefined | null,
+  videoId: string | undefined | null,
+): string {
+  const url = raw?.trim() || "";
+  return url.startsWith("blob:") ? youtubeCoverUrl(videoId) : url;
+}
+
 /** Prefer higher YT page thumbs; cover proxy falls back if maxres 404s. */
 const YTIMG_VI_QUALITIES = [
   "maxresdefault",
@@ -130,4 +145,17 @@ export function ytimgViFallbackUrls(raw: string): string[] {
   } catch {
     return [raw];
   }
+}
+
+/** Recover from expired album artwork using the track's public video thumbnails. */
+export function coverFallbackUrls(raw: string, videoId?: string | null): string[] {
+  const preferred = upgradeCoverUrl(raw);
+  const videoCover = youtubeCoverUrl(videoId);
+  return Array.from(
+    new Set([
+      ...ytimgViFallbackUrls(preferred),
+      raw,
+      ...(videoCover ? ytimgViFallbackUrls(videoCover) : []),
+    ]),
+  );
 }

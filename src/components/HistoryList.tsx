@@ -163,6 +163,7 @@ export default function HistoryList({
                     title: meta.title || "Unknown",
                     author: meta.artist ?? meta.author ?? "Unknown",
                     thumbnail: meta.coverUrl || "",
+                    sourceUrl: item.sourceUrl,
                     metaRight: timeAgo(item.playedAt),
                   }}
                   onClick={() => void handlePlay(item)}

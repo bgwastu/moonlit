@@ -1,25 +1,27 @@
 import type { Media } from "@/interfaces";
-import { isWeakYtimgCoverUrl, upgradeCoverUrl } from "@/lib/coverUrl";
+import { durableCoverUrl, isWeakYtimgCoverUrl, upgradeCoverUrl } from "@/lib/coverUrl";
 import { mergeTrackMetadata, peekSearchMeta } from "@/lib/searchMeta";
 import { getYouTubeId } from "@/utils";
 import { isSameMediaSource } from "@/utils/player";
 
 function coverProxyUrl(raw: string | undefined, ytId: string | null): string {
   if (!raw) return "";
-  if (
-    raw.startsWith("/api/cover") ||
-    raw.startsWith("blob:") ||
-    raw.startsWith("data:")
-  ) {
-    return raw;
+  if (raw.startsWith("blob:") || raw.startsWith("data:")) return raw;
+  const proxyUrl = raw.startsWith("/api/cover")
+    ? raw
+    : `/api/cover?url=${encodeURIComponent(upgradeCoverUrl(raw))}`;
+  if (!ytId || !/^[\w-]{11}$/.test(ytId) || isWeakYtimgCoverUrl(proxyUrl)) {
+    return proxyUrl;
   }
-  return `/api/cover?url=${encodeURIComponent(upgradeCoverUrl(raw))}`;
+  const parsed = new URL(proxyUrl, "https://moonlit.invalid");
+  parsed.searchParams.set("v", ytId);
+  return `${parsed.pathname}${parsed.search}`;
 }
 
 /** Normalize a cover URL for <Image> display (proxy remote CDN URLs). */
 export function toDisplayCoverUrl(raw: string | undefined, ytId: string | null): string {
   return (
-    coverProxyUrl(raw, ytId) ||
+    coverProxyUrl(ytId ? durableCoverUrl(raw, ytId) : raw, ytId) ||
     (ytId
       ? `/api/cover?url=${encodeURIComponent(`https://i.ytimg.com/vi/${ytId}/maxresdefault.jpg`)}`
       : "")

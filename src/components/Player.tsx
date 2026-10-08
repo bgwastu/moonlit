@@ -22,7 +22,6 @@ import {
   IconChevronUp,
   IconChevronsLeft,
   IconChevronsRight,
-  IconMusic,
   IconPlayerPauseFilled,
   IconPlayerPlay,
   IconPlayerPlayFilled,
@@ -34,6 +33,7 @@ import {
   IconVolume3,
   IconVolumeOff,
 } from "@tabler/icons-react";
+import CoverFallback from "@/components/CoverFallback";
 import { PlayerFloatingChrome } from "@/components/PlayerFloatingChrome";
 import { type PlaybackMode, PlayerModeSelector } from "@/components/PlayerModeSelector";
 import { PlayerSeekBar } from "@/components/PlayerSeekBar";
@@ -682,7 +682,9 @@ export function Player({
       title: media.metadata.title,
       artist: media.metadata.artist ?? media.metadata.author,
       album: media.metadata.album ?? "",
-      artwork: [{ src: highResCover, sizes: "512x512", type: "image/jpeg" }],
+      artwork: highResCover
+        ? [{ src: highResCover, sizes: "512x512", type: "image/jpeg" }]
+        : [],
     });
 
     navigator.mediaSession.setActionHandler("play", () => play());
@@ -1444,50 +1446,30 @@ export function Player({
                     />
                   ) : null}
                   {showVideoCover ? (
-                    coverUrl ? (
-                      <ShimmerImage
-                        key={sourceUrl || "cover"}
-                        src={coverUrl}
-                        width="100%"
-                        height="100%"
-                        radius={theme.radius.md}
-                        fit="contain"
-                        wrapperStyle={{ width: "100%", height: "100%" }}
-                        style={{
-                          userSelect: "none",
-                          pointerEvents: "none",
-                          filter: stretchState === "loading" ? "blur(8px)" : "none",
-                          transition: "filter 0.3s ease-out, opacity 0.2s ease-out",
-                        }}
-                        alt={media.metadata.title}
-                      />
-                    ) : (
-                      <Box
-                        w="100%"
-                        h="100%"
-                        bg="rgba(255,255,255,0.1)"
-                        style={{
-                          borderRadius: theme.radius.md,
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          flexDirection: "column",
-                          gap: 10,
-                          userSelect: "none",
-                          filter: stretchState === "loading" ? "blur(8px)" : "none",
-                          transition: "filter 0.3s ease-out",
-                        }}
-                      >
-                        <IconMusic size={80} style={{ opacity: 0.5 }} />
-                        <Text size="xl" fw={600} ta="center">
-                          {media.metadata.title}
-                        </Text>
-                        <Text size="md" c="dimmed" ta="center">
-                          {media.metadata.artist ?? media.metadata.author}
-                          {media.metadata.album && ` · ${media.metadata.album}`}
-                        </Text>
-                      </Box>
-                    )
+                    <ShimmerImage
+                      key={sourceUrl || "cover"}
+                      src={coverUrl || undefined}
+                      fallback={
+                        <CoverFallback
+                          variant="artwork"
+                          seed={media.metadata.id || sourceUrl}
+                          title={media.metadata.title}
+                          artist={media.metadata.artist ?? media.metadata.author}
+                        />
+                      }
+                      width="100%"
+                      height="100%"
+                      radius={theme.radius.md}
+                      fit="contain"
+                      wrapperStyle={{ width: "100%", height: "100%" }}
+                      style={{
+                        userSelect: "none",
+                        pointerEvents: "none",
+                        filter: stretchState === "loading" ? "blur(8px)" : "none",
+                        transition: "filter 0.3s ease-out, opacity 0.2s ease-out",
+                      }}
+                      alt={media.metadata.title}
+                    />
                   ) : null}
                   {/* Buffering spinner — centered on album art, no background */}
                   {isWaiting && (
@@ -1839,6 +1821,13 @@ export function Player({
               <ShimmerImage
                 key={sourceUrl || "cover"}
                 src={coverUrl || undefined}
+                fallback={
+                  <CoverFallback
+                    seed={media.metadata.id || sourceUrl}
+                    title={media.metadata.title}
+                    artist={media.metadata.artist ?? media.metadata.author}
+                  />
+                }
                 radius="sm"
                 h={38}
                 w={38}

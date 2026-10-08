@@ -98,24 +98,34 @@ export async function hasCachedMedia(sourceUrl: string): Promise<boolean> {
 }
 
 function coverCacheKey(sourceUrl: string, coverUrl: string): string {
+  // The video id adds proxy recovery information, not a different artwork resource.
+  if (coverUrl.startsWith("/api/cover?")) {
+    const parsed = new URL(coverUrl, "https://moonlit.invalid");
+    parsed.searchParams.delete("v");
+    coverUrl = `${parsed.pathname}${parsed.search}`;
+  }
   return `${sourceUrl}\n${coverUrl}`;
 }
 
 /** Return a local object URL for a previously loaded track cover. */
 export async function getCachedCoverUrl(
   sourceUrl: string,
-  coverUrl: string,
+  coverUrl?: string,
 ): Promise<string | null> {
-  if (!sourceUrl || !coverUrl) return null;
+  if (!sourceUrl) return null;
   try {
-    const key = coverCacheKey(sourceUrl, coverUrl);
-    const blob = await coverStore.getItem<Blob>(key);
-    if (blob) {
-      const meta = (await coverStore.getItem<CacheMeta>(COVER_META_KEY)) ?? { order: [] };
+    const meta = (await coverStore.getItem<CacheMeta>(COVER_META_KEY)) ?? { order: [] };
+    const keys = coverUrl
+      ? [coverCacheKey(sourceUrl, coverUrl)]
+      : meta.order.filter((key) => key.startsWith(`${sourceUrl}\n`));
+    for (const key of keys) {
+      const blob = await coverStore.getItem<Blob>(key);
+      if (!(blob instanceof Blob) || !blob.size) continue;
       meta.order = [key, ...meta.order.filter((entry) => entry !== key)];
       await coverStore.setItem(COVER_META_KEY, meta);
+      return URL.createObjectURL(blob);
     }
-    return blob ? URL.createObjectURL(blob) : null;
+    return null;
   } catch {
     return null;
   }

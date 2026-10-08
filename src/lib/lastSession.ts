@@ -1,4 +1,6 @@
 import type { Media } from "@/interfaces";
+import { durableCoverUrl } from "@/lib/coverUrl";
+import { getYouTubeId } from "@/utils";
 
 const LAST_SESSION_KEY = "moonlit-last-session";
 const MAX_AGE_MS = 3 * 24 * 60 * 60 * 1000; // 3 days
@@ -20,6 +22,19 @@ function isRestorableUrl(sourceUrl: string) {
   );
 }
 
+function durableSession(session: LastSession): LastSession {
+  return {
+    ...session,
+    metadata: {
+      ...session.metadata,
+      coverUrl: durableCoverUrl(
+        session.metadata?.coverUrl,
+        getYouTubeId(session.sourceUrl) || session.metadata?.id,
+      ),
+    },
+  };
+}
+
 export function loadLastSession(): LastSession | null {
   if (typeof window === "undefined") return null;
   try {
@@ -38,7 +53,7 @@ export function loadLastSession(): LastSession | null {
       localStorage.removeItem(LAST_SESSION_KEY);
       return null;
     }
-    return parsed;
+    return durableSession(parsed);
   } catch {
     return null;
   }
@@ -48,7 +63,7 @@ export function saveLastSession(session: LastSession) {
   if (typeof window === "undefined") return;
   if (!isRestorableUrl(session.sourceUrl)) return;
   try {
-    localStorage.setItem(LAST_SESSION_KEY, JSON.stringify(session));
+    localStorage.setItem(LAST_SESSION_KEY, JSON.stringify(durableSession(session)));
   } catch (e) {
     console.error("Failed to save last session:", e);
   }
