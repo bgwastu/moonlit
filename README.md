@@ -89,8 +89,6 @@ Anonymous playback is the default. On connections where YouTube requires account
 
 The status chip reports Online only after fresh search and complete audio delivery both succeed. Playback failures show Degraded even when search still works. Untested or expired evidence shows Unverified. Known private, removed, age-gated, and region-restricted recordings are reported separately.
 
-Run `bun run test:audio` for the media service checks.
-
 # Credits
 
 - **Signalsmith Stretch**: A massive shoutout to [Signalsmith Audio](https://signalsmith-audio.co.uk/) for their open-source time-stretching library. Honestly, I'm too dumb to implement complex DSP algorithms like this by myself, so this library is doing all the heavy lifting! 😅

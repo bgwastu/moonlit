@@ -7,9 +7,7 @@
     "node": ">=24"
   },
   "scripts": {
-    "start": "node server.mjs",
-    "test": "node --test test/*.test.mjs",
-    "benchmark": "node benchmark.mjs"
+    "start": "node server.mjs"
   },
   "dependencies": {
     "bgutils-js": "4.0.3",
