@@ -50,6 +50,7 @@ export function useSyncedVideo(options: UseSyncedVideoOptions) {
     const onError = () => {
       if (disposed || failed) return;
       failed = true;
+      cancelAnimationFrame(reset);
       setFrame({
         src,
         ready: false,
