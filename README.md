@@ -25,8 +25,6 @@ https://github.com/user-attachments/assets/64777ba1-6022-42b5-a653-c73bd4a61013
 ## Docker
 
 ```bash
-docker pull ghcr.io/bgwastu/moonlit:latest
-
 docker run -d \
   --name moonlit \
   -p 3000:3000 \
@@ -34,40 +32,7 @@ docker run -d \
   ghcr.io/bgwastu/moonlit:latest
 ```
 
-Open [http://localhost:3000](http://localhost:3000).
-
-Optional environment variables:
-
-| Variable                     | Description                                                                                                  |
-| ---------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| `ADMIN_PASSWORD`             | Enables the admin cookie management page at `/admin`                                                         |
-| `PROXY_URL`                  | HTTP CONNECT proxy for outbound YouTube requests (`http://` or `https://`)                                   |
-| `YOUTUBE_CREDENTIAL_MODE`    | `anonymous` by default; set `system` to explicitly use `/app/data/cookies.txt` with a compatible web session |
-| `AUDIO_CACHE_BYTES`          | Server audio cache quota in bytes; defaults to 2 GiB                                                         |
-| `AUDIO_CACHE_TTL_HOURS`      | Server audio cache lifetime; defaults to 24 hours                                                            |
-| `AUDIO_CONCURRENCY`          | Simultaneous audio downloads; defaults to 2                                                                  |
-| `AUDIO_MAX_DURATION_SECONDS` | Maximum recording length; defaults to 7200 seconds                                                           |
-
-```bash
-docker run -d \
-  --name moonlit \
-  -p 3000:3000 \
-  -e ADMIN_PASSWORD=your_password \
-  -e PROXY_URL=http://your-proxy:3128 \
-  -v moonlit-data:/app/data \
-  ghcr.io/bgwastu/moonlit:latest
-```
-
-### Build from source
-
-```bash
-docker build -t moonlit .
-docker run -d \
-  --name moonlit \
-  -p 3000:3000 \
-  -v moonlit-data:/app/data \
-  moonlit
-```
+To build from source, run `docker build -t moonlit .` and use `moonlit` as the image in the command above.
 
 ## Native host (no Docker)
 
@@ -79,13 +44,19 @@ bun run build
 NODE_ENV=production bun run start
 ```
 
-`bun run dev` and `bun run start` supervise Next.js and the private audio worker together. The worker resolves YouTube's web player, generates playback tokens, downloads SABR audio, and validates the complete recording before serving it. Repeated plays use the server cache or the existing browser cache. Audio remains available to speed, independent pitch, reverb, and MP3 export.
+For development, use `bun run dev`.
 
-The worker listens on loopback port 3010 and requires a bearer secret generated in `data/.audio-worker-secret`. Keep the data volume to retain the cache and secrets across restarts. Run one worker per data directory. Do not publish its port to the internet. To run it separately, configure `AUDIO_WORKER_URL` and the same `AUDIO_WORKER_SECRET` on both processes; the app then starts only Next.js. The separate worker supports `AUDIO_WORKER_HOST`, `AUDIO_WORKER_PORT`, and `MOONLIT_DATA_DIR`.
+Open [http://localhost:3000](http://localhost:3000). Keep the `moonlit-data` volume (or `data/` for a native install) to retain cached media and cookies across restarts.
 
-Anonymous playback is the default. On connections where YouTube requires account access, set `YOUTUBE_CREDENTIAL_MODE=system` after exporting account cookies to `data/cookies.txt`, or enable personal cookies in the app. Account sessions and caches are isolated by credential scope, and cookies are never written into the job database. Automatic playback tokens reduce manual maintenance, but YouTube can still restrict an account, connection, or recording.
+## Optional settings
 
-The status chip reports Online only after fresh search and complete audio delivery both succeed. Playback failures show Degraded even when search still works. Untested or expired evidence shows Unverified. Known private, removed, age-gated, and region-restricted recordings are reported separately.
+| Variable                  | Description                                                                |
+| ------------------------- | -------------------------------------------------------------------------- |
+| `ADMIN_PASSWORD`          | Enables cookie management at `/admin`                                      |
+| `PROXY_URL`               | HTTP CONNECT proxy for YouTube requests (`http://` or `https://`)          |
+| `YOUTUBE_CREDENTIAL_MODE` | Set `system` to use `data/cookies.txt` (`/app/data/cookies.txt` in Docker) |
+
+Playback is anonymous by default. You can also enable personal cookies in the app.
 
 # Credits
 
