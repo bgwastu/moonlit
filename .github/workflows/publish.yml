@@ -7,7 +7,7 @@ on:
 
 concurrency:
   group: publish-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 env:
   REGISTRY: ghcr.io
@@ -115,3 +115,13 @@ jobs:
         run: |
           docker buildx imagetools inspect \
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.version }}
+
+      - name: Deploy to Coolify
+        if: github.ref == 'refs/heads/main'
+        env:
+          COOLIFY_WEBHOOK: ${{ secrets.COOLIFY_WEBHOOK }}
+          COOLIFY_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
+        run: |
+          curl --fail-with-body --silent --show-error --user-agent Moonlit-deploy --request POST \
+            --header "Authorization: Bearer $COOLIFY_TOKEN" \
+            "$COOLIFY_WEBHOOK"
