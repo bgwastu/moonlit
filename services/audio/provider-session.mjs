@@ -3,7 +3,6 @@ import { EnabledTrackTypes, Logger, buildSabrFormat } from "googlevideo/utils";
 import { once } from "node:events";
 import { createWriteStream } from "node:fs";
 import { finished } from "node:stream/promises";
-import { ProxyAgent, setGlobalDispatcher } from "undici";
 import { Constants, Innertube, Log, Parser, Platform, Player } from "youtubei.js";
 import { AudioError, checkPlayability, publicError } from "./errors.mjs";
 import { searchYouTube } from "./search.mjs";
@@ -17,7 +16,6 @@ const parentPort = {
   on: (event, listener) => process.on(event, listener),
 };
 
-if (workerData.proxy) setGlobalDispatcher(new ProxyAgent(workerData.proxy));
 Log.setLevel();
 Logger.getInstance().setLogLevels();
 Platform.shim.eval = async (data) => new Function(data.output)();
