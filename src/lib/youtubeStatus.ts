@@ -27,7 +27,6 @@ export type YouTubeAvailability = {
   status: YouTubeStatus;
   connectionOnline: boolean;
   localOnly: boolean;
-  modalOpened: boolean;
   checking: boolean;
 };
 
@@ -35,7 +34,6 @@ export const initialYouTubeAvailability: YouTubeAvailability = {
   status: unknownYouTubeStatus(),
   connectionOnline: true,
   localOnly: false,
-  modalOpened: false,
   checking: true,
 };
 
@@ -44,15 +42,13 @@ type AvailabilityAction =
   | { type: "connection"; online: boolean }
   | { type: "checking" }
   | { type: "expired" }
-  | { type: "unreachable"; confirmed: boolean }
-  | { type: "dismiss" };
+  | { type: "unreachable"; confirmed: boolean };
 
-/** Unknown results retain local mode until fresh evidence confirms recovery. */
+/** An unknown result keeps YouTube off until a fresh check confirms it is back. */
 export function youtubeAvailabilityReducer(
   state: YouTubeAvailability,
   action: AvailabilityAction,
 ): YouTubeAvailability {
-  if (action.type === "dismiss") return { ...state, modalOpened: false };
   if (action.type === "checking") return { ...state, checking: true };
   if (action.type === "expired") return { ...state, status: unknownYouTubeStatus() };
   if (action.type === "connection") {
@@ -62,7 +58,6 @@ export function youtubeAvailabilityReducer(
       ...state,
       connectionOnline: false,
       localOnly: true,
-      modalOpened: state.modalOpened || !state.localOnly,
       checking: false,
     };
   }
@@ -75,7 +70,6 @@ export function youtubeAvailabilityReducer(
       },
       checking: false,
       localOnly: state.localOnly || action.confirmed,
-      modalOpened: state.modalOpened || (action.confirmed && !state.localOnly),
     };
   }
   const status =
@@ -93,6 +87,5 @@ export function youtubeAvailabilityReducer(
     status,
     localOnly,
     checking: false,
-    modalOpened: localOnly ? state.modalOpened || !state.localOnly : false,
   };
 }

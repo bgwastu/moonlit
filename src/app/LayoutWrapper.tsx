@@ -6,7 +6,6 @@ import "@mantine/core/styles.css";
 import { Notifications } from "@mantine/notifications";
 import "@mantine/notifications/styles.css";
 import { PlayerHost } from "@/components/PlayerHost";
-import YouTubeOfflineModal from "@/components/YouTubeOfflineModal";
 import { AppProvider, useAppContext } from "@/context/AppContext";
 import { YouTubeStatusProvider } from "@/context/YouTubeStatusContext";
 import { APP_BG } from "@/lib/theme";
@@ -48,7 +47,6 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
       <Notifications />
       {children}
       <PlayerHost />
-      <YouTubeOfflineModal />
     </MantineProvider>
   );
 }

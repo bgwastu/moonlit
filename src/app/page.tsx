@@ -25,7 +25,6 @@ import {
   Stack,
   Text,
   TextInput,
-  ThemeIcon,
   UnstyledButton,
   rem,
   rgba,
@@ -41,10 +40,10 @@ import {
   IconDotsVertical,
   IconLink,
   IconMessage,
-  IconMusic,
   IconSearch,
   IconTrash,
   IconUpload,
+  IconWifiOff,
   IconX,
 } from "@tabler/icons-react";
 import parse from "id3-parser";
@@ -113,7 +112,7 @@ function toMediaItem(result: YouTubeResult): MediaResultItem {
 }
 
 /** Compact secondary upload + fullscreen drag-anywhere. */
-function LocalUpload({ prominent = false }: { prominent?: boolean }) {
+function LocalUpload() {
   const [loading, setLoading] = useState<{ status: boolean; message: string | null }>({
     status: false,
     message: null,
@@ -211,87 +210,87 @@ function LocalUpload({ prominent = false }: { prominent?: boolean }) {
         <div />
       </Dropzone>
 
-      {prominent ? (
-        <Box
-          data-local-upload
+      <Group gap={isMobile ? "xs" : "sm"} justify="flex-start" wrap="wrap" px={4}>
+        <Text
+          component="button"
+          type="button"
+          size="sm"
+          fw={600}
+          c="dimmed"
+          className="moonlit-focusable"
+          onClick={() => openRef.current?.()}
           style={{
-            borderRadius: rem(16),
-            padding: rem(24),
-            border: `${rem(1)} solid ${rgba(accent(theme, 4), 0.25)}`,
-            background: `linear-gradient(135deg, ${rgba(accent(theme, 8), 0.24)}, ${rgba(theme.colors.dark[9], 0.7)})`,
+            background: "none",
+            border: "none",
+            padding: 0,
+            cursor: "pointer",
+            display: "inline-flex",
+            alignItems: "center",
+            gap: rem(6),
+            transition: "color 150ms ease",
+          }}
+          onMouseEnter={(event) => {
+            event.currentTarget.style.color = theme.colors.gray[2];
+          }}
+          onMouseLeave={(event) => {
+            event.currentTarget.style.color = "";
           }}
         >
-          <Stack gap="lg">
-            <Group wrap="nowrap" align="flex-start">
-              <ThemeIcon size={48} radius="md" color={theme.primaryColor} variant="light">
-                <IconMusic size={26} stroke={1.6} />
-              </ThemeIcon>
-              <Box>
-                <Text size="lg" fw={600} c="white">
-                  Open a music file
-                </Text>
-                <Text size="sm" c="dimmed" mt={4}>
-                  Your music, with the same speed, pitch, and reverb controls.
-                </Text>
-              </Box>
-            </Group>
-            <Button
-              size="md"
-              radius="md"
-              leftSection={<IconUpload size={18} />}
-              onClick={() => openRef.current?.()}
-            >
-              Choose music
-            </Button>
-            <Text size="xs" c="dimmed" ta="center">
-              MP3, M4A, WAV, MP4 · Files stay on this device.
-            </Text>
-          </Stack>
-        </Box>
-      ) : (
-        <Group gap={isMobile ? "xs" : "sm"} justify="flex-start" wrap="wrap" px={4}>
+          <IconUpload size={16} stroke={1.75} />
+          Upload a file
+        </Text>
+        <Text size="sm" c="dimmed" opacity={0.55}>
+          MP3, M4A, WAV or MP4. You can also{" "}
           <Text
-            component="button"
-            type="button"
-            size="sm"
-            fw={600}
-            c="dimmed"
-            className="moonlit-focusable"
-            onClick={() => openRef.current?.()}
-            style={{
-              background: "none",
-              border: "none",
-              padding: 0,
-              cursor: "pointer",
-              display: "inline-flex",
-              alignItems: "center",
-              gap: rem(6),
-              transition: "color 150ms ease",
-            }}
-            onMouseEnter={(event) => {
-              event.currentTarget.style.color = theme.colors.gray[2];
-            }}
-            onMouseLeave={(event) => {
-              event.currentTarget.style.color = "";
-            }}
+            component="span"
+            td="underline"
+            style={{ cursor: "pointer" }}
+            onClick={() => setFullScreenActive(true)}
           >
-            <IconUpload size={16} stroke={1.75} />
-            Upload a file
+            drop a file anywhere
           </Text>
-          <Text size="sm" c="dimmed" opacity={0.55}>
-            MP3, M4A, WAV, MP4 ·{" "}
-            <Text
-              component="span"
-              td="underline"
-              style={{ cursor: "pointer" }}
-              onClick={() => setFullScreenActive(true)}
-            >
-              drag anywhere
-            </Text>
-          </Text>
-        </Group>
-      )}
+          .
+        </Text>
+      </Group>
     </>
+  );
+}
+
+function OfflineNotice() {
+  const theme = useMantineTheme();
+  const { checking, refresh } = useYouTubeStatus();
+  return (
+    <Group
+      role="status"
+      wrap="nowrap"
+      align="flex-start"
+      gap="sm"
+      p="md"
+      style={{
+        borderRadius: theme.radius.md,
+        border: `${rem(1)} solid ${rgba(theme.colors.gray[6], 0.3)}`,
+        backgroundColor: rgba(theme.colors.dark[8], 0.4),
+      }}
+    >
+      <IconWifiOff size={20} stroke={1.75} style={{ flexShrink: 0, marginTop: rem(2) }} />
+      <Stack gap={2} style={{ flex: 1, minWidth: 0 }}>
+        <Text size="sm" fw={600} c="white">
+          YouTube can&apos;t be reached right now
+        </Text>
+        <Text size="sm" c="dimmed">
+          Search is paused. Saved songs and uploaded files still play.
+        </Text>
+      </Stack>
+      <Button
+        variant="default"
+        size="compact-sm"
+        loading={checking}
+        onClick={refresh}
+        style={{ flexShrink: 0 }}
+      >
+        Try again
+      </Button>
+    </Group>
   );
 }
 
@@ -493,11 +492,6 @@ function SearchPanel({
             placeholder="Search YouTube or paste a URL..."
             aria-label="Search YouTube or paste a URL"
             disabled={localOnly}
-            description={
-              localOnly
-                ? "YouTube search is unavailable. It will return automatically."
-                : undefined
-            }
             size={isMobile ? "md" : "lg"}
             radius="md"
             autoComplete="off"
@@ -771,17 +765,7 @@ export default function UploadPage() {
               </Group>
 
               <Stack gap="md" w="100%" maw={rem(640)}>
-                {localOnly && (
-                  <Stack gap={6}>
-                    <Text size="xl" fw={700} c="white">
-                      Music on your device
-                    </Text>
-                    <Text size="sm" c="dimmed">
-                      Play saved songs or open a music file while YouTube is unavailable.
-                    </Text>
-                  </Stack>
-                )}
-                {localOnly && <LocalUpload prominent />}
+                {localOnly && <OfflineNotice />}
                 <SearchPanel
                   searchActive={searchActive}
                   setSearchActive={setSearchActive}
@@ -794,7 +778,7 @@ export default function UploadPage() {
                       localOnly={localOnly}
                       maxHeight={isMobileLayout ? rem(320) : rem(420)}
                     />
-                    {!localOnly && <LocalUpload />}
+                    <LocalUpload />
                   </Stack>
                 )}
               </Stack>

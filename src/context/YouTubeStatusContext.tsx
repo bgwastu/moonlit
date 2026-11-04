@@ -13,7 +13,6 @@ import {
 
 interface YouTubeStatusContextValue extends YouTubeAvailability {
   refresh: () => void;
-  dismissModal: () => void;
 }
 const YouTubeStatusContext = createContext<YouTubeStatusContextValue | null>(null);
 
@@ -172,7 +171,6 @@ export function YouTubeStatusProvider({ children }: { children: React.ReactNode 
       value={{
         ...state,
         refresh: () => refreshRef.current(),
-        dismissModal: () => dispatch({ type: "dismiss" }),
       }}
     >
       {children}

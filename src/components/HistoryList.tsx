@@ -110,7 +110,7 @@ export default function HistoryList({
       <Group gap="xs" px={4}>
         <Loader size={14} />
         <Text size="sm" c="dimmed">
-          Checking saved music…
+          Looking for saved music
         </Text>
       </Group>
     );
@@ -130,12 +130,12 @@ export default function HistoryList({
           <IconHistory size={28} stroke={1.5} opacity={0.55} />
           <Box>
             <Text size="sm" fw={600} c="white">
-              {localOnly ? "No music saved on this device yet" : "No recent plays"}
+              {localOnly ? "Nothing saved on this device" : "No recent plays"}
             </Text>
             <Text size="sm" c="dimmed" mt={4} maw={360}>
               {localOnly
-                ? "Choose a music file above to start listening."
-                : "Play a song to get started — then tweak speed, pitch, or reverb."}
+                ? "Upload a file below to listen without YouTube."
+                : "Play a song to get started, then change its speed, pitch or reverb."}
             </Text>
           </Box>
         </Stack>
