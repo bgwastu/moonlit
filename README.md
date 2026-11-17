@@ -53,6 +53,7 @@ Open [http://localhost:3000](http://localhost:3000). Keep the `moonlit-data` vol
 | Variable                  | Description                                                                |
 | ------------------------- | -------------------------------------------------------------------------- |
 | `ADMIN_PASSWORD`          | Enables cookie management at `/admin`                                      |
+| `PROXY_URL`               | Outbound proxy for YouTube requests (e.g. `http://warp:1080`)              |
 | `YOUTUBE_CREDENTIAL_MODE` | Set `system` to use `data/cookies.txt` (`/app/data/cookies.txt` in Docker) |
 
 Playback is anonymous by default. You can also enable personal cookies in the app.

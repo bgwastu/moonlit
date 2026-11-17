@@ -3,9 +3,10 @@ import { fileURLToPath } from "node:url";
 import { AudioError } from "./errors.mjs";
 
 export class SabrProvider {
-  constructor({ maxSessions = 4 } = {}) {
+  constructor({ maxSessions = 4, proxy = process.env.PROXY_URL } = {}) {
     this.groups = new Map();
     this.maxSessions = maxSessions;
+    this.proxy = proxy;
   }
 
   group(scope, cookies) {
@@ -36,7 +37,7 @@ export class SabrProvider {
         serialization: "advanced",
       },
     );
-    worker.send({ type: "initialize", cookies });
+    worker.send({ type: "initialize", cookies, proxy: this.proxy });
     group = { worker, scope, usedAt: Date.now(), initialized: false, pending: new Map() };
     this.groups.set(scope, group);
     worker.on("message", (message) => {
